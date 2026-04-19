@@ -125,22 +125,22 @@ func runList(db *sql.DB, parentShortID string, showAll bool) ([]*TaskNode, error
 	return filterTree(tree, showAll, blockedIDs), nil
 }
 
-func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, error) {
+func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, bool, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer tx.Rollback()
 
 	task, err := getTaskByShortID(tx, shortID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if task == nil {
-		return nil, fmt.Errorf("task %q not found", shortID)
+		return nil, false, fmt.Errorf("task %q not found", shortID)
 	}
 	if task.Status == "done" {
-		return nil, fmt.Errorf("task %s is already done", shortID)
+		return nil, true, nil
 	}
 
 	var forceClosedShortIDs []string
@@ -148,7 +148,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 
 	incomplete, err := findIncompleteDescendants(tx, task.ID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if len(incomplete) > 0 {
@@ -157,7 +157,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 			for _, t := range incomplete {
 				descs = append(descs, fmt.Sprintf("%s (%s)", t.ShortID, t.Title))
 			}
-			return nil, fmt.Errorf("task %s has incomplete subtasks: %s", shortID, strings.Join(descs, ", "))
+			return nil, false, fmt.Errorf("task %s has incomplete subtasks: %s", shortID, strings.Join(descs, ", "))
 		}
 		forceClosedTasks = incomplete
 		forceClosedShortIDs = make([]string, len(incomplete))
@@ -174,14 +174,14 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 			"UPDATE tasks SET status = 'done', completion_note = ?, updated_at = ? WHERE id = ?",
 			noteVal, now, child.ID,
 		); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if err := recordEvent(tx, child.ID, "done", map[string]any{
 			"note":                   nil,
 			"force":                  true,
 			"force_closed_by_parent": shortID,
 		}); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
@@ -193,7 +193,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 		"UPDATE tasks SET status = 'done', completion_note = ?, updated_at = ? WHERE id = ?",
 		noteVal, now, task.ID,
 	); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if err := recordEvent(tx, task.ID, "done", map[string]any{
@@ -201,21 +201,21 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 		"force":                 force,
 		"force_closed_children": forceClosedShortIDs,
 	}); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	rows, err := tx.Query(
 		"SELECT blocked_id FROM blocks WHERE blocker_id = ?", task.ID,
 	)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var unblockedIDs []int64
 	for rows.Next() {
 		var blockedID int64
 		if err := rows.Scan(&blockedID); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, false, err
 		}
 		unblockedIDs = append(unblockedIDs, blockedID)
 	}
@@ -223,24 +223,24 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 
 	if len(unblockedIDs) > 0 {
 		if _, err := tx.Exec("DELETE FROM blocks WHERE blocker_id = ?", task.ID); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, blockedID := range unblockedIDs {
 			var blockedShortID string
 			if err := tx.QueryRow("SELECT short_id FROM tasks WHERE id = ?", blockedID).Scan(&blockedShortID); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if err := recordEvent(tx, blockedID, "unblocked", map[string]any{
 				"blocked_id": blockedShortID,
 				"blocker_id": shortID,
 				"reason":     "blocker_done",
 			}); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 		}
 	}
 
-	return forceClosedShortIDs, tx.Commit()
+	return forceClosedShortIDs, false, tx.Commit()
 }
 
 func runReopen(db *sql.DB, shortID string) ([]string, error) {

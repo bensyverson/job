@@ -315,3 +315,61 @@ func childShortIDs(tx dbtx, parentID int64) ([]string, error) {
 	}
 	return ids, rows.Err()
 }
+
+func getEventsForTaskTree(db *sql.DB, shortID string) ([]EventEntry, error) {
+	rows, err := db.Query(`
+		WITH RECURSIVE tree AS (
+			SELECT id FROM tasks WHERE short_id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
+		)
+		SELECT e.id, e.task_id, t.short_id, e.event_type, e.detail, e.created_at
+		FROM events e
+		JOIN tasks t ON t.id = e.task_id
+		WHERE e.task_id IN (SELECT id FROM tree)
+		ORDER BY e.created_at, e.id
+	`, shortID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []EventEntry
+	for rows.Next() {
+		var e EventEntry
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Detail, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+func getEventsAfterID(db *sql.DB, shortID string, afterID int64) ([]EventEntry, error) {
+	rows, err := db.Query(`
+		WITH RECURSIVE tree AS (
+			SELECT id FROM tasks WHERE short_id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
+		)
+		SELECT e.id, e.task_id, t.short_id, e.event_type, e.detail, e.created_at
+		FROM events e
+		JOIN tasks t ON t.id = e.task_id
+		WHERE e.task_id IN (SELECT id FROM tree) AND e.id > ?
+		ORDER BY e.created_at, e.id
+	`, shortID, afterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []EventEntry
+	for rows.Next() {
+		var e EventEntry
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Detail, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}

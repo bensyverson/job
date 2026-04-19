@@ -1,7 +1,7 @@
 # Jobs: A Lightweight CLI Task Manager
 
 **Date:** 2026-04-18
-**Status:** Phase 3 complete
+**Status:** Phase 4 complete
 
 ---
 
@@ -601,6 +601,7 @@ Jobs/
 ├── tasks.go                         # task CRUD: add, list, done, reopen, edit, note, remove, move, info
 ├── blocks.go                        # block/unblock, cycle detection, getBlockers
 ├── claims.go                        # claim/release, next/claim-next, duration parsing, claim expiry
+├── events.go                        # log/tail: event streaming and history queries
 ├── commands.go                      # cobra command definitions and CLI wiring
 ├── format.go                        # output formatting (markdown, JSON)
 ├── database_test.go                 # all tests
@@ -739,27 +740,41 @@ Circular dependency check (when adding a block): walk the `blocks` graph followi
 
 ---
 
-### Phase 4: Event Stream & Polish
+### Phase 4: Event Stream & Polish ✅
 
 **Goal:** Full observability, help text, edge case handling, testing.
 
-**Scope:**
-- `job log <id>` — full event history with formatted output
-- `job tail <id>` — real-time event streaming (poll-based)
-- `--format=json` on `log` and `tail`
-- Comprehensive help text for all commands (`--help`)
-- Edge case handling:
-  - `done` on already-done task
-  - `reopen` on available task
-  - `claim` on done task
-  - `blocks` with invalid IDs
-  - `move` across parents
-  - `remove` root task with children
-  - `done` on blocked task (should succeed — blocking is a property of the *blocked* task, not the blocker)
-- Unit tests for core logic (ID generation, claim parsing, blocking queries)
-- Integration tests (end-to-end CLI tests)
+**Status:** Complete.
 
-**Test:** After this phase, the tool is feature-complete and documented.
+**What was built:**
+- `events.go`: `runLog` and `runTail` business logic, event query helpers
+- `job log <id>` — full event history for a task and its descendants, formatted as markdown or JSON
+- `job tail <id>` — real-time event streaming with 1-second polling, markdown or JSON output
+- `--format=json` on `log` and `tail`
+- `getEventsForTaskTree(db, shortID)` — recursive CTE query for task + descendant events
+- `getEventsAfterID(db, shortID, afterID)` — incremental event query for tail
+- `renderEventLogMarkdown` — human-readable event formatting matching doc spec
+- `formatEventLogJSON` — machine-readable event output
+- `EventEntry` type in `models.go` — event with resolved short_id
+- Comprehensive `Long` help text for all 18 commands
+- Edge case handling:
+  - `done` on already-done task → idempotent (returns "Already done: X")
+  - `done` on blocked task → succeeds (blocking is a property of the blocked task)
+  - `reopen` on available task → error (already open)
+  - `claim` on done task → error
+  - `blocks` with invalid IDs → error
+  - `move` across parents → error
+  - `remove` root task with children → error with hint
+- Bugfix: `formatTimestamp` was ignoring its `unix` parameter and formatting current time
+- 122 tests, all passing
+
+**Deviations from plan:**
+- `runDone` signature changed from `([]string, error)` to `([]string, bool, error)` — the bool indicates whether the task was already done, enabling idempotent behavior without recording duplicate events.
+- Integration tests (end-to-end CLI tests) were deferred. The event formatting functions are tested at the unit level, and the CLI was smoke-tested manually.
+
+**Notes:**
+- `runTail` accepts a `context.Context` for cancellation and a configurable poll interval (defaults to 1 second in the CLI). The callback-based design makes it testable without mocking stdin/signals.
+- Event log formatting produces human-readable descriptions for all 12 event types: created, claimed, released, claim_expired, done, reopened, noted, edited, blocked, unblocked, moved, removed.
 
 ---
 

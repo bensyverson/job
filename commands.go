@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -36,6 +38,8 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newReleaseCmd())
 	cmd.AddCommand(newNextCmd())
 	cmd.AddCommand(newClaimNextCmd())
+	cmd.AddCommand(newLogCmd())
+	cmd.AddCommand(newTailCmd())
 	return cmd
 }
 
@@ -52,6 +56,7 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new Jobs database",
+		Long:  "Initialize a new .jobs.db in the current directory. Errors if one already exists unless --force is used.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := resolveDBPath(dbPath)
@@ -84,6 +89,7 @@ func newAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add [parent] <title>",
 		Short: "Add a new task",
+		Long:  "Add a new task. If parent is provided, the task is added as a child. Use --desc for a description and --before to insert before a specific sibling.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -118,6 +124,7 @@ func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [parent] [all]",
 		Short: "List tasks",
+		Long:  "List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks. Use 'all' to include done, claimed, and blocked tasks. Use --format=json for machine-readable output.",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -195,6 +202,7 @@ func newDoneCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "done <id> [note]",
 		Short: "Mark a task as done",
+		Long:  "Mark a task as done. Requires all subtasks to be done unless --force is used. An optional note is recorded (e.g. a git commit hash). Idempotent: already-done tasks report success.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -209,12 +217,14 @@ func newDoneCmd() *cobra.Command {
 				note = args[1]
 			}
 
-			forced, err := runDone(db, shortID, force, note)
+			forced, alreadyDone, err := runDone(db, shortID, force, note)
 			if err != nil {
 				return err
 			}
 
-			if len(forced) > 0 {
+			if alreadyDone {
+				fmt.Fprintf(cmd.OutOrStdout(), "Already done: %s\n", shortID)
+			} else if len(forced) > 0 {
 				fmt.Fprintf(cmd.OutOrStdout(), "Done: %s (and %d subtasks)\n", shortID, len(forced))
 			} else {
 				if note != "" {
@@ -234,6 +244,7 @@ func newReopenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reopen <id>",
 		Short: "Reopen a completed task",
+		Long:  "Reopen a completed task, setting it back to available. If closed with --force, also reopens all force-closed descendants.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -262,6 +273,7 @@ func newEditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <id> <title>",
 		Short: "Change a task's title",
+		Long:  "Change a task's title to the provided value.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -284,6 +296,7 @@ func newNoteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "note <id> <text>",
 		Short: "Append a note to a task's description",
+		Long:  "Append text to a task's description, prefixed with a timestamp. The description becomes an append-only scratchpad for progress notes.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -307,6 +320,7 @@ func newRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <id> [all]",
 		Short: "Remove a task",
+		Long:  "Soft-delete a task. Requires interactive confirmation unless --force is used. If the task has children, specify 'all' to remove them as well.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -357,6 +371,7 @@ func newMoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "move <id> before|after <sibling>",
 		Short: "Move a task relative to a sibling",
+		Long:  "Move a task before or after a sibling task. Both tasks must share the same parent.",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -385,6 +400,7 @@ func newInfoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "info <id>",
 		Short: "Show full details of a task",
+		Long:  "Show ID, title, description, status, claim info, blockers, children summary, and creation time. Use --format=json for machine-readable output.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -415,6 +431,7 @@ func newBlockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "block <blocked> by <blocker>",
 		Short: "Block a task until another is complete",
+		Long:  "Declare that the blocked task cannot proceed until the blocker task is done. Circular dependencies are detected and rejected.",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -441,6 +458,7 @@ func newUnblockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unblock <blocked> from <blocker>",
 		Short: "Remove a blocking relationship",
+		Long:  "Manually remove a blocking relationship. Blocking relationships are also auto-removed when the blocker task is marked done.",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -468,6 +486,7 @@ func newClaimCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim <id> [duration] [by <who>]",
 		Short: "Claim a task",
+		Long:  "Claim a task, marking it as in-progress. Duration defaults to 1h. Supported units: s, m, h, d. Use --force to override an existing claim.",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -516,6 +535,7 @@ func newReleaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "release <id>",
 		Short: "Release a claimed task",
+		Long:  "Release a claim, returning the task to available status.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -539,6 +559,7 @@ func newNextCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "next [parent]",
 		Short: "Show the next available task",
+		Long:  "Show the next available (unblocked, unclaimed, not done) task. Without a parent, searches root-level tasks. Use --format=json for machine-readable output.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -576,6 +597,7 @@ func newClaimNextCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim-next [parent] [duration] [by <who>]",
 		Short: "Find and claim the next available task",
+		Long:  "Find the next available task and claim it in one step. Without a parent, searches root-level tasks.",
 		Args:  cobra.MaximumNArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -620,6 +642,94 @@ func newClaimNextCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "override an existing claim")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
+func newLogCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "log <id>",
+		Short: "Show event history for a task and its descendants",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			events, err := runLog(db, args[0])
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				b, err := formatEventLogJSON(events)
+				if err != nil {
+					return err
+				}
+				cmd.OutOrStdout().Write(b)
+				fmt.Fprintln(cmd.OutOrStdout())
+			} else {
+				renderEventLogMarkdown(cmd.OutOrStdout(), events)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
+func newTailCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "tail <id>",
+		Short: "Stream events in real-time for a task and its descendants",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			shortID := args[0]
+			task, err := getTaskByShortID(db, shortID)
+			if err != nil {
+				return err
+			}
+			if task == nil {
+				return fmt.Errorf("task %q not found", shortID)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Tailing events for %s (Ctrl+C to stop)...\n", shortID)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			go func() {
+				<-cmd.Context().Done()
+				cancel()
+			}()
+
+			return runTail(ctx, db, shortID, 1*time.Second, func(events []EventEntry) error {
+				if format == "json" {
+					for _, e := range events {
+						b, err := formatEventLogJSON([]EventEntry{e})
+						if err != nil {
+							return err
+						}
+						cmd.OutOrStdout().Write(b)
+						fmt.Fprintln(cmd.OutOrStdout())
+					}
+				} else {
+					renderEventLogMarkdown(cmd.OutOrStdout(), events)
+				}
+				return nil
+			})
+		},
+	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
 }

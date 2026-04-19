@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 type taskNodeJSON struct {
@@ -170,7 +171,7 @@ func renderInfoJSON(w io.Writer, info *TaskInfo) {
 }
 
 func formatTimestamp(unix int64) string {
-	return currentNowFunc().Format("2006-01-02 15:04")
+	return time.Unix(unix, 0).Format("2006-01-02 15:04")
 }
 
 func renderTaskJSON(w io.Writer, task *Task) {
@@ -191,4 +192,176 @@ func renderNextText(w io.Writer, task *Task) {
 	if task.Description != "" {
 		fmt.Fprintf(w, "\n  %s\n", task.Description)
 	}
+}
+
+func renderEventLogMarkdown(w io.Writer, events []EventEntry) {
+	for _, e := range events {
+		ts := formatTimestamp(e.CreatedAt)
+		desc := formatEventDescription(e.EventType, e.Detail)
+		fmt.Fprintf(w, "[%s] %s %s\n", ts, e.ShortID, desc)
+	}
+}
+
+func formatEventDescription(eventType, detailJSON string) string {
+	var detail map[string]any
+	if detailJSON != "" {
+		json.Unmarshal([]byte(detailJSON), &detail)
+	}
+
+	switch eventType {
+	case "created":
+		title := ""
+		if detail != nil {
+			if t, ok := detail["title"].(string); ok {
+				title = t
+			}
+		}
+		return fmt.Sprintf("created: %q", title)
+	case "claimed":
+		by := ""
+		dur := "1h"
+		if detail != nil {
+			if b, ok := detail["by"].(string); ok && b != "" {
+				by = " by " + b
+			}
+			if d, ok := detail["duration"].(string); ok && d != "" {
+				dur = d
+			}
+		}
+		return fmt.Sprintf("claimed%s (%s)", by, dur)
+	case "released":
+		wasBy := ""
+		if detail != nil {
+			if w, ok := detail["was_claimed_by"].(string); ok && w != "" {
+				wasBy = " (was claimed by " + w + ")"
+			}
+		}
+		return fmt.Sprintf("released%s", wasBy)
+	case "claim_expired":
+		wasBy := ""
+		if detail != nil {
+			if w, ok := detail["was_claimed_by"].(string); ok && w != "" {
+				wasBy = " (was claimed by " + w + ")"
+			}
+		}
+		return fmt.Sprintf("claim expired%s", wasBy)
+	case "done":
+		parts := []string{"done"}
+		force := false
+		if detail != nil {
+			if f, ok := detail["force"].(bool); ok && f {
+				force = true
+			}
+			if note, ok := detail["note"].(string); ok && note != "" {
+				parts = append(parts, "note: "+note)
+			}
+			if children, ok := detail["force_closed_children"].([]any); ok && len(children) > 0 {
+				parts = append(parts, fmt.Sprintf("and %d subtasks", len(children)))
+			}
+		}
+		if force {
+			parts[0] = "done --force"
+		}
+		return strings.Join(parts, " (") + strings.Repeat(")", len(parts)-1)
+	case "reopened":
+		if detail != nil {
+			if children, ok := detail["reopened_children"].([]any); ok && len(children) > 0 {
+				return fmt.Sprintf("reopened (and %d subtasks)", len(children))
+			}
+		}
+		return "reopened"
+	case "noted":
+		text := ""
+		if detail != nil {
+			if t, ok := detail["text"].(string); ok {
+				text = t
+			}
+		}
+		return fmt.Sprintf("noted: %q", text)
+	case "edited":
+		oldTitle := ""
+		newTitle := ""
+		if detail != nil {
+			if o, ok := detail["old_title"].(string); ok {
+				oldTitle = o
+			}
+			if n, ok := detail["new_title"].(string); ok {
+				newTitle = n
+			}
+		}
+		return fmt.Sprintf("edited: %q -> %q", oldTitle, newTitle)
+	case "blocked":
+		blockerID := ""
+		if detail != nil {
+			if b, ok := detail["blocker_id"].(string); ok {
+				blockerID = b
+			}
+		}
+		return fmt.Sprintf("blocked by %s", blockerID)
+	case "unblocked":
+		blockerID := ""
+		reason := ""
+		if detail != nil {
+			if b, ok := detail["blocker_id"].(string); ok {
+				blockerID = b
+			}
+			if r, ok := detail["reason"].(string); ok {
+				reason = " (" + r + ")"
+			}
+		}
+		return fmt.Sprintf("unblocked from %s%s", blockerID, reason)
+	case "moved":
+		direction := ""
+		relativeTo := ""
+		if detail != nil {
+			if d, ok := detail["direction"].(string); ok {
+				direction = d
+			}
+			if r, ok := detail["relative_to"].(string); ok {
+				relativeTo = r
+			}
+		}
+		return fmt.Sprintf("moved %s %s", direction, relativeTo)
+	case "removed":
+		parts := []string{"removed"}
+		if detail != nil {
+			if children, ok := detail["children_removed"].([]any); ok && len(children) > 0 {
+				parts = append(parts, fmt.Sprintf("and %d subtasks", len(children)))
+			}
+		}
+		return strings.Join(parts, " (") + strings.Repeat(")", len(parts)-1)
+	default:
+		return eventType
+	}
+}
+
+type eventJSON struct {
+	ID        int64  `json:"id"`
+	TaskID    int64  `json:"task_id"`
+	ShortID   string `json:"short_id"`
+	EventType string `json:"event_type"`
+	Detail    any    `json:"detail"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+func formatEventLogJSON(events []EventEntry) ([]byte, error) {
+	var result []eventJSON
+	for _, e := range events {
+		var detail any
+		if e.Detail != "" {
+			var parsed any
+			if err := json.Unmarshal([]byte(e.Detail), &parsed); err == nil {
+				detail = parsed
+			}
+		}
+		result = append(result, eventJSON{
+			ID:        e.ID,
+			TaskID:    e.TaskID,
+			ShortID:   e.ShortID,
+			EventType: e.EventType,
+			Detail:    detail,
+			CreatedAt: e.CreatedAt,
+		})
+	}
+	return json.MarshalIndent(result, "", "  ")
 }

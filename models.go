@@ -26,6 +26,15 @@ type Event struct {
 	CreatedAt int64
 }
 
+type EventEntry struct {
+	ID        int64
+	TaskID    int64
+	ShortID   string
+	EventType string
+	Detail    string
+	CreatedAt int64
+}
+
 type TaskNode struct {
 	Task     *Task
 	Children []*TaskNode

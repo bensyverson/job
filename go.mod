@@ -1,4 +1,4 @@
-module jobs
+module github.com/bensyverson/job
 
 go 1.26.2
 

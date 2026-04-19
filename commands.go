@@ -21,7 +21,7 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	cmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to jobs database (default: .jobs.db)")
+	cmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to job database (default: .jobs.db)")
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newAddCmd())
 	cmd.AddCommand(newListCmd())
@@ -46,7 +46,7 @@ func newRootCmd() *cobra.Command {
 func openDBFromCmd() (*sql.DB, error) {
 	path := resolveDBPath(dbPath)
 	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("no Jobs database found in %s. Run `job init` or specify a database with --db", path)
+		return nil, fmt.Errorf("no job database found in %s. Run `job init` or specify a database with --db", path)
 	}
 	return openDB(path)
 }
@@ -55,7 +55,7 @@ func newInitCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new Jobs database",
+		Short: "Initialize a new job database",
 		Long:  "Initialize a new .jobs.db in the current directory. Errors if one already exists unless --force is used.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

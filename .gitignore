@@ -1,0 +1,11 @@
+# Binaries
+/job
+
+# Database
+.jobs.db
+
+# Go
+vendor/
+
+# OS
+.DS_Store

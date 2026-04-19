@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -1127,5 +1128,736 @@ func TestRunInfo_NotFound(t *testing.T) {
 	_, err := runInfo(db, "noExs")
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
+	}
+}
+
+// --- Duration parsing ---
+
+func TestParseDuration_Seconds(t *testing.T) {
+	got, err := parseDuration("45s")
+	if err != nil {
+		t.Fatalf("parseDuration: %v", err)
+	}
+	if got != 45 {
+		t.Errorf("got %d, want 45", got)
+	}
+}
+
+func TestParseDuration_Minutes(t *testing.T) {
+	got, err := parseDuration("30m")
+	if err != nil {
+		t.Fatalf("parseDuration: %v", err)
+	}
+	if got != 1800 {
+		t.Errorf("got %d, want 1800", got)
+	}
+}
+
+func TestParseDuration_Hours(t *testing.T) {
+	got, err := parseDuration("4h")
+	if err != nil {
+		t.Fatalf("parseDuration: %v", err)
+	}
+	if got != 14400 {
+		t.Errorf("got %d, want 14400", got)
+	}
+}
+
+func TestParseDuration_Days(t *testing.T) {
+	got, err := parseDuration("2d")
+	if err != nil {
+		t.Fatalf("parseDuration: %v", err)
+	}
+	if got != 172800 {
+		t.Errorf("got %d, want 172800", got)
+	}
+}
+
+func TestParseDuration_Default(t *testing.T) {
+	got, err := parseDuration("")
+	if err != nil {
+		t.Fatalf("parseDuration: %v", err)
+	}
+	if got != 3600 {
+		t.Errorf("got %d, want 3600 (1h default)", got)
+	}
+}
+
+func TestParseDuration_InvalidUnit(t *testing.T) {
+	_, err := parseDuration("5x")
+	if err == nil {
+		t.Fatal("expected error for invalid unit")
+	}
+}
+
+func TestParseDuration_NoNumber(t *testing.T) {
+	_, err := parseDuration("h")
+	if err == nil {
+		t.Fatal("expected error for missing number")
+	}
+}
+
+// --- Claim ---
+
+func mustClaim(t *testing.T, db *sql.DB, shortID, duration, who string) {
+	t.Helper()
+	if err := runClaim(db, shortID, duration, who, false); err != nil {
+		t.Fatalf("claim %s: %v", shortID, err)
+	}
+}
+
+func TestRunClaim_Basic(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runClaim(db, id, "", "", false); err != nil {
+		t.Fatalf("runClaim: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Status != "claimed" {
+		t.Errorf("status: got %q, want %q", task.Status, "claimed")
+	}
+	if task.ClaimedBy != nil {
+		t.Errorf("claimed_by: got %q, want nil", *task.ClaimedBy)
+	}
+	if task.ClaimExpiresAt == nil {
+		t.Fatal("claim_expires_at: got nil, want non-nil")
+	}
+}
+
+func TestRunClaim_WithDuration(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runClaim(db, id, "4h", "", false); err != nil {
+		t.Fatalf("runClaim: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Status != "claimed" {
+		t.Errorf("status: got %q, want %q", task.Status, "claimed")
+	}
+}
+
+func TestRunClaim_WithWho(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runClaim(db, id, "", "Jesse", false); err != nil {
+		t.Fatalf("runClaim: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.ClaimedBy == nil || *task.ClaimedBy != "Jesse" {
+		t.Errorf("claimed_by: got %v, want %q", task.ClaimedBy, "Jesse")
+	}
+}
+
+func TestRunClaim_WithDurationAndWho(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runClaim(db, id, "4h", "Jesse", false); err != nil {
+		t.Fatalf("runClaim: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.ClaimedBy == nil || *task.ClaimedBy != "Jesse" {
+		t.Errorf("claimed_by: got %v, want %q", task.ClaimedBy, "Jesse")
+	}
+}
+
+func TestRunClaim_AlreadyClaimed(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	mustClaim(t, db, id, "", "Jesse")
+
+	err := runClaim(db, id, "", "", false)
+	if err == nil {
+		t.Fatal("expected error when claiming already-claimed task")
+	}
+	if !strings.Contains(err.Error(), "already claimed") {
+		t.Errorf("error should mention already claimed: %v", err)
+	}
+}
+
+func TestRunClaim_ForceOverride(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	mustClaim(t, db, id, "", "Jesse")
+
+	if err := runClaim(db, id, "1h", "Agent-1", true); err != nil {
+		t.Fatalf("runClaim --force: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.ClaimedBy == nil || *task.ClaimedBy != "Agent-1" {
+		t.Errorf("claimed_by: got %v, want %q", task.ClaimedBy, "Agent-1")
+	}
+}
+
+func TestRunClaim_DoneTask(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	mustDone(t, db, id)
+
+	err := runClaim(db, id, "", "", false)
+	if err == nil {
+		t.Fatal("expected error when claiming done task")
+	}
+}
+
+func TestRunClaim_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	err := runClaim(db, "noExs", "", "", false)
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+func TestRunClaim_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runClaim(db, id, "4h", "Jesse", false); err != nil {
+		t.Fatalf("runClaim: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	detail, err := getLatestEventDetail(db, task.ID, "claimed")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected claimed event")
+	}
+	if detail["by"] != "Jesse" {
+		t.Errorf("by: got %v, want %q", detail["by"], "Jesse")
+	}
+	if detail["duration"] != "4h" {
+		t.Errorf("duration: got %v, want %q", detail["duration"], "4h")
+	}
+	if detail["expires_at"] == nil {
+		t.Error("expires_at should not be nil")
+	}
+}
+
+func TestRunClaim_ExpiredClaimCanBeReclaimed(t *testing.T) {
+	origNow := currentNowFunc
+	defer func() { currentNowFunc = origNow }()
+
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	baseTime := time.Now()
+	currentNowFunc = func() time.Time { return baseTime }
+	mustClaim(t, db, id, "1h", "Jesse")
+
+	currentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
+
+	if err := runClaim(db, id, "1h", "Agent-1", false); err != nil {
+		t.Fatalf("runClaim after expiry: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.ClaimedBy == nil || *task.ClaimedBy != "Agent-1" {
+		t.Errorf("claimed_by: got %v, want %q", task.ClaimedBy, "Agent-1")
+	}
+}
+
+// --- Release ---
+
+func TestRunRelease_ClaimedTask(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	mustClaim(t, db, id, "", "Jesse")
+
+	if err := runRelease(db, id); err != nil {
+		t.Fatalf("runRelease: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Status != "available" {
+		t.Errorf("status: got %q, want %q", task.Status, "available")
+	}
+	if task.ClaimedBy != nil {
+		t.Errorf("claimed_by: got %q, want nil", *task.ClaimedBy)
+	}
+	if task.ClaimExpiresAt != nil {
+		t.Errorf("claim_expires_at: got %d, want nil", *task.ClaimExpiresAt)
+	}
+}
+
+func TestRunRelease_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	mustClaim(t, db, id, "", "Jesse")
+
+	if err := runRelease(db, id); err != nil {
+		t.Fatalf("runRelease: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	detail, err := getLatestEventDetail(db, task.ID, "released")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected released event")
+	}
+	if detail["was_claimed_by"] != "Jesse" {
+		t.Errorf("was_claimed_by: got %v, want %q", detail["was_claimed_by"], "Jesse")
+	}
+}
+
+func TestRunRelease_NotClaimed(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	err := runRelease(db, id)
+	if err == nil {
+		t.Fatal("expected error when releasing unclaimed task")
+	}
+}
+
+func TestRunRelease_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	err := runRelease(db, "noExs")
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+// --- Claim expiry ---
+
+func TestExpireStaleClaims_ExpiredClaimReset(t *testing.T) {
+	origNow := currentNowFunc
+	defer func() { currentNowFunc = origNow }()
+
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	baseTime := time.Now()
+	currentNowFunc = func() time.Time { return baseTime }
+	mustClaim(t, db, id, "1h", "Jesse")
+
+	currentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
+	if err := expireStaleClaims(db); err != nil {
+		t.Fatalf("expireStaleClaims: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Status != "available" {
+		t.Errorf("status after expiry: got %q, want %q", task.Status, "available")
+	}
+	if task.ClaimedBy != nil {
+		t.Errorf("claimed_by after expiry: got %q, want nil", *task.ClaimedBy)
+	}
+}
+
+func TestExpireStaleClaims_RecordsEvent(t *testing.T) {
+	origNow := currentNowFunc
+	defer func() { currentNowFunc = origNow }()
+
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	baseTime := time.Now()
+	currentNowFunc = func() time.Time { return baseTime }
+	mustClaim(t, db, id, "1h", "Jesse")
+
+	currentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
+	if err := expireStaleClaims(db); err != nil {
+		t.Fatalf("expireStaleClaims: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	detail, err := getLatestEventDetail(db, task.ID, "claim_expired")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected claim_expired event")
+	}
+	if detail["was_claimed_by"] != "Jesse" {
+		t.Errorf("was_claimed_by: got %v, want %q", detail["was_claimed_by"], "Jesse")
+	}
+}
+
+func TestExpireStaleClaims_ActiveClaimNotExpired(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	mustClaim(t, db, id, "4h", "Jesse")
+
+	if err := expireStaleClaims(db); err != nil {
+		t.Fatalf("expireStaleClaims: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Status != "claimed" {
+		t.Errorf("status: got %q, want %q", task.Status, "claimed")
+	}
+}
+
+// --- Next ---
+
+func TestRunNext_WithParent(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid1 := mustAdd(t, db, pid, "First child")
+	mustAdd(t, db, pid, "Second child")
+
+	task, err := runNext(db, pid)
+	if err != nil {
+		t.Fatalf("runNext: %v", err)
+	}
+	if task.ShortID != cid1 {
+		t.Errorf("got %s, want %s (lowest sort_order)", task.ShortID, cid1)
+	}
+}
+
+func TestRunNext_NoParent(t *testing.T) {
+	db := setupTestDB(t)
+	id1 := mustAdd(t, db, "", "First root")
+	mustAdd(t, db, "", "Second root")
+
+	task, err := runNext(db, "")
+	if err != nil {
+		t.Fatalf("runNext: %v", err)
+	}
+	if task.ShortID != id1 {
+		t.Errorf("got %s, want %s", task.ShortID, id1)
+	}
+}
+
+func TestRunNext_NoAvailable(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Child")
+	mustDone(t, db, cid)
+
+	_, err := runNext(db, pid)
+	if err == nil {
+		t.Fatal("expected error when no tasks available")
+	}
+}
+
+func TestRunNext_SkipsBlocked(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid1 := mustAdd(t, db, pid, "Blocked child")
+	cid2 := mustAdd(t, db, pid, "Available child")
+	blocker := mustAdd(t, db, "", "Blocker")
+	if err := runBlock(db, cid1, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	task, err := runNext(db, pid)
+	if err != nil {
+		t.Fatalf("runNext: %v", err)
+	}
+	if task.ShortID != cid2 {
+		t.Errorf("got %s, want %s (should skip blocked)", task.ShortID, cid2)
+	}
+}
+
+func TestRunNext_SkipsClaimed(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid1 := mustAdd(t, db, pid, "Claimed child")
+	cid2 := mustAdd(t, db, pid, "Available child")
+	mustClaim(t, db, cid1, "", "Jesse")
+
+	task, err := runNext(db, pid)
+	if err != nil {
+		t.Fatalf("runNext: %v", err)
+	}
+	if task.ShortID != cid2 {
+		t.Errorf("got %s, want %s (should skip claimed)", task.ShortID, cid2)
+	}
+}
+
+func TestRunNext_SkipsDone(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid1 := mustAdd(t, db, pid, "Done child")
+	cid2 := mustAdd(t, db, pid, "Available child")
+	mustDone(t, db, cid1)
+
+	task, err := runNext(db, pid)
+	if err != nil {
+		t.Fatalf("runNext: %v", err)
+	}
+	if task.ShortID != cid2 {
+		t.Errorf("got %s, want %s (should skip done)", task.ShortID, cid2)
+	}
+}
+
+func TestRunNext_ParentNotFound(t *testing.T) {
+	db := setupTestDB(t)
+	_, err := runNext(db, "noExs")
+	if err == nil {
+		t.Fatal("expected error for non-existent parent")
+	}
+}
+
+func TestRunNext_NoAvailableAtRoot(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Done root")
+	mustDone(t, db, id)
+
+	_, err := runNext(db, "")
+	if err == nil {
+		t.Fatal("expected error when no root tasks available")
+	}
+}
+
+// --- ClaimNext ---
+
+func TestRunClaimNext_WithParent(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Available child")
+
+	task, err := runClaimNext(db, pid, "", "", false)
+	if err != nil {
+		t.Fatalf("runClaimNext: %v", err)
+	}
+	if task.ShortID != cid {
+		t.Errorf("got %s, want %s", task.ShortID, cid)
+	}
+
+	updated := mustGet(t, db, cid)
+	if updated.Status != "claimed" {
+		t.Errorf("status: got %q, want %q", updated.Status, "claimed")
+	}
+}
+
+func TestRunClaimNext_NoParent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Root task")
+
+	task, err := runClaimNext(db, "", "", "", false)
+	if err != nil {
+		t.Fatalf("runClaimNext: %v", err)
+	}
+	if task.ShortID != id {
+		t.Errorf("got %s, want %s", task.ShortID, id)
+	}
+}
+
+func TestRunClaimNext_WithDurationAndWho(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Available child")
+
+	task, err := runClaimNext(db, pid, "4h", "Jesse", false)
+	if err != nil {
+		t.Fatalf("runClaimNext: %v", err)
+	}
+	if task.ShortID != cid {
+		t.Errorf("got %s, want %s", task.ShortID, cid)
+	}
+
+	updated := mustGet(t, db, cid)
+	if updated.ClaimedBy == nil || *updated.ClaimedBy != "Jesse" {
+		t.Errorf("claimed_by: got %v, want %q", updated.ClaimedBy, "Jesse")
+	}
+}
+
+func TestRunClaimNext_NoAvailable(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Done child")
+	mustDone(t, db, cid)
+
+	_, err := runClaimNext(db, pid, "", "", false)
+	if err == nil {
+		t.Fatal("expected error when no tasks available")
+	}
+}
+
+func TestRunClaimNext_SkipsBlocked(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid1 := mustAdd(t, db, pid, "Blocked child")
+	cid2 := mustAdd(t, db, pid, "Available child")
+	blocker := mustAdd(t, db, "", "Blocker")
+	if err := runBlock(db, cid1, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	task, err := runClaimNext(db, pid, "", "", false)
+	if err != nil {
+		t.Fatalf("runClaimNext: %v", err)
+	}
+	if task.ShortID != cid2 {
+		t.Errorf("got %s, want %s (should skip blocked)", task.ShortID, cid2)
+	}
+}
+
+func TestRunClaimNext_RecordsClaimedEvent(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Available child")
+
+	if _, err := runClaimNext(db, pid, "2h", "Jesse", false); err != nil {
+		t.Fatalf("runClaimNext: %v", err)
+	}
+
+	task := mustGet(t, db, cid)
+	detail, err := getLatestEventDetail(db, task.ID, "claimed")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected claimed event")
+	}
+	if detail["by"] != "Jesse" {
+		t.Errorf("by: got %v, want %q", detail["by"], "Jesse")
+	}
+}
+
+func TestRunClaimNext_ParentNotFound(t *testing.T) {
+	db := setupTestDB(t)
+	_, err := runClaimNext(db, "noExs", "", "", false)
+	if err == nil {
+		t.Fatal("expected error for non-existent parent")
+	}
+}
+
+// --- Auto-unblock on done ---
+
+func TestRunDone_AutoUnblocks(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	mustDone(t, db, blocker)
+
+	blockers, err := getBlockers(db, blocked)
+	if err != nil {
+		t.Fatalf("getBlockers: %v", err)
+	}
+	if len(blockers) != 0 {
+		t.Errorf("expected no blockers after blocker done, got %d", len(blockers))
+	}
+}
+
+func TestRunDone_RecordsUnblockedEvent(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	mustDone(t, db, blocker)
+
+	blockedTask := mustGet(t, db, blocked)
+	detail, err := getLatestEventDetail(db, blockedTask.ID, "unblocked")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected unblocked event")
+	}
+	if detail["reason"] != "blocker_done" {
+		t.Errorf("reason: got %v, want %q", detail["reason"], "blocker_done")
+	}
+}
+
+// --- List excludes blocked/claimed ---
+
+func TestRunList_ExcludesBlockedTasks(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	nodes, err := runList(db, "", false)
+	if err != nil {
+		t.Fatalf("runList: %v", err)
+	}
+
+	for _, node := range nodes {
+		if node.Task.ShortID == blocked {
+			t.Error("blocked task should not appear in default list")
+		}
+	}
+}
+
+func TestRunList_AllIncludesBlocked(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	nodes, err := runList(db, "", true)
+	if err != nil {
+		t.Fatalf("runList: %v", err)
+	}
+
+	found := false
+	for _, node := range nodes {
+		if node.Task.ShortID == blocked {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("blocked task should appear in 'list all'")
+	}
+}
+
+func TestRunList_ExcludesClaimedTasks(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Claimed task")
+	mustClaim(t, db, id, "4h", "Jesse")
+
+	nodes, err := runList(db, "", false)
+	if err != nil {
+		t.Fatalf("runList: %v", err)
+	}
+
+	for _, node := range nodes {
+		if node.Task.ShortID == id {
+			t.Error("claimed task should not appear in default list")
+		}
+	}
+}
+
+func TestRunList_ExpiredClaimShowsAsAvailable(t *testing.T) {
+	origNow := currentNowFunc
+	defer func() { currentNowFunc = origNow }()
+
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	baseTime := time.Now()
+	currentNowFunc = func() time.Time { return baseTime }
+	mustClaim(t, db, id, "1h", "Jesse")
+
+	currentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
+
+	nodes, err := runList(db, "", false)
+	if err != nil {
+		t.Fatalf("runList: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node after expiry, got %d", len(nodes))
+	}
+	if nodes[0].Task.ShortID != id {
+		t.Errorf("got %s, want %s", nodes[0].Task.ShortID, id)
+	}
+	if nodes[0].Task.Status != "available" {
+		t.Errorf("status: got %q, want %q", nodes[0].Task.Status, "available")
 	}
 }

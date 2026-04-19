@@ -98,6 +98,10 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string) (strin
 }
 
 func runList(db *sql.DB, parentShortID string, showAll bool) ([]*TaskNode, error) {
+	if err := expireStaleClaims(db); err != nil {
+		return nil, err
+	}
+
 	tasks, err := loadAllTasks(db)
 	if err != nil {
 		return nil, err
@@ -113,7 +117,12 @@ func runList(db *sql.DB, parentShortID string, showAll bool) ([]*TaskNode, error
 		tree = parent.Children
 	}
 
-	return filterTree(tree, showAll), nil
+	blockedIDs, err := getBlockedTaskIDs(db)
+	if err != nil {
+		return nil, err
+	}
+
+	return filterTree(tree, showAll, blockedIDs), nil
 }
 
 func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, error) {
@@ -193,6 +202,42 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, err
 		"force_closed_children": forceClosedShortIDs,
 	}); err != nil {
 		return nil, err
+	}
+
+	rows, err := tx.Query(
+		"SELECT blocked_id FROM blocks WHERE blocker_id = ?", task.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	var unblockedIDs []int64
+	for rows.Next() {
+		var blockedID int64
+		if err := rows.Scan(&blockedID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		unblockedIDs = append(unblockedIDs, blockedID)
+	}
+	rows.Close()
+
+	if len(unblockedIDs) > 0 {
+		if _, err := tx.Exec("DELETE FROM blocks WHERE blocker_id = ?", task.ID); err != nil {
+			return nil, err
+		}
+		for _, blockedID := range unblockedIDs {
+			var blockedShortID string
+			if err := tx.QueryRow("SELECT short_id FROM tasks WHERE id = ?", blockedID).Scan(&blockedShortID); err != nil {
+				return nil, err
+			}
+			if err := recordEvent(tx, blockedID, "unblocked", map[string]any{
+				"blocked_id": blockedShortID,
+				"blocker_id": shortID,
+				"reason":     "blocker_done",
+			}); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return forceClosedShortIDs, tx.Commit()

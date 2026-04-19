@@ -98,6 +98,9 @@ func renderInfoMarkdown(w io.Writer, info *TaskInfo) {
 		fmt.Fprintf(w, "Description:  %s\n", info.Task.Description)
 	}
 	fmt.Fprintf(w, "Status:       %s\n", info.Task.Status)
+	if info.Task.Status == "claimed" {
+		fmt.Fprintf(w, "Claim:        %s\n", formatClaimExpires(info.Task.ClaimedBy, info.Task.ClaimExpiresAt))
+	}
 	if info.Parent != nil {
 		fmt.Fprintf(w, "Parent:       %s (%s)\n", info.Parent.ShortID, info.Parent.Title)
 	} else {
@@ -168,4 +171,24 @@ func renderInfoJSON(w io.Writer, info *TaskInfo) {
 
 func formatTimestamp(unix int64) string {
 	return currentNowFunc().Format("2006-01-02 15:04")
+}
+
+func renderTaskJSON(w io.Writer, task *Task) {
+	obj := taskNodeJSON{
+		ID:             task.ShortID,
+		Title:          task.Title,
+		Status:         task.Status,
+		Description:    task.Description,
+		ClaimedBy:      task.ClaimedBy,
+		ClaimExpiresAt: task.ClaimExpiresAt,
+	}
+	b, _ := json.MarshalIndent(obj, "", "  ")
+	w.Write(b)
+}
+
+func renderNextText(w io.Writer, task *Task) {
+	fmt.Fprintf(w, "%s  %s\n", task.ShortID, task.Title)
+	if task.Description != "" {
+		fmt.Fprintf(w, "\n  %s\n", task.Description)
+	}
 }

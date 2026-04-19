@@ -32,6 +32,10 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newInfoCmd())
 	cmd.AddCommand(newBlockCmd())
 	cmd.AddCommand(newUnblockCmd())
+	cmd.AddCommand(newClaimCmd())
+	cmd.AddCommand(newReleaseCmd())
+	cmd.AddCommand(newNextCmd())
+	cmd.AddCommand(newClaimNextCmd())
 	return cmd
 }
 
@@ -456,5 +460,166 @@ func newUnblockCmd() *cobra.Command {
 			return nil
 		},
 	}
+	return cmd
+}
+
+func newClaimCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "claim <id> [duration] [by <who>]",
+		Short: "Claim a task",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			shortID := args[0]
+			duration, who := parseDurationFromArgs(args[1:])
+
+			prevClaimedBy := ""
+			if force {
+				task, _ := getTaskByShortID(db, shortID)
+				if task != nil && task.Status == "claimed" && task.ClaimedBy != nil {
+					prevClaimedBy = *task.ClaimedBy
+				}
+			}
+
+			if err := runClaim(db, shortID, duration, who, force); err != nil {
+				return err
+			}
+
+			byStr := ""
+			if who != "" {
+				byStr = " by " + who
+			}
+			durStr := "1h"
+			if duration != "" {
+				durStr = duration
+			}
+
+			if force && prevClaimedBy != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s%s (overrode previous claim by %s, expires in %s)\n", shortID, byStr, prevClaimedBy, durStr)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s%s (expires in %s)\n", shortID, byStr, durStr)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "override an existing claim")
+	return cmd
+}
+
+func newReleaseCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "release <id>",
+		Short: "Release a claimed task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			if err := runRelease(db, args[0]); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Released: %s\n", args[0])
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newNextCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "next [parent]",
+		Short: "Show the next available task",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			var parentShortID string
+			if len(args) == 1 {
+				parentShortID = args[0]
+			}
+
+			task, err := runNext(db, parentShortID)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				renderTaskJSON(cmd.OutOrStdout(), task)
+				fmt.Fprintln(cmd.OutOrStdout())
+			} else {
+				renderNextText(cmd.OutOrStdout(), task)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
+func newClaimNextCmd() *cobra.Command {
+	var force bool
+	var format string
+	cmd := &cobra.Command{
+		Use:   "claim-next [parent] [duration] [by <who>]",
+		Short: "Find and claim the next available task",
+		Args:  cobra.MaximumNArgs(4),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			var parentShortID, duration, who string
+			if len(args) == 0 {
+				parentShortID, duration = "", ""
+			} else if isDuration(args[0]) {
+				duration, who = parseDurationFromArgs(args)
+			} else {
+				parentShortID = args[0]
+				duration, who = parseDurationFromArgs(args[1:])
+			}
+
+			task, err := runClaimNext(db, parentShortID, duration, who, force)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				renderTaskJSON(cmd.OutOrStdout(), task)
+				fmt.Fprintln(cmd.OutOrStdout())
+			} else {
+				byStr := ""
+				if task.ClaimedBy != nil {
+					byStr = " by " + *task.ClaimedBy
+				}
+				durStr := "1h"
+				if duration != "" {
+					durStr = duration
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q%s (expires in %s)\n", task.ShortID, task.Title, byStr, durStr)
+				if task.Description != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "\n  %s\n", task.Description)
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "override an existing claim")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
 }

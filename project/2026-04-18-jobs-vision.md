@@ -1,7 +1,7 @@
 # Jobs: A Lightweight CLI Task Manager
 
 **Date:** 2026-04-18
-**Status:** Phase 2 complete
+**Status:** Phase 3 complete
 
 ---
 
@@ -600,6 +600,7 @@ Jobs/
 ├── models.go                        # Task, Event, TaskNode, TaskInfo structs
 ├── tasks.go                         # task CRUD: add, list, done, reopen, edit, note, remove, move, info
 ├── blocks.go                        # block/unblock, cycle detection, getBlockers
+├── claims.go                        # claim/release, next/claim-next, duration parsing, claim expiry
 ├── commands.go                      # cobra command definitions and CLI wiring
 ├── format.go                        # output formatting (markdown, JSON)
 ├── database_test.go                 # all tests
@@ -704,28 +705,37 @@ Circular dependency check (when adding a block): walk the `blocks` graph followi
 
 ---
 
-### Phase 3: Claims & Blocking
+### Phase 3: Claims & Blocking ✅
 
 **Goal:** Full claiming and dependency management.
 
-**Scope:**
+**Status:** Complete.
+
+**What was built:**
+- `claims.go`: Duration parsing, claim/release/next/claim-next logic, stale claim expiry
 - `job claim <id> [duration] [by <who>] [--force]`
 - `job release <id>`
-- `job claim-next <parent> [duration] [by <who>]`
-- `job next <parent>`
-- Claim expiry (lazy detection on read)
-- Blocking relationship auto-cleanup on `done` (block/unblock commands already exist)
+- `job next [parent]` (parent optional; searches root if omitted)
+- `job claim-next [parent] [duration] [by <who>]` (parent optional)
+- `--format=json` on `next` and `claim-next`
+- Claim expiry via lazy detection (`expireStaleClaims` / `expireStaleClaimsInTx`)
+- Blocking relationship auto-cleanup on `done` (records `unblocked` events with `reason: "blocker_done"`)
+- `list` default view now excludes blocked and claimed tasks
+- `getBlockedTaskIDs` helper in `database.go` for filter-aware blocking queries
+- `filterTree` updated to accept blocked ID set
 - Event recording for: `claimed`, `released`, `claim_expired`
-- Status annotations for claimed tasks in `list` output
+- Claim info in `info` output
+- 93 tests, all passing
 
-**Notes for implementer:**
-- `runBlock` and `runUnblock` already exist in `blocks.go`. The auto-cleanup on `done` needs to be added to `runDone` in `tasks.go`: when a task is marked done, delete all rows from `blocks` where `blocker_id = <task>` and record `unblocked` events with `reason: "blocker_done"`.
-- The `claimed` status annotation in `renderMarkdownList` (format.go) is already scaffolded but untested since no tasks can be claimed yet.
-- Claim expiry should be a helper function (e.g., `expireStaleClaims(tx)`) called at the top of every read operation. It queries for `status = 'claimed' AND claim_expires_at < now()`, records `claim_expired` events, and resets those tasks to `available`.
-- Duration parsing (`"1h"`, `"30m"`, `"2d"`) needs a small parser. No external dependency needed — just switch on the last character.
-- `currentNowFunc` in `database.go` is overridable for testing. Use it for claim expiry checks.
+**Deviations from plan:**
+- `next` and `claim-next` accept an optional parent (not required). Without a parent, they search root-level tasks.
+- `claim-next` picks the task with the lowest `sort_order` (as specified by the user).
+- `--format=json` was added to `next` and `claim-next` (not in original spec).
 
-**Test:** After this phase, you can claim/release tasks, observe claim expiry, and see auto-unblocking when blockers are completed.
+**Notes:**
+- `expireStaleClaims(db)` creates its own transaction for read operations (list, info, next). `expireStaleClaimsInTx(tx)` is used within existing transactions for write operations (claim, release, done).
+- Duration parsing supports `s`, `m`, `h`, `d` units with a default of 1h.
+- `runDone` now queries for blocked tasks and records `unblocked` events before committing.
 
 ---
 
@@ -789,7 +799,23 @@ The CLI prompts `Remove <title>? [y/N]` unless `--force` is passed. The `runRemo
 
 ### Testability
 
-`currentNowFunc` in `database.go` defaults to `time.Now` but can be overridden in tests. This exists specifically for Phase 3's claim expiry testing, where you'll need to manipulate the clock.
+`currentNowFunc` in `database.go` defaults to `time.Now` but can be overridden in tests. This is used for claim expiry testing, where tests manipulate the clock to advance past claim expiration times.
+
+### Claim Expiry Architecture
+
+Claim expiry is implemented as two functions: `expireStaleClaims(db)` (creates its own transaction) and `expireStaleClaimsInTx(tx)` (runs within an existing transaction). Read operations (`list`, `info`, `next`) call the standalone version; write operations (`claim`, `release`, `done`) call the in-transaction version.
+
+### `list` Filtering
+
+The default `list` view now excludes three categories of tasks: done, claimed, and blocked. This is a change from Phase 2, which only excluded done tasks. The `filterTree` function accepts a `blockedIDs` map (from `getBlockedTaskIDs`) to support this. Expired claims are lazily reset to `available` before each list operation.
+
+### Auto-unblock on `done`
+
+When a task is marked done, `runDone` queries the `blocks` table for all tasks blocked by the newly-completed task, records `unblocked` events with `reason: "blocker_done"`, and deletes those block rows. This happens within the same transaction as the done operation.
+
+### `next` and `claim-next` Without Parent
+
+Both commands accept an optional parent. Without one, they search root-level tasks. When a parent is given, only its direct children are considered. Both skip blocked, claimed, and done tasks, picking the one with the lowest `sort_order`.
 
 ---
 

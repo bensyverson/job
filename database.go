@@ -200,21 +200,44 @@ func buildTree(tasks []*Task) []*TaskNode {
 	return roots
 }
 
-func filterTree(nodes []*TaskNode, showAll bool) []*TaskNode {
+func filterTree(nodes []*TaskNode, showAll bool, blockedIDs map[int64]bool) []*TaskNode {
 	if showAll {
 		return nodes
 	}
 	var result []*TaskNode
 	for _, node := range nodes {
-		if node.Task.Status != "available" {
+		if node.Task.Status != "available" || blockedIDs[node.Task.ID] {
 			continue
 		}
 		result = append(result, &TaskNode{
 			Task:     node.Task,
-			Children: filterTree(node.Children, false),
+			Children: filterTree(node.Children, false, blockedIDs),
 		})
 	}
 	return result
+}
+
+func getBlockedTaskIDs(db *sql.DB) (map[int64]bool, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT b.blocked_id
+		FROM blocks b
+		JOIN tasks t ON t.id = b.blocker_id
+		WHERE t.status != 'done' AND t.deleted_at IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
 }
 
 func findNodeByShortID(nodes []*TaskNode, shortID string) *TaskNode {

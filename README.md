@@ -61,14 +61,16 @@ eval $(job login MyAgent)
 # Log in as an existing user
 eval $(job login MyAgent aZ8U7axe)
 # Logged in as MyAgent
+```
 
-# Log out
+`job login` prints an `export` command to stdout, so `eval $(...)` captures and runs it — setting `JOBS_USER` and `JOBS_KEY` in your shell. After that, all other commands (`job add`, `job list`, etc.) work normally. No `eval` needed for anything else.
+
+```sh
+# When you're done
 eval $(job logout)
 ```
 
-The `eval $(...)` pattern sets `JOBS_USER` and `JOBS_KEY` environment variables in your shell. Multiple agents can work in the same directory simultaneously — each gets its own identity via its own env vars.
-
-Usernames and keys are stored in the database. The key is a sanity check to prevent accidental impersonation, not a security mechanism.
+Multiple agents can work in the same directory simultaneously — each gets its own identity via its own env vars. Usernames and keys are stored in the database. The key is a sanity check to prevent accidental impersonation, not a security mechanism.
 
 ## Commands
 

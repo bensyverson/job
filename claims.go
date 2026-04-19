@@ -36,19 +36,19 @@ func parseDuration(s string) (int64, error) {
 	}
 }
 
-func expireStaleClaims(db *sql.DB) error {
+func expireStaleClaims(db *sql.DB, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := expireStaleClaimsInTx(tx); err != nil {
+	if err := expireStaleClaimsInTx(tx, actor); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func expireStaleClaimsInTx(tx dbtx) error {
+func expireStaleClaimsInTx(tx dbtx, actor string) error {
 	now := currentNowFunc().Unix()
 	rows, err := tx.Query(
 		"SELECT id, claimed_by FROM tasks WHERE status = 'claimed' AND claim_expires_at < ? AND deleted_at IS NULL",
@@ -92,7 +92,7 @@ func expireStaleClaimsInTx(tx dbtx) error {
 		if e.claimedBy != nil {
 			wasClaimedBy = *e.claimedBy
 		}
-		if err := recordEvent(tx, e.id, "claim_expired", map[string]any{
+		if err := recordEvent(tx, e.id, "claim_expired", actor, map[string]any{
 			"was_claimed_by": wasClaimedBy,
 		}); err != nil {
 			return err
@@ -101,14 +101,14 @@ func expireStaleClaimsInTx(tx dbtx) error {
 	return nil
 }
 
-func runClaim(db *sql.DB, shortID, duration, who string, force bool) error {
+func runClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if err := expireStaleClaimsInTx(tx); err != nil {
+	if err := expireStaleClaimsInTx(tx, actor); err != nil {
 		return err
 	}
 
@@ -145,19 +145,14 @@ func runClaim(db *sql.DB, shortID, duration, who string, force bool) error {
 	now := currentNowFunc().Unix()
 	expiresAt := now + seconds
 
-	var whoVal any
-	if who != "" {
-		whoVal = who
-	}
 	if _, err := tx.Exec(
 		"UPDATE tasks SET status = 'claimed', claimed_by = ?, claim_expires_at = ?, updated_at = ? WHERE id = ?",
-		whoVal, expiresAt, now, task.ID,
+		actor, expiresAt, now, task.ID,
 	); err != nil {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "claimed", map[string]any{
-		"by":         whoVal,
+	if err := recordEvent(tx, task.ID, "claimed", actor, map[string]any{
 		"duration":   duration,
 		"expires_at": expiresAt,
 	}); err != nil {
@@ -167,14 +162,14 @@ func runClaim(db *sql.DB, shortID, duration, who string, force bool) error {
 	return tx.Commit()
 }
 
-func runRelease(db *sql.DB, shortID string) error {
+func runRelease(db *sql.DB, shortID, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if err := expireStaleClaimsInTx(tx); err != nil {
+	if err := expireStaleClaimsInTx(tx, actor); err != nil {
 		return err
 	}
 
@@ -189,11 +184,6 @@ func runRelease(db *sql.DB, shortID string) error {
 		return fmt.Errorf("task %s is not claimed (status: %s)", shortID, task.Status)
 	}
 
-	wasClaimedBy := ""
-	if task.ClaimedBy != nil {
-		wasClaimedBy = *task.ClaimedBy
-	}
-
 	now := currentNowFunc().Unix()
 	if _, err := tx.Exec(
 		"UPDATE tasks SET status = 'available', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
@@ -202,17 +192,15 @@ func runRelease(db *sql.DB, shortID string) error {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "released", map[string]any{
-		"was_claimed_by": wasClaimedBy,
-	}); err != nil {
+	if err := recordEvent(tx, task.ID, "released", actor, map[string]any{}); err != nil {
 		return err
 	}
 
 	return tx.Commit()
 }
 
-func runNext(db *sql.DB, parentShortID string) (*Task, error) {
-	if err := expireStaleClaims(db); err != nil {
+func runNext(db *sql.DB, parentShortID, actor string) (*Task, error) {
+	if err := expireStaleClaims(db, actor); err != nil {
 		return nil, err
 	}
 
@@ -256,13 +244,13 @@ func runNext(db *sql.DB, parentShortID string) (*Task, error) {
 	return task, nil
 }
 
-func runClaimNext(db *sql.DB, parentShortID, duration, who string, force bool) (*Task, error) {
-	task, err := runNext(db, parentShortID)
+func runClaimNext(db *sql.DB, parentShortID, duration, actor string, force bool) (*Task, error) {
+	task, err := runNext(db, parentShortID, actor)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := runClaim(db, task.ShortID, duration, who, force); err != nil {
+	if err := runClaim(db, task.ShortID, duration, actor, force); err != nil {
 		return nil, err
 	}
 

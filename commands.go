@@ -22,6 +22,8 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	cmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to job database (default: .jobs.db)")
+	cmd.AddCommand(newLoginCmd())
+	cmd.AddCommand(newLogoutCmd())
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newAddCmd())
 	cmd.AddCommand(newListCmd())
@@ -98,6 +100,11 @@ func newAddCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			var parentShortID, title string
 			if len(args) == 2 {
 				parentShortID = args[0]
@@ -106,7 +113,7 @@ func newAddCmd() *cobra.Command {
 				title = args[0]
 			}
 
-			id, err := runAdd(db, parentShortID, title, desc, before)
+			id, err := runAdd(db, parentShortID, title, desc, before, user.Name)
 			if err != nil {
 				return err
 			}
@@ -133,6 +140,11 @@ func newListCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			var parentShortID string
 			showAll := false
 			for _, arg := range args {
@@ -143,7 +155,7 @@ func newListCmd() *cobra.Command {
 				}
 			}
 
-			nodes, err := runList(db, parentShortID, showAll)
+			nodes, err := runList(db, parentShortID, user.Name, showAll)
 			if err != nil {
 				return err
 			}
@@ -211,13 +223,18 @@ func newDoneCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			shortID := args[0]
 			var note string
 			if len(args) == 2 {
 				note = args[1]
 			}
 
-			forced, alreadyDone, err := runDone(db, shortID, force, note)
+			forced, alreadyDone, err := runDone(db, shortID, force, note, user.Name)
 			if err != nil {
 				return err
 			}
@@ -253,7 +270,12 @@ func newReopenCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			reopened, err := runReopen(db, args[0])
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
+			reopened, err := runReopen(db, args[0], user.Name)
 			if err != nil {
 				return err
 			}
@@ -282,7 +304,12 @@ func newEditCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			if err := runEdit(db, args[0], args[1]); err != nil {
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
+			if err := runEdit(db, args[0], args[1], user.Name); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Edited: %s\n", args[0])
@@ -305,7 +332,12 @@ func newNoteCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			if err := runNote(db, args[0], args[1]); err != nil {
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
+			if err := runNote(db, args[0], args[1], user.Name); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Noted: %s\n", args[0])
@@ -329,6 +361,11 @@ func newRemoveCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			shortID := args[0]
 			removeAll := false
 			if len(args) == 2 && args[1] == "all" {
@@ -350,7 +387,7 @@ func newRemoveCmd() *cobra.Command {
 				}
 			}
 
-			count, err := runRemove(db, shortID, removeAll, force)
+			count, err := runRemove(db, shortID, removeAll, force, user.Name)
 			if err != nil {
 				return err
 			}
@@ -380,12 +417,17 @@ func newMoveCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			direction := args[1]
 			if direction != "before" && direction != "after" {
 				return fmt.Errorf("direction must be 'before' or 'after', got %q", direction)
 			}
 
-			if err := runMove(db, args[0], direction, args[2]); err != nil {
+			if err := runMove(db, args[0], direction, args[2], user.Name); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Moved: %s %s %s\n", args[0], direction, args[2])
@@ -408,6 +450,10 @@ func newInfoCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
+
+			if _, err := requireAuth(db); err != nil {
+				return err
+			}
 
 			info, err := runInfo(db, args[0])
 			if err != nil {
@@ -440,11 +486,16 @@ func newBlockCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			if args[1] != "by" {
 				return fmt.Errorf("usage: job block <blocked> by <blocker>")
 			}
 
-			if err := runBlock(db, args[0], args[2]); err != nil {
+			if err := runBlock(db, args[0], args[2], user.Name); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Blocked: %s (blocked by %s)\n", args[0], args[2])
@@ -467,11 +518,16 @@ func newUnblockCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			if args[1] != "from" {
 				return fmt.Errorf("usage: job unblock <blocked> from <blocker>")
 			}
 
-			if err := runUnblock(db, args[0], args[2]); err != nil {
+			if err := runUnblock(db, args[0], args[2], user.Name); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Unblocked: %s (was blocked by %s)\n", args[0], args[2])
@@ -484,10 +540,10 @@ func newUnblockCmd() *cobra.Command {
 func newClaimCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "claim <id> [duration] [by <who>]",
+		Use:   "claim <id> [duration]",
 		Short: "Claim a task",
 		Long:  "Claim a task, marking it as in-progress. Duration defaults to 1h. Supported units: s, m, h, d. Use --force to override an existing claim.",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -495,8 +551,16 @@ func newClaimCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			shortID := args[0]
-			duration, who := parseDurationFromArgs(args[1:])
+			var duration string
+			if len(args) >= 2 {
+				duration = args[1]
+			}
 
 			prevClaimedBy := ""
 			if force {
@@ -506,23 +570,19 @@ func newClaimCmd() *cobra.Command {
 				}
 			}
 
-			if err := runClaim(db, shortID, duration, who, force); err != nil {
+			if err := runClaim(db, shortID, duration, user.Name, force); err != nil {
 				return err
 			}
 
-			byStr := ""
-			if who != "" {
-				byStr = " by " + who
-			}
 			durStr := "1h"
 			if duration != "" {
 				durStr = duration
 			}
 
 			if force && prevClaimedBy != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s%s (overrode previous claim by %s, expires in %s)\n", shortID, byStr, prevClaimedBy, durStr)
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s (overrode previous claim by %s, expires in %s)\n", shortID, prevClaimedBy, durStr)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s%s (expires in %s)\n", shortID, byStr, durStr)
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s (expires in %s)\n", shortID, durStr)
 			}
 			return nil
 		},
@@ -544,7 +604,12 @@ func newReleaseCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			if err := runRelease(db, args[0]); err != nil {
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
+			if err := runRelease(db, args[0], user.Name); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Released: %s\n", args[0])
@@ -568,12 +633,17 @@ func newNextCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
 			var parentShortID string
 			if len(args) == 1 {
 				parentShortID = args[0]
 			}
 
-			task, err := runNext(db, parentShortID)
+			task, err := runNext(db, parentShortID, user.Name)
 			if err != nil {
 				return err
 			}
@@ -595,10 +665,10 @@ func newClaimNextCmd() *cobra.Command {
 	var force bool
 	var format string
 	cmd := &cobra.Command{
-		Use:   "claim-next [parent] [duration] [by <who>]",
+		Use:   "claim-next [parent] [duration]",
 		Short: "Find and claim the next available task",
 		Long:  "Find the next available task and claim it in one step. Without a parent, searches root-level tasks.",
-		Args:  cobra.MaximumNArgs(4),
+		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -606,17 +676,24 @@ func newClaimNextCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			var parentShortID, duration, who string
+			user, err := requireAuth(db)
+			if err != nil {
+				return err
+			}
+
+			var parentShortID, duration string
 			if len(args) == 0 {
 				parentShortID, duration = "", ""
 			} else if isDuration(args[0]) {
-				duration, who = parseDurationFromArgs(args)
+				duration = args[0]
 			} else {
 				parentShortID = args[0]
-				duration, who = parseDurationFromArgs(args[1:])
+				if len(args) > 1 {
+					duration = args[1]
+				}
 			}
 
-			task, err := runClaimNext(db, parentShortID, duration, who, force)
+			task, err := runClaimNext(db, parentShortID, duration, user.Name, force)
 			if err != nil {
 				return err
 			}
@@ -625,15 +702,11 @@ func newClaimNextCmd() *cobra.Command {
 				renderTaskJSON(cmd.OutOrStdout(), task)
 				fmt.Fprintln(cmd.OutOrStdout())
 			} else {
-				byStr := ""
-				if task.ClaimedBy != nil {
-					byStr = " by " + *task.ClaimedBy
-				}
 				durStr := "1h"
 				if duration != "" {
 					durStr = duration
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q%s (expires in %s)\n", task.ShortID, task.Title, byStr, durStr)
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n", task.ShortID, task.Title, durStr)
 				if task.Description != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "\n  %s\n", task.Description)
 				}
@@ -658,6 +731,10 @@ func newLogCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
+
+			if _, err := requireAuth(db); err != nil {
+				return err
+			}
 
 			events, err := runLog(db, args[0])
 			if err != nil {
@@ -693,6 +770,10 @@ func newTailCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
+
+			if _, err := requireAuth(db); err != nil {
+				return err
+			}
 
 			shortID := args[0]
 			task, err := getTaskByShortID(db, shortID)
@@ -732,4 +813,76 @@ func newTailCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
+}
+
+func newLoginCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "login [name] [key]",
+		Short: "Log in or create a user",
+		Long: `Log in or create a user.
+
+  jobs login              Create a new user with a random name and key
+  jobs login <name>       Create user <name> if it doesn't exist, or log in if it does
+  jobs login <name> <key> Log in as <name> with the given key
+
+Use: eval $(jobs login) to set environment variables in your shell.`,
+		Args: cobra.MaximumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			var name, key string
+			if len(args) >= 1 {
+				name = args[0]
+			}
+			if len(args) >= 2 {
+				key = args[1]
+			}
+
+			if name != "" && key == "" {
+				existing, err := getUserByName(db, name)
+				if err != nil {
+					return err
+				}
+				if existing != nil {
+					fmt.Fprintf(cmd.OutOrStderr(), "Enter key for %s: ", name)
+					reader := bufio.NewReader(os.Stdin)
+					input, err := reader.ReadString('\n')
+					if err != nil {
+						return fmt.Errorf("failed to read key: %w", err)
+					}
+					key = strings.TrimSpace(input)
+				}
+			}
+
+			result, err := runLogin(db, name, key)
+			if err != nil {
+				return err
+			}
+
+			if result.IsNew {
+				fmt.Fprintf(cmd.OutOrStderr(), "Created user %s with key %s\n", result.Name, result.Key)
+			} else {
+				fmt.Fprintf(cmd.OutOrStderr(), "Logged in as %s\n", result.Name)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), formatLoginExport(result.Name, result.Key))
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newLogoutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "logout",
+		Short: "Log out the current user",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintln(cmd.OutOrStdout(), formatLogoutExport())
+			return nil
+		},
+	}
 }

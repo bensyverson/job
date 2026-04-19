@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func runBlock(db *sql.DB, blockedShortID, blockerShortID string) error {
+func runBlock(db *sql.DB, blockedShortID, blockerShortID, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -47,7 +47,7 @@ func runBlock(db *sql.DB, blockedShortID, blockerShortID string) error {
 		return err
 	}
 
-	if err := recordEvent(tx, blocked.ID, "blocked", map[string]any{
+	if err := recordEvent(tx, blocked.ID, "blocked", actor, map[string]any{
 		"blocked_id": blockedShortID,
 		"blocker_id": blockerShortID,
 	}); err != nil {
@@ -93,7 +93,7 @@ func walkBlockerChain(tx dbtx, startID, targetID int64, visited map[int64]bool) 
 	return false, rows.Err()
 }
 
-func runUnblock(db *sql.DB, blockedShortID, blockerShortID string) error {
+func runUnblock(db *sql.DB, blockedShortID, blockerShortID, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -128,7 +128,7 @@ func runUnblock(db *sql.DB, blockedShortID, blockerShortID string) error {
 		return fmt.Errorf("%s is not blocked by %s", blockedShortID, blockerShortID)
 	}
 
-	if err := recordEvent(tx, blocked.ID, "unblocked", map[string]any{
+	if err := recordEvent(tx, blocked.ID, "unblocked", actor, map[string]any{
 		"blocked_id": blockedShortID,
 		"blocker_id": blockerShortID,
 		"reason":     "manual",

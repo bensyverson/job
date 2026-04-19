@@ -88,11 +88,19 @@ func initSchema(db *sql.DB) error {
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			task_id     INTEGER NOT NULL REFERENCES tasks(id),
 			event_type  TEXT NOT NULL,
+			actor       TEXT NOT NULL DEFAULT '',
 			detail      TEXT,
 			created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 		);
 		CREATE INDEX IF NOT EXISTS idx_events_task_id ON events(task_id);
 		CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
+
+		CREATE TABLE IF NOT EXISTS users (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			name       TEXT UNIQUE NOT NULL,
+			key        TEXT NOT NULL,
+			created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+		)
 	`)
 	return err
 }
@@ -118,7 +126,7 @@ func generateShortID(tx dbtx) (string, error) {
 	}
 }
 
-func recordEvent(tx dbtx, taskID int64, eventType string, detail any) error {
+func recordEvent(tx dbtx, taskID int64, eventType, actor string, detail any) error {
 	var detailJSON string
 	if detail != nil {
 		b, err := json.Marshal(detail)
@@ -128,8 +136,8 @@ func recordEvent(tx dbtx, taskID int64, eventType string, detail any) error {
 		detailJSON = string(b)
 	}
 	_, err := tx.Exec(
-		"INSERT INTO events (task_id, event_type, detail, created_at) VALUES (?, ?, ?, ?)",
-		taskID, eventType, detailJSON, time.Now().Unix(),
+		"INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (?, ?, ?, ?, ?)",
+		taskID, eventType, actor, detailJSON, time.Now().Unix(),
 	)
 	return err
 }
@@ -323,7 +331,7 @@ func getEventsForTaskTree(db *sql.DB, shortID string) ([]EventEntry, error) {
 			UNION ALL
 			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
 		)
-		SELECT e.id, e.task_id, t.short_id, e.event_type, e.detail, e.created_at
+		SELECT e.id, e.task_id, t.short_id, e.event_type, e.actor, e.detail, e.created_at
 		FROM events e
 		JOIN tasks t ON t.id = e.task_id
 		WHERE e.task_id IN (SELECT id FROM tree)
@@ -337,7 +345,7 @@ func getEventsForTaskTree(db *sql.DB, shortID string) ([]EventEntry, error) {
 	var events []EventEntry
 	for rows.Next() {
 		var e EventEntry
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Detail, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Actor, &e.Detail, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)
@@ -352,7 +360,7 @@ func getEventsAfterID(db *sql.DB, shortID string, afterID int64) ([]EventEntry, 
 			UNION ALL
 			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
 		)
-		SELECT e.id, e.task_id, t.short_id, e.event_type, e.detail, e.created_at
+		SELECT e.id, e.task_id, t.short_id, e.event_type, e.actor, e.detail, e.created_at
 		FROM events e
 		JOIN tasks t ON t.id = e.task_id
 		WHERE e.task_id IN (SELECT id FROM tree) AND e.id > ?
@@ -366,7 +374,7 @@ func getEventsAfterID(db *sql.DB, shortID string, afterID int64) ([]EventEntry, 
 	var events []EventEntry
 	for rows.Next() {
 		var e EventEntry
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Detail, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Actor, &e.Detail, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)

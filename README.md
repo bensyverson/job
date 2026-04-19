@@ -11,13 +11,15 @@ go install github.com/bensyverson/job@latest
 ```
 
 This drops the `job` binary into `$HOME/go/bin`. Make sure that's on your `PATH`.
-```
 
 ## Get started
 
 ```sh
 # Create a task database in the current directory
 job init
+
+# Log in (required before using any other command)
+eval $(job login)
 
 # Add tasks
 job add "Write documentation"
@@ -33,8 +35,8 @@ job list
 # Complete a task
 job done <id>
 
-# Mark a task in-progress
-job claim <id> 4h by Alice
+# Claim a task for 4 hours
+job claim <id> 4h
 
 # Done with all subtasks at once
 job done <id> --force
@@ -42,6 +44,31 @@ job done <id> --force
 # See the full history
 job log <id>
 ```
+
+## Identity
+
+Every action is attributed to a logged-in user. Before using any command (except `init` and `login`), you must log in:
+
+```sh
+# Create a new user with a random name and key
+eval $(job login)
+# Created user FriendlyBat with key abc12345
+
+# Create a user with a specific name
+eval $(job login MyAgent)
+# Created user MyAgent with key aZ8U7axe
+
+# Log in as an existing user
+eval $(job login MyAgent aZ8U7axe)
+# Logged in as MyAgent
+
+# Log out
+eval $(job logout)
+```
+
+The `eval $(...)` pattern sets `JOBS_USER` and `JOBS_KEY` environment variables in your shell. Multiple agents can work in the same directory simultaneously — each gets its own identity via its own env vars.
+
+Usernames and keys are stored in the database. The key is a sanity check to prevent accidental impersonation, not a security mechanism.
 
 ## Commands
 
@@ -52,6 +79,13 @@ job log <id>
 | `job init [--force]` | Create a `.jobs.db` in the current directory. `--force` overwrites an existing one. |
 
 Every command accepts `--db <path>` to use a different database file. You can also set `JOBS_DB`.
+
+### Identity
+
+| Command | Description |
+|---------|-------------|
+| `job login [name] [key]` | Log in or create a user. Use `eval $(job login)` to set env vars. |
+| `job logout` | Clear the current session. Use `eval $(job logout)`. |
 
 ### Creating tasks
 
@@ -91,11 +125,11 @@ All three support `--format=json`.
 
 | Command | Description |
 |---------|-------------|
-| `job claim <id> [duration] [by <who>]` | Claim a task. Duration defaults to `1h`. Units: `s`, `m`, `h`, `d`. |
+| `job claim <id> [duration]` | Claim a task. Duration defaults to `1h`. Units: `s`, `m`, `h`, `d`. |
 | `job release <id>` | Release a claim. |
-| `job claim-next [parent] [duration] [by <who>]` | Find and claim the next available task in one step. |
+| `job claim-next [parent] [duration]` | Find and claim the next available task in one step. |
 
-Claims expire automatically. `--force` overrides an existing claim.
+Claims are attributed to the logged-in user. Claims expire automatically. `--force` overrides an existing claim.
 
 ### Blocking
 
@@ -111,7 +145,7 @@ Claims expire automatically. `--force` overrides an existing claim.
 | `job log <id>` | Show full event history for a task and its descendants. |
 | `job tail <id>` | Stream events in real-time. Polls every second until Ctrl+C. |
 
-Both support `--format=json`.
+Both support `--format=json`. Every event includes the actor who performed it.
 
 ## Task IDs
 

@@ -198,7 +198,7 @@ func renderEventLogMarkdown(w io.Writer, events []EventEntry) {
 	for _, e := range events {
 		ts := formatTimestamp(e.CreatedAt)
 		desc := formatEventDescription(e.EventType, e.Detail)
-		fmt.Fprintf(w, "[%s] %s %s\n", ts, e.ShortID, desc)
+		fmt.Fprintf(w, "[%s] %s %s  @%s\n", ts, e.ShortID, desc, e.Actor)
 	}
 }
 
@@ -218,33 +218,17 @@ func formatEventDescription(eventType, detailJSON string) string {
 		}
 		return fmt.Sprintf("created: %q", title)
 	case "claimed":
-		by := ""
 		dur := "1h"
 		if detail != nil {
-			if b, ok := detail["by"].(string); ok && b != "" {
-				by = " by " + b
-			}
 			if d, ok := detail["duration"].(string); ok && d != "" {
 				dur = d
 			}
 		}
-		return fmt.Sprintf("claimed%s (%s)", by, dur)
+		return fmt.Sprintf("claimed (%s)", dur)
 	case "released":
-		wasBy := ""
-		if detail != nil {
-			if w, ok := detail["was_claimed_by"].(string); ok && w != "" {
-				wasBy = " (was claimed by " + w + ")"
-			}
-		}
-		return fmt.Sprintf("released%s", wasBy)
+		return "released"
 	case "claim_expired":
-		wasBy := ""
-		if detail != nil {
-			if w, ok := detail["was_claimed_by"].(string); ok && w != "" {
-				wasBy = " (was claimed by " + w + ")"
-			}
-		}
-		return fmt.Sprintf("claim expired%s", wasBy)
+		return "claim expired"
 	case "done":
 		parts := []string{"done"}
 		force := false
@@ -340,6 +324,7 @@ type eventJSON struct {
 	TaskID    int64  `json:"task_id"`
 	ShortID   string `json:"short_id"`
 	EventType string `json:"event_type"`
+	Actor     string `json:"actor"`
 	Detail    any    `json:"detail"`
 	CreatedAt int64  `json:"created_at"`
 }
@@ -359,6 +344,7 @@ func formatEventLogJSON(events []EventEntry) ([]byte, error) {
 			TaskID:    e.TaskID,
 			ShortID:   e.ShortID,
 			EventType: e.EventType,
+			Actor:     e.Actor,
 			Detail:    detail,
 			CreatedAt: e.CreatedAt,
 		})

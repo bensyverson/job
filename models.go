@@ -31,6 +31,7 @@ type EventEntry struct {
 	TaskID    int64
 	ShortID   string
 	EventType string
+	Actor     string
 	Detail    string
 	CreatedAt int64
 }
@@ -38,6 +39,13 @@ type EventEntry struct {
 type TaskNode struct {
 	Task     *Task
 	Children []*TaskNode
+}
+
+type User struct {
+	ID        int64
+	Name      string
+	Key       string
+	CreatedAt int64
 }
 
 type scanner interface {

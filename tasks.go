@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string) (string, error) {
+func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string) (string, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return "", err
@@ -85,7 +85,7 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string) (strin
 	if parentShortID != "" {
 		eventParentID = parentShortID
 	}
-	if err := recordEvent(tx, taskID, "created", map[string]any{
+	if err := recordEvent(tx, taskID, "created", actor, map[string]any{
 		"parent_id":   eventParentID,
 		"title":       title,
 		"description": desc,
@@ -97,8 +97,8 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string) (strin
 	return shortID, tx.Commit()
 }
 
-func runList(db *sql.DB, parentShortID string, showAll bool) ([]*TaskNode, error) {
-	if err := expireStaleClaims(db); err != nil {
+func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
+	if err := expireStaleClaims(db, actor); err != nil {
 		return nil, err
 	}
 
@@ -125,7 +125,7 @@ func runList(db *sql.DB, parentShortID string, showAll bool) ([]*TaskNode, error
 	return filterTree(tree, showAll, blockedIDs), nil
 }
 
-func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, bool, error) {
+func runDone(db *sql.DB, shortID string, force bool, note, actor string) ([]string, bool, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, false, err
@@ -176,7 +176,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, boo
 		); err != nil {
 			return nil, false, err
 		}
-		if err := recordEvent(tx, child.ID, "done", map[string]any{
+		if err := recordEvent(tx, child.ID, "done", actor, map[string]any{
 			"note":                   nil,
 			"force":                  true,
 			"force_closed_by_parent": shortID,
@@ -196,7 +196,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, boo
 		return nil, false, err
 	}
 
-	if err := recordEvent(tx, task.ID, "done", map[string]any{
+	if err := recordEvent(tx, task.ID, "done", actor, map[string]any{
 		"note":                  noteVal,
 		"force":                 force,
 		"force_closed_children": forceClosedShortIDs,
@@ -230,7 +230,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, boo
 			if err := tx.QueryRow("SELECT short_id FROM tasks WHERE id = ?", blockedID).Scan(&blockedShortID); err != nil {
 				return nil, false, err
 			}
-			if err := recordEvent(tx, blockedID, "unblocked", map[string]any{
+			if err := recordEvent(tx, blockedID, "unblocked", actor, map[string]any{
 				"blocked_id": blockedShortID,
 				"blocker_id": shortID,
 				"reason":     "blocker_done",
@@ -243,7 +243,7 @@ func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, boo
 	return forceClosedShortIDs, false, tx.Commit()
 }
 
-func runReopen(db *sql.DB, shortID string) ([]string, error) {
+func runReopen(db *sql.DB, shortID, actor string) ([]string, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, err
@@ -285,7 +285,7 @@ func runReopen(db *sql.DB, shortID string) ([]string, error) {
 				); err != nil {
 					return nil, err
 				}
-				if err := recordEvent(tx, child.ID, "reopened", map[string]any{
+				if err := recordEvent(tx, child.ID, "reopened", actor, map[string]any{
 					"reopened_by_parent": shortID,
 				}); err != nil {
 					return nil, err
@@ -303,7 +303,7 @@ func runReopen(db *sql.DB, shortID string) ([]string, error) {
 		return nil, err
 	}
 
-	if err := recordEvent(tx, task.ID, "reopened", map[string]any{
+	if err := recordEvent(tx, task.ID, "reopened", actor, map[string]any{
 		"reopened_children": reopenedChildren,
 	}); err != nil {
 		return nil, err
@@ -312,7 +312,7 @@ func runReopen(db *sql.DB, shortID string) ([]string, error) {
 	return reopenedChildren, tx.Commit()
 }
 
-func runEdit(db *sql.DB, shortID, newTitle string) error {
+func runEdit(db *sql.DB, shortID, newTitle, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -335,7 +335,7 @@ func runEdit(db *sql.DB, shortID, newTitle string) error {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "edited", map[string]any{
+	if err := recordEvent(tx, task.ID, "edited", actor, map[string]any{
 		"old_title": task.Title,
 		"new_title": newTitle,
 	}); err != nil {
@@ -345,7 +345,7 @@ func runEdit(db *sql.DB, shortID, newTitle string) error {
 	return tx.Commit()
 }
 
-func runNote(db *sql.DB, shortID, text string) error {
+func runNote(db *sql.DB, shortID, text, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -376,7 +376,7 @@ func runNote(db *sql.DB, shortID, text string) error {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "noted", map[string]any{
+	if err := recordEvent(tx, task.ID, "noted", actor, map[string]any{
 		"text":              text,
 		"description_after": newDesc,
 	}); err != nil {
@@ -386,7 +386,7 @@ func runNote(db *sql.DB, shortID, text string) error {
 	return tx.Commit()
 }
 
-func runRemove(db *sql.DB, shortID string, removeAll, force bool) (int, error) {
+func runRemove(db *sql.DB, shortID string, removeAll, force bool, actor string) (int, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, err
@@ -457,7 +457,7 @@ func runRemove(db *sql.DB, shortID string, removeAll, force bool) (int, error) {
 		}
 	}
 
-	if err := recordEvent(tx, task.ID, "removed", map[string]any{
+	if err := recordEvent(tx, task.ID, "removed", actor, map[string]any{
 		"title":            task.Title,
 		"children_removed": removedChildIDs,
 		"was_status":       task.Status,
@@ -507,7 +507,7 @@ func softDeleteDescendants(tx dbtx, parentID int64, now int64) ([]string, error)
 	return ids, nil
 }
 
-func runMove(db *sql.DB, shortID, direction, relativeToShortID string) error {
+func runMove(db *sql.DB, shortID, direction, relativeToShortID, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -586,7 +586,7 @@ func runMove(db *sql.DB, shortID, direction, relativeToShortID string) error {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "moved", map[string]any{
+	if err := recordEvent(tx, task.ID, "moved", actor, map[string]any{
 		"direction":      direction,
 		"relative_to":    relativeToShortID,
 		"old_sort_order": oldSortOrder,

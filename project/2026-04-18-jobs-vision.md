@@ -1,7 +1,7 @@
 # Jobs: A Lightweight CLI Task Manager
 
 **Date:** 2026-04-18
-**Status:** Draft
+**Status:** Phase 2 complete
 
 ---
 
@@ -595,11 +595,14 @@ Steps 2 and 3 are atomic — the cache and the log are always consistent.
 Jobs/
 ├── project/
 │   └── 2026-04-18-jobs-vision.md   # this document
-├── main.go                          # entry point, CLI parsing
-├── database.go                      # SQLite connection, schema, migrations
-├── models.go                        # Task, Event, Block structs
-├── commands.go                      # command implementations
+├── main.go                          # entry point
+├── database.go                      # SQLite connection, schema, ID generation, event recording, query helpers
+├── models.go                        # Task, Event, TaskNode, TaskInfo structs
+├── tasks.go                         # task CRUD: add, list, done, reopen, edit, note, remove, move, info
+├── blocks.go                        # block/unblock, cycle detection, getBlockers
+├── commands.go                      # cobra command definitions and CLI wiring
 ├── format.go                        # output formatting (markdown, JSON)
+├── database_test.go                 # all tests
 ├── go.mod
 └── go.sum
 ```
@@ -645,7 +648,7 @@ WHERE b.blocked_id = ?
 
 When a task is marked `done`, all rows in `blocks` where `blocker_id = <task>` are deleted. This may unblock multiple tasks.
 
-Circular dependency check (when adding a block): walk the `blocks` graph from `blocked` to see if we can reach `blocker`.
+Circular dependency check (when adding a block): walk the `blocks` graph following `blocked_id → blocker_id` chains (i.e., "who is blocking me?") to see if we can reach the proposed new blocked task. This prevents `A blocks B` followed by `B blocks A`.
 
 ---
 
@@ -674,22 +677,30 @@ Circular dependency check (when adding a block): walk the `blocks` graph from `b
 
 ---
 
-### Phase 2: Task Management & Output
+### Phase 2: Task Management & Output ✅
 
 **Goal:** Full task editing, removal, reordering, and JSON output.
 
-**Scope:**
+**Status:** Complete.
+
+**What was built:**
 - `format.go`: Markdown and JSON formatters
 - `job list [parent] [all] --format=json`
 - `job info <id> --format=md|json`
 - `job edit <id> <title>`
 - `job note <id> <text>` (with timestamp prepending)
-- `job remove <id> [all] [--force]` (with interactive confirmation)
+- `job remove <id> [all] [--force]` (soft delete with interactive confirmation)
 - `job move <id> before|after <sibling>`
-- Event recording for: `edited`, `noted`, `moved`, `removed`
-- Status annotations in `list` output (claimed, blocked, done)
+- `job block <blocked> by <blocker>` (moved up from Phase 3)
+- `job unblock <blocked> from <blocker>` (moved up from Phase 3)
+- Event recording for: `edited`, `noted`, `moved`, `removed`, `blocked`, `unblocked`
+- Status annotations in `list` output (blocked, done)
+- Circular dependency detection
+- 53 tests, all passing
 
-**Test:** After this phase, you can edit/reorder/remove tasks, see rich status annotations, and get JSON output for scripting.
+**Deviations from plan:**
+- Blocking was pulled into Phase 2 because it was needed for status annotations and the `remove` command's block cleanup.
+- Soft deletion replaced hard deletion. See §9 below for rationale and implementation notes.
 
 ---
 
@@ -702,14 +713,19 @@ Circular dependency check (when adding a block): walk the `blocks` graph from `b
 - `job release <id>`
 - `job claim-next <parent> [duration] [by <who>]`
 - `job next <parent>`
-- `job block <blocked> by <blocker>`
-- `job unblock <blocked> from <blocker>`
 - Claim expiry (lazy detection on read)
-- Circular dependency detection
-- Blocking relationship auto-cleanup on `done`
-- Event recording for: `claimed`, `released`, `claim_expired`, `blocked`, `unblocked`
+- Blocking relationship auto-cleanup on `done` (block/unblock commands already exist)
+- Event recording for: `claimed`, `released`, `claim_expired`
+- Status annotations for claimed tasks in `list` output
 
-**Test:** After this phase, you can claim/release tasks, set up dependencies, and observe claim expiry and auto-unblocking.
+**Notes for implementer:**
+- `runBlock` and `runUnblock` already exist in `blocks.go`. The auto-cleanup on `done` needs to be added to `runDone` in `tasks.go`: when a task is marked done, delete all rows from `blocks` where `blocker_id = <task>` and record `unblocked` events with `reason: "blocker_done"`.
+- The `claimed` status annotation in `renderMarkdownList` (format.go) is already scaffolded but untested since no tasks can be claimed yet.
+- Claim expiry should be a helper function (e.g., `expireStaleClaims(tx)`) called at the top of every read operation. It queries for `status = 'claimed' AND claim_expires_at < now()`, records `claim_expired` events, and resets those tasks to `available`.
+- Duration parsing (`"1h"`, `"30m"`, `"2d"`) needs a small parser. No external dependency needed — just switch on the last character.
+- `currentNowFunc` in `database.go` is overridable for testing. Use it for claim expiry checks.
+
+**Test:** After this phase, you can claim/release tasks, observe claim expiry, and see auto-unblocking when blockers are completed.
 
 ---
 
@@ -737,7 +753,47 @@ Circular dependency check (when adding a block): walk the `blocks` graph from `b
 
 ---
 
-## 8. Future Considerations
+## 9. Implementation Notes
+
+### Soft Deletion (Phase 2 deviation)
+
+The original plan used hard deletion (`DELETE FROM tasks`) with `ON DELETE CASCADE`. This was changed to soft deletion via a `deleted_at INTEGER` column on `tasks`.
+
+**Why:** The doc's event sourcing philosophy ("events are append-only," "full state can be reconstructed from the log") conflicts with hard-deleting task rows. Soft deletion preserves the audit trail, keeps events intact, and makes a future `job restore` trivial. The storage cost is negligible — even a million soft-deleted tasks with their events is ~100MB in SQLite.
+
+**Implementation:**
+- `deleted_at` is `NULL` for active tasks, a Unix timestamp for deleted ones.
+- Every query in `tasks.go` and `database.go` includes `WHERE deleted_at IS NULL`.
+- `getTaskByShortIDIncludeDeleted()` exists for the remove test to verify soft deletion.
+- The events FK dropped `ON DELETE CASCADE` — events survive task deletion.
+- The blocks table still hard-deletes rows on `remove` (blockers/blocked are transient relationships, not audit data).
+
+### File Split
+
+The original plan put everything in `database.go`. Phase 2 split it into three files because the single file was heading toward 1000+ lines:
+- `database.go` — schema, connection, ID generation, event recording, tree/query helpers
+- `tasks.go` — all task CRUD operations (~430 lines)
+- `blocks.go` — blocking relationships and cycle detection (~130 lines)
+
+### Cycle Detection
+
+The doc's description of cycle detection ("walk from `blocked` to see if we can reach `blocker`") was ambiguous about direction. The actual implementation walks `blocked_id → blocker_id` chains (i.e., "who is blocking me?") starting from the proposed blocker, checking if it can reach the proposed blocked task. This correctly catches `A blocked-by B, B blocked-by A` cycles.
+
+### `note` Command
+
+First note on an empty description just sets the text directly (no timestamp prefix). Subsequent notes are appended as `\n\n[YYYY-MM-DD HH:MM] text`. This matches the doc spec.
+
+### `remove` Confirmation
+
+The CLI prompts `Remove <title>? [y/N]` unless `--force` is passed. The `runRemove` function itself doesn't handle confirmation — it takes a `force` bool that skips the children check. The confirmation prompt lives in the cobra command handler in `commands.go`, so the business logic remains testable without mocking stdin.
+
+### Testability
+
+`currentNowFunc` in `database.go` defaults to `time.Now` but can be overridden in tests. This exists specifically for Phase 3's claim expiry testing, where you'll need to manipulate the clock.
+
+---
+
+## 10. Future Considerations
 
 These are explicitly **out of scope** for v1 but worth keeping in mind:
 

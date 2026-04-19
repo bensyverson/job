@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -590,5 +591,541 @@ func TestRunReopen_ForceClosedNested(t *testing.T) {
 		if task.Status != "available" {
 			t.Errorf("%s status: got %q, want %q", id, task.Status, "available")
 		}
+	}
+}
+
+// --- Edit ---
+
+func TestRunEdit_ChangesTitle(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Old title")
+
+	if err := runEdit(db, id, "New title"); err != nil {
+		t.Fatalf("runEdit: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Title != "New title" {
+		t.Errorf("title: got %q, want %q", task.Title, "New title")
+	}
+}
+
+func TestRunEdit_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Old title")
+
+	if err := runEdit(db, id, "New title"); err != nil {
+		t.Fatalf("runEdit: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	detail, err := getLatestEventDetail(db, task.ID, "edited")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected edited event")
+	}
+	if detail["old_title"] != "Old title" {
+		t.Errorf("old_title: got %v, want %q", detail["old_title"], "Old title")
+	}
+	if detail["new_title"] != "New title" {
+		t.Errorf("new_title: got %v, want %q", detail["new_title"], "New title")
+	}
+}
+
+func TestRunEdit_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	err := runEdit(db, "noExs", "New title")
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+// --- Note ---
+
+func TestRunNote_AppendsToEmptyDescription(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runNote(db, id, "First note"); err != nil {
+		t.Fatalf("runNote: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if task.Description != "First note" {
+		t.Errorf("description: got %q, want %q", task.Description, "First note")
+	}
+}
+
+func TestRunNote_AppendsToExistingDescription(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAddDesc(t, db, "", "Task", "Original desc")
+
+	if err := runNote(db, id, "Added note"); err != nil {
+		t.Fatalf("runNote: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	if !strings.Contains(task.Description, "Original desc") {
+		t.Errorf("description should contain original: %q", task.Description)
+	}
+	if !strings.Contains(task.Description, "Added note") {
+		t.Errorf("description should contain note: %q", task.Description)
+	}
+	if !strings.Contains(task.Description, "[20") {
+		t.Errorf("description should contain timestamp: %q", task.Description)
+	}
+}
+
+func TestRunNote_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if err := runNote(db, id, "A note"); err != nil {
+		t.Fatalf("runNote: %v", err)
+	}
+
+	task := mustGet(t, db, id)
+	detail, err := getLatestEventDetail(db, task.ID, "noted")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected noted event")
+	}
+	if detail["text"] != "A note" {
+		t.Errorf("text: got %v, want %q", detail["text"], "A note")
+	}
+}
+
+func TestRunNote_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	err := runNote(db, "noExs", "A note")
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+// --- Remove (soft delete) ---
+
+func TestRunRemove_LeafTask(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	count, err := runRemove(db, id, false, false)
+	if err != nil {
+		t.Fatalf("runRemove: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("removed children: got %d, want 0", count)
+	}
+
+	task, err := getTaskByShortID(db, id)
+	if err != nil {
+		t.Fatalf("getTaskByShortID: %v", err)
+	}
+	if task != nil {
+		t.Error("task should not be visible after removal")
+	}
+
+	deletedTask, err := getTaskByShortIDIncludeDeleted(db, id)
+	if err != nil {
+		t.Fatalf("getTaskByShortIDIncludeDeleted: %v", err)
+	}
+	if deletedTask == nil {
+		t.Fatal("task should still exist in DB (soft delete)")
+	}
+	if deletedTask.DeletedAt == nil {
+		t.Error("deleted_at should be set")
+	}
+}
+
+func TestRunRemove_HasChildren(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	mustAdd(t, db, pid, "Child")
+
+	_, err := runRemove(db, pid, false, false)
+	if err == nil {
+		t.Fatal("expected error when removing task with children without 'all'")
+	}
+}
+
+func TestRunRemove_WithAll(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Child")
+
+	count, err := runRemove(db, pid, true, false)
+	if err != nil {
+		t.Fatalf("runRemove: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("removed children: got %d, want 1", count)
+	}
+
+	for _, id := range []string{pid, cid} {
+		task, _ := getTaskByShortID(db, id)
+		if task != nil {
+			t.Errorf("%s should not be visible after removal", id)
+		}
+		deletedTask, _ := getTaskByShortIDIncludeDeleted(db, id)
+		if deletedTask == nil {
+			t.Errorf("%s should still exist in DB (soft delete)", id)
+		}
+	}
+}
+
+func TestRunRemove_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task to remove")
+	task := mustGet(t, db, id)
+
+	if _, err := runRemove(db, id, false, false); err != nil {
+		t.Fatalf("runRemove: %v", err)
+	}
+
+	detail, err := getLatestEventDetail(db, task.ID, "removed")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected removed event")
+	}
+	if detail["title"] != "Task to remove" {
+		t.Errorf("title: got %v, want %q", detail["title"], "Task to remove")
+	}
+}
+
+func TestRunRemove_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	_, err := runRemove(db, "noExs", false, false)
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+func TestRunRemove_RemovedTaskNotInList(t *testing.T) {
+	db := setupTestDB(t)
+	id1 := mustAdd(t, db, "", "Keep")
+	id2 := mustAdd(t, db, "", "Remove")
+
+	if _, err := runRemove(db, id2, false, false); err != nil {
+		t.Fatalf("runRemove: %v", err)
+	}
+
+	nodes, err := runList(db, "", false)
+	if err != nil {
+		t.Fatalf("runList: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0].Task.ShortID != id1 {
+		t.Errorf("got %s, want %s", nodes[0].Task.ShortID, id1)
+	}
+}
+
+func TestRunRemove_RemovesBlockingRelationships(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	if _, err := runRemove(db, blocker, false, false); err != nil {
+		t.Fatalf("runRemove: %v", err)
+	}
+
+	blocks, err := getBlockers(db, blocked)
+	if err != nil {
+		t.Fatalf("getBlockers: %v", err)
+	}
+	if len(blocks) != 0 {
+		t.Errorf("expected no blockers after removal, got %d", len(blocks))
+	}
+}
+
+// --- Move ---
+
+func TestRunMove_Before(t *testing.T) {
+	db := setupTestDB(t)
+	id1 := mustAdd(t, db, "", "First")
+	id2 := mustAdd(t, db, "", "Second")
+
+	if err := runMove(db, id2, "before", id1); err != nil {
+		t.Fatalf("runMove: %v", err)
+	}
+
+	t1 := mustGet(t, db, id1)
+	t2 := mustGet(t, db, id2)
+	if t2.SortOrder >= t1.SortOrder {
+		t.Errorf("Second (sort %d) should be before First (sort %d)", t2.SortOrder, t1.SortOrder)
+	}
+}
+
+func TestRunMove_After(t *testing.T) {
+	db := setupTestDB(t)
+	id1 := mustAdd(t, db, "", "First")
+	id2 := mustAdd(t, db, "", "Second")
+
+	if err := runMove(db, id1, "after", id2); err != nil {
+		t.Fatalf("runMove: %v", err)
+	}
+
+	t1 := mustGet(t, db, id1)
+	t2 := mustGet(t, db, id2)
+	if t1.SortOrder <= t2.SortOrder {
+		t.Errorf("First (sort %d) should be after Second (sort %d)", t1.SortOrder, t2.SortOrder)
+	}
+}
+
+func TestRunMove_NotSiblings(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Child")
+	other := mustAdd(t, db, "", "Other root")
+
+	err := runMove(db, cid, "before", other)
+	if err == nil {
+		t.Fatal("expected error when moving non-siblings")
+	}
+}
+
+func TestRunMove_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	id1 := mustAdd(t, db, "", "First")
+	id2 := mustAdd(t, db, "", "Second")
+	task2 := mustGet(t, db, id2)
+
+	if err := runMove(db, id2, "before", id1); err != nil {
+		t.Fatalf("runMove: %v", err)
+	}
+
+	detail, err := getLatestEventDetail(db, task2.ID, "moved")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected moved event")
+	}
+	if detail["direction"] != "before" {
+		t.Errorf("direction: got %v, want %q", detail["direction"], "before")
+	}
+	if detail["relative_to"] != id1 {
+		t.Errorf("relative_to: got %v, want %s", detail["relative_to"], id1)
+	}
+}
+
+func TestRunMove_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	err := runMove(db, id, "before", "noExs")
+	if err == nil {
+		t.Fatal("expected error for non-existent target")
+	}
+}
+
+// --- Block ---
+
+func TestRunBlock_CreatesRelationship(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	blocks, err := getBlockers(db, blocked)
+	if err != nil {
+		t.Fatalf("getBlockers: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 blocker, got %d", len(blocks))
+	}
+	if blocks[0].ShortID != blocker {
+		t.Errorf("blocker: got %s, want %s", blocks[0].ShortID, blocker)
+	}
+}
+
+func TestRunBlock_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+
+	blockedTask := mustGet(t, db, blocked)
+	detail, err := getLatestEventDetail(db, blockedTask.ID, "blocked")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected blocked event")
+	}
+}
+
+func TestRunBlock_CircularDependency(t *testing.T) {
+	db := setupTestDB(t)
+	a := mustAdd(t, db, "", "A")
+	b := mustAdd(t, db, "", "B")
+
+	if err := runBlock(db, b, a); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+	err := runBlock(db, a, b)
+	if err == nil {
+		t.Fatal("expected error for circular dependency")
+	}
+}
+
+func TestRunBlock_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	err := runBlock(db, id, "noExs")
+	if err == nil {
+		t.Fatal("expected error for non-existent blocker")
+	}
+}
+
+// --- Unblock ---
+
+func TestRunUnblock_RemovesRelationship(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+	if err := runUnblock(db, blocked, blocker); err != nil {
+		t.Fatalf("runUnblock: %v", err)
+	}
+
+	blocks, err := getBlockers(db, blocked)
+	if err != nil {
+		t.Fatalf("getBlockers: %v", err)
+	}
+	if len(blocks) != 0 {
+		t.Errorf("expected 0 blockers after unblock, got %d", len(blocks))
+	}
+}
+
+func TestRunUnblock_RecordsEvent(t *testing.T) {
+	db := setupTestDB(t)
+	blocker := mustAdd(t, db, "", "Blocker")
+	blocked := mustAdd(t, db, "", "Blocked")
+
+	if err := runBlock(db, blocked, blocker); err != nil {
+		t.Fatalf("runBlock: %v", err)
+	}
+	if err := runUnblock(db, blocked, blocker); err != nil {
+		t.Fatalf("runUnblock: %v", err)
+	}
+
+	blockedTask := mustGet(t, db, blocked)
+	detail, err := getLatestEventDetail(db, blockedTask.ID, "unblocked")
+	if err != nil {
+		t.Fatalf("getLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected unblocked event")
+	}
+}
+
+func TestRunUnblock_NotBlocked(t *testing.T) {
+	db := setupTestDB(t)
+	a := mustAdd(t, db, "", "A")
+	b := mustAdd(t, db, "", "B")
+	err := runUnblock(db, a, b)
+	if err == nil {
+		t.Fatal("expected error when unblocking non-blocked task")
+	}
+}
+
+// --- JSON format ---
+
+func TestFormatJSON_ListOutput(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	mustAdd(t, db, pid, "Child")
+
+	nodes, err := runList(db, "", true)
+	if err != nil {
+		t.Fatalf("runList: %v", err)
+	}
+
+	jsonBytes, err := formatTaskNodesJSON(nodes)
+	if err != nil {
+		t.Fatalf("formatTaskNodesJSON: %v", err)
+	}
+
+	var result []map[string]any
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 root, got %d", len(result))
+	}
+	if result[0]["title"] != "Parent" {
+		t.Errorf("title: got %v, want %q", result[0]["title"], "Parent")
+	}
+	children, ok := result[0]["children"].([]any)
+	if !ok {
+		t.Fatalf("children: got %T", result[0]["children"])
+	}
+	if len(children) != 1 {
+		t.Errorf("children: got %d, want 1", len(children))
+	}
+}
+
+// --- Info ---
+
+func TestRunInfo_RootTask(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "My task")
+
+	info, err := runInfo(db, id)
+	if err != nil {
+		t.Fatalf("runInfo: %v", err)
+	}
+	if info.Task.ShortID != id {
+		t.Errorf("short_id: got %s, want %s", info.Task.ShortID, id)
+	}
+	if info.Task.Title != "My task" {
+		t.Errorf("title: got %s, want %q", info.Task.Title, "My task")
+	}
+	if info.Parent != nil {
+		t.Errorf("parent: got %v, want nil", info.Parent)
+	}
+}
+
+func TestRunInfo_ChildTask(t *testing.T) {
+	db := setupTestDB(t)
+	pid := mustAdd(t, db, "", "Parent")
+	cid := mustAdd(t, db, pid, "Child")
+
+	info, err := runInfo(db, cid)
+	if err != nil {
+		t.Fatalf("runInfo: %v", err)
+	}
+	if info.Parent == nil {
+		t.Fatal("parent: got nil, want non-nil")
+	}
+	if info.Parent.ShortID != pid {
+		t.Errorf("parent short_id: got %s, want %s", info.Parent.ShortID, pid)
+	}
+}
+
+func TestRunInfo_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	_, err := runInfo(db, "noExs")
+	if err == nil {
+		t.Fatal("expected error for non-existent task")
 	}
 }

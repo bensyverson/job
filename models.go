@@ -15,6 +15,7 @@ type Task struct {
 	CompletionNote *string
 	CreatedAt      int64
 	UpdatedAt      int64
+	DeletedAt      *int64
 }
 
 type Event struct {
@@ -40,11 +41,12 @@ func scanTask(s scanner) (*Task, error) {
 	var claimedBy sql.NullString
 	var claimExpiresAt sql.NullInt64
 	var completionNote sql.NullString
+	var deletedAt sql.NullInt64
 
 	err := s.Scan(
 		&t.ID, &t.ShortID, &parentID, &t.Title, &t.Description,
 		&t.Status, &t.SortOrder, &claimedBy, &claimExpiresAt,
-		&completionNote, &t.CreatedAt, &t.UpdatedAt,
+		&completionNote, &t.CreatedAt, &t.UpdatedAt, &deletedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -65,6 +67,10 @@ func scanTask(s scanner) (*Task, error) {
 	if completionNote.Valid {
 		cn := completionNote.String
 		t.CompletionNote = &cn
+	}
+	if deletedAt.Valid {
+		da := deletedAt.Int64
+		t.DeletedAt = &da
 	}
 
 	return &t, nil

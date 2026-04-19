@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+var currentNowFunc = time.Now
 
 const defaultDBName = ".jobs.db"
 const base62Chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -68,7 +69,8 @@ func initSchema(db *sql.DB) error {
 			claim_expires_at INTEGER,
 			completion_note  TEXT,
 			created_at       INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-			updated_at       INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+			updated_at       INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+			deleted_at       INTEGER
 		);
 		CREATE INDEX IF NOT EXISTS idx_tasks_short_id ON tasks(short_id);
 		CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
@@ -84,7 +86,7 @@ func initSchema(db *sql.DB) error {
 
 		CREATE TABLE IF NOT EXISTS events (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			task_id     INTEGER NOT NULL REFERENCES tasks(id),
 			event_type  TEXT NOT NULL,
 			detail      TEXT,
 			created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
@@ -133,11 +135,22 @@ func recordEvent(tx dbtx, taskID int64, eventType string, detail any) error {
 }
 
 func getTaskByShortID(tx dbtx, shortID string) (*Task, error) {
-	row := tx.QueryRow(`
+	return getTaskByShortIDFilter(tx, shortID, true)
+}
+
+func getTaskByShortIDIncludeDeleted(tx dbtx, shortID string) (*Task, error) {
+	return getTaskByShortIDFilter(tx, shortID, false)
+}
+
+func getTaskByShortIDFilter(tx dbtx, shortID string, excludeDeleted bool) (*Task, error) {
+	q := `
 		SELECT id, short_id, parent_id, title, description, status, sort_order,
-		       claimed_by, claim_expires_at, completion_note, created_at, updated_at
-		FROM tasks WHERE short_id = ?
-	`, shortID)
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE short_id = ?`
+	if excludeDeleted {
+		q += " AND deleted_at IS NULL"
+	}
+	row := tx.QueryRow(q, shortID)
 	t, err := scanTask(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -151,8 +164,8 @@ func getTaskByShortID(tx dbtx, shortID string) (*Task, error) {
 func loadAllTasks(db *sql.DB) ([]*Task, error) {
 	rows, err := db.Query(`
 		SELECT id, short_id, parent_id, title, description, status, sort_order,
-		       claimed_by, claim_expires_at, completion_note, created_at, updated_at
-		FROM tasks ORDER BY parent_id, sort_order
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE deleted_at IS NULL ORDER BY parent_id, sort_order
 	`)
 	if err != nil {
 		return nil, err
@@ -238,8 +251,8 @@ func getLatestEventDetail(tx dbtx, taskID int64, eventType string) (map[string]a
 func findIncompleteDescendants(tx dbtx, taskID int64) ([]*Task, error) {
 	rows, err := tx.Query(`
 		SELECT id, short_id, parent_id, title, description, status, sort_order,
-		       claimed_by, claim_expires_at, completion_note, created_at, updated_at
-		FROM tasks WHERE parent_id = ? AND status != 'done'
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE parent_id = ? AND status != 'done' AND deleted_at IS NULL
 	`, taskID)
 	if err != nil {
 		return nil, err
@@ -263,7 +276,7 @@ func findIncompleteDescendants(tx dbtx, taskID int64) ([]*Task, error) {
 }
 
 func childShortIDs(tx dbtx, parentID int64) ([]string, error) {
-	rows, err := tx.Query("SELECT short_id FROM tasks WHERE parent_id = ? AND status != 'done'", parentID)
+	rows, err := tx.Query("SELECT short_id FROM tasks WHERE parent_id = ? AND status != 'done' AND deleted_at IS NULL", parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -278,264 +291,4 @@ func childShortIDs(tx dbtx, parentID int64) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
-}
-
-func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string) (string, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback()
-
-	var parentID *int64
-	if parentShortID != "" {
-		parent, err := getTaskByShortID(tx, parentShortID)
-		if err != nil {
-			return "", err
-		}
-		if parent == nil {
-			return "", fmt.Errorf("task %q not found", parentShortID)
-		}
-		parentID = &parent.ID
-	}
-
-	shortID, err := generateShortID(tx)
-	if err != nil {
-		return "", err
-	}
-
-	var sortOrder int
-	if beforeShortID != "" {
-		beforeTask, err := getTaskByShortID(tx, beforeShortID)
-		if err != nil {
-			return "", err
-		}
-		if beforeTask == nil {
-			return "", fmt.Errorf("task %q not found", beforeShortID)
-		}
-		if (beforeTask.ParentID == nil) != (parentID == nil) {
-			return "", fmt.Errorf("task %q is not a sibling of the new task", beforeShortID)
-		}
-		if beforeTask.ParentID != nil && parentID != nil && *beforeTask.ParentID != *parentID {
-			return "", fmt.Errorf("task %q is not a sibling of the new task", beforeShortID)
-		}
-		sortOrder = beforeTask.SortOrder
-		if parentID == nil {
-			_, err = tx.Exec("UPDATE tasks SET sort_order = sort_order + 1 WHERE parent_id IS NULL AND sort_order >= ?", sortOrder)
-		} else {
-			_, err = tx.Exec("UPDATE tasks SET sort_order = sort_order + 1 WHERE parent_id = ? AND sort_order >= ?", *parentID, sortOrder)
-		}
-		if err != nil {
-			return "", err
-		}
-	} else {
-		var maxSort sql.NullInt64
-		if parentID == nil {
-			err = tx.QueryRow("SELECT MAX(sort_order) FROM tasks WHERE parent_id IS NULL").Scan(&maxSort)
-		} else {
-			err = tx.QueryRow("SELECT MAX(sort_order) FROM tasks WHERE parent_id = ?", *parentID).Scan(&maxSort)
-		}
-		if err != nil {
-			return "", err
-		}
-		if maxSort.Valid {
-			sortOrder = int(maxSort.Int64) + 1
-		}
-	}
-
-	now := time.Now().Unix()
-	var taskID int64
-	err = tx.QueryRow(`
-		INSERT INTO tasks (short_id, parent_id, title, description, status, sort_order, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'available', ?, ?, ?)
-		RETURNING id
-	`, shortID, parentID, title, desc, sortOrder, now, now).Scan(&taskID)
-	if err != nil {
-		return "", err
-	}
-
-	eventParentID := ""
-	if parentShortID != "" {
-		eventParentID = parentShortID
-	}
-	if err := recordEvent(tx, taskID, "created", map[string]any{
-		"parent_id":   eventParentID,
-		"title":       title,
-		"description": desc,
-		"sort_order":  sortOrder,
-	}); err != nil {
-		return "", err
-	}
-
-	return shortID, tx.Commit()
-}
-
-func runList(db *sql.DB, parentShortID string, showAll bool) ([]*TaskNode, error) {
-	tasks, err := loadAllTasks(db)
-	if err != nil {
-		return nil, err
-	}
-
-	tree := buildTree(tasks)
-
-	if parentShortID != "" {
-		parent := findNodeByShortID(tree, parentShortID)
-		if parent == nil {
-			return nil, fmt.Errorf("task %q not found", parentShortID)
-		}
-		tree = parent.Children
-	}
-
-	return filterTree(tree, showAll), nil
-}
-
-func runDone(db *sql.DB, shortID string, force bool, note string) ([]string, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	task, err := getTaskByShortID(tx, shortID)
-	if err != nil {
-		return nil, err
-	}
-	if task == nil {
-		return nil, fmt.Errorf("task %q not found", shortID)
-	}
-	if task.Status == "done" {
-		return nil, fmt.Errorf("task %s is already done", shortID)
-	}
-
-	var forceClosedShortIDs []string
-	var forceClosedTasks []*Task
-
-	incomplete, err := findIncompleteDescendants(tx, task.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(incomplete) > 0 {
-		if !force {
-			var descs []string
-			for _, t := range incomplete {
-				descs = append(descs, fmt.Sprintf("%s (%s)", t.ShortID, t.Title))
-			}
-			return nil, fmt.Errorf("task %s has incomplete subtasks: %s", shortID, strings.Join(descs, ", "))
-		}
-		forceClosedTasks = incomplete
-		forceClosedShortIDs = make([]string, len(incomplete))
-		for i, t := range incomplete {
-			forceClosedShortIDs[i] = t.ShortID
-		}
-	}
-
-	now := time.Now().Unix()
-
-	for _, child := range forceClosedTasks {
-		var noteVal any
-		if _, err := tx.Exec(
-			"UPDATE tasks SET status = 'done', completion_note = ?, updated_at = ? WHERE id = ?",
-			noteVal, now, child.ID,
-		); err != nil {
-			return nil, err
-		}
-		if err := recordEvent(tx, child.ID, "done", map[string]any{
-			"note":                   nil,
-			"force":                  true,
-			"force_closed_by_parent": shortID,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	var noteVal any
-	if note != "" {
-		noteVal = note
-	}
-	if _, err := tx.Exec(
-		"UPDATE tasks SET status = 'done', completion_note = ?, updated_at = ? WHERE id = ?",
-		noteVal, now, task.ID,
-	); err != nil {
-		return nil, err
-	}
-
-	if err := recordEvent(tx, task.ID, "done", map[string]any{
-		"note":                  noteVal,
-		"force":                 force,
-		"force_closed_children": forceClosedShortIDs,
-	}); err != nil {
-		return nil, err
-	}
-
-	return forceClosedShortIDs, tx.Commit()
-}
-
-func runReopen(db *sql.DB, shortID string) ([]string, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	task, err := getTaskByShortID(tx, shortID)
-	if err != nil {
-		return nil, err
-	}
-	if task == nil {
-		return nil, fmt.Errorf("task %q not found", shortID)
-	}
-	if task.Status != "done" {
-		return nil, fmt.Errorf("task %s is not done (status: %s)", shortID, task.Status)
-	}
-
-	detail, err := getLatestEventDetail(tx, task.ID, "done")
-	if err != nil {
-		return nil, err
-	}
-
-	var reopenedChildren []string
-	if detail != nil {
-		if children, ok := detail["force_closed_children"].([]any); ok {
-			now := time.Now().Unix()
-			for _, c := range children {
-				childShortID, ok := c.(string)
-				if !ok {
-					continue
-				}
-				child, err := getTaskByShortID(tx, childShortID)
-				if err != nil || child == nil {
-					continue
-				}
-				if _, err := tx.Exec(
-					"UPDATE tasks SET status = 'available', completion_note = NULL, updated_at = ? WHERE id = ?",
-					now, child.ID,
-				); err != nil {
-					return nil, err
-				}
-				if err := recordEvent(tx, child.ID, "reopened", map[string]any{
-					"reopened_by_parent": shortID,
-				}); err != nil {
-					return nil, err
-				}
-				reopenedChildren = append(reopenedChildren, childShortID)
-			}
-		}
-	}
-
-	now := time.Now().Unix()
-	if _, err := tx.Exec(
-		"UPDATE tasks SET status = 'available', completion_note = NULL, updated_at = ? WHERE id = ?",
-		now, task.ID,
-	); err != nil {
-		return nil, err
-	}
-
-	if err := recordEvent(tx, task.ID, "reopened", map[string]any{
-		"reopened_children": reopenedChildren,
-	}); err != nil {
-		return nil, err
-	}
-
-	return reopenedChildren, tx.Commit()
 }

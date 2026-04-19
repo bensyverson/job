@@ -1,5 +1,6 @@
 # Binaries
 /job
+/jobs
 
 # Database
 .jobs.db

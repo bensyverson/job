@@ -208,7 +208,7 @@ func runLogin(db *sql.DB, name, key string) (*LoginResult, error) {
 	}
 
 	if key == "" {
-		return nil, fmt.Errorf("user %q already exists. Provide the key: jobs login %s <key>", name, name)
+		return nil, fmt.Errorf("user %q already exists. Provide the key: job login %s <key>", name, name)
 	}
 
 	user, err := validateUser(db, name, key)

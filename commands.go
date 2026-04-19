@@ -821,11 +821,11 @@ func newLoginCmd() *cobra.Command {
 		Short: "Log in or create a user",
 		Long: `Log in or create a user.
 
-  jobs login              Create a new user with a random name and key
-  jobs login <name>       Create user <name> if it doesn't exist, or log in if it does
-  jobs login <name> <key> Log in as <name> with the given key
+  job login              Create a new user with a random name and key
+  job login <name>       Create user <name> if it doesn't exist, or log in if it does
+  job login <name> <key> Log in as <name> with the given key
 
-Use: eval $(jobs login) to set environment variables in your shell.`,
+Use: eval $(job login) to set environment variables in your shell.`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()

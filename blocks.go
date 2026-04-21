@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 func runBlock(db *sql.DB, blockedShortID, blockerShortID, actor string) error {
@@ -137,6 +138,43 @@ func runUnblock(db *sql.DB, blockedShortID, blockerShortID, actor string) error 
 	}
 
 	return tx.Commit()
+}
+
+// getBlockersForTaskIDs returns a map of blocked-task-id to the short IDs of
+// its open blockers. One query covers the whole set, replacing N+1 walks.
+func getBlockersForTaskIDs(db *sql.DB, taskIDs []int64) (map[int64][]string, error) {
+	out := make(map[int64][]string, len(taskIDs))
+	if len(taskIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(taskIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(taskIDs))
+	for _, id := range taskIDs {
+		args = append(args, id)
+	}
+	rows, err := db.Query(`
+		SELECT b.blocked_id, blocker.short_id
+		FROM blocks b
+		JOIN tasks blocker ON blocker.id = b.blocker_id
+		WHERE b.blocked_id IN (`+placeholders+`)
+		  AND blocker.status != 'done'
+		  AND blocker.deleted_at IS NULL
+		ORDER BY b.blocked_id, blocker.short_id
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var blockedID int64
+		var blockerShort string
+		if err := rows.Scan(&blockedID, &blockerShort); err != nil {
+			return nil, err
+		}
+		out[blockedID] = append(out[blockedID], blockerShort)
+	}
+	return out, rows.Err()
 }
 
 func getBlockers(db *sql.DB, shortID string) ([]*Task, error) {

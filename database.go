@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -30,7 +31,43 @@ func resolveDBPath(dbFlag string) string {
 	if env := os.Getenv("JOBS_DB"); env != "" {
 		return env
 	}
+	if found := findAncestorDB(); found != "" {
+		return found
+	}
 	return defaultDBName
+}
+
+// resolveDBPathForInit is used by `job init` to pick a destination path. It
+// intentionally does NOT walk up looking for an ancestor database: running
+// `job init` in a subfolder of an existing project creates a new db in cwd,
+// the same way `git init` inside a git repo creates a new repo.
+func resolveDBPathForInit(dbFlag string) string {
+	if dbFlag != "" {
+		return dbFlag
+	}
+	if env := os.Getenv("JOBS_DB"); env != "" {
+		return env
+	}
+	return defaultDBName
+}
+
+func findAncestorDB() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	dir := cwd
+	for {
+		candidate := filepath.Join(dir, defaultDBName)
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 func openDB(path string) (*sql.DB, error) {
@@ -40,6 +77,10 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA foreign_keys=ON")
+	if err := initSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -84,9 +125,17 @@ func initSchema(db *sql.DB) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_blocks_blocked_id ON blocks(blocked_id);
 
+		CREATE TABLE IF NOT EXISTS task_labels (
+			task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			name       TEXT NOT NULL,
+			created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+			PRIMARY KEY (task_id, name)
+		);
+		CREATE INDEX IF NOT EXISTS idx_task_labels_name ON task_labels(name);
+
 		CREATE TABLE IF NOT EXISTS events (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			task_id     INTEGER NOT NULL REFERENCES tasks(id),
+			task_id     INTEGER REFERENCES tasks(id),
 			event_type  TEXT NOT NULL,
 			actor       TEXT NOT NULL DEFAULT '',
 			detail      TEXT,
@@ -98,7 +147,6 @@ func initSchema(db *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS users (
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			name       TEXT UNIQUE NOT NULL,
-			key        TEXT NOT NULL,
 			created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 		)
 	`)
@@ -138,6 +186,25 @@ func recordEvent(tx dbtx, taskID int64, eventType, actor string, detail any) err
 	_, err := tx.Exec(
 		"INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (?, ?, ?, ?, ?)",
 		taskID, eventType, actor, detailJSON, time.Now().Unix(),
+	)
+	return err
+}
+
+// recordOrphanEvent records an event with task_id = NULL. Used for events that
+// outlive their subject task (e.g. a `purged` event on a root task whose row
+// is being erased in the same transaction).
+func recordOrphanEvent(tx dbtx, eventType, actor string, detail any) error {
+	var detailJSON string
+	if detail != nil {
+		b, err := json.Marshal(detail)
+		if err != nil {
+			return fmt.Errorf("marshal event detail: %w", err)
+		}
+		detailJSON = string(b)
+	}
+	_, err := tx.Exec(
+		"INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (NULL, ?, ?, ?, ?)",
+		eventType, actor, detailJSON, time.Now().Unix(),
 	)
 	return err
 }
@@ -214,6 +281,8 @@ func filterTree(nodes []*TaskNode, showAll bool, blockedIDs map[int64]bool) []*T
 	}
 	var result []*TaskNode
 	for _, node := range nodes {
+		// Default `list` shows only actionable work — open + unblocked + unclaimed.
+		// Done and canceled tasks are explicitly hidden; pass `all` to surface them.
 		if node.Task.Status != "available" || blockedIDs[node.Task.ID] {
 			continue
 		}
@@ -279,6 +348,125 @@ func getLatestEventDetail(tx dbtx, taskID int64, eventType string) (map[string]a
 	return result, nil
 }
 
+// findClosedDescendants returns every descendant whose status is either
+// "done" or "canceled". Used by `reopen --cascade` to revive a closed subtree.
+func findClosedDescendants(tx dbtx, taskID int64) ([]*Task, error) {
+	rows, err := tx.Query(`
+		SELECT id, short_id, parent_id, title, description, status, sort_order,
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE parent_id = ? AND deleted_at IS NULL
+	`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		if t.Status == "done" || t.Status == "canceled" {
+			result = append(result, t)
+		}
+		desc, err := findClosedDescendants(tx, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, desc...)
+	}
+	return result, rows.Err()
+}
+
+func findDoneDescendants(tx dbtx, taskID int64) ([]*Task, error) {
+	rows, err := tx.Query(`
+		SELECT id, short_id, parent_id, title, description, status, sort_order,
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE parent_id = ? AND deleted_at IS NULL
+	`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		if t.Status == "done" {
+			result = append(result, t)
+		}
+		desc, err := findDoneDescendants(tx, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, desc...)
+	}
+	return result, rows.Err()
+}
+
+// findOpenDescendants returns every descendant of taskID whose status is
+// neither "done" nor "canceled". Used by `cancel --cascade` to walk the live
+// subtree under a task being canceled.
+func findOpenDescendants(tx dbtx, taskID int64) ([]*Task, error) {
+	rows, err := tx.Query(`
+		SELECT id, short_id, parent_id, title, description, status, sort_order,
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE parent_id = ? AND status != 'done' AND status != 'canceled' AND deleted_at IS NULL
+	`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, t)
+		desc, err := findOpenDescendants(tx, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, desc...)
+	}
+	return result, rows.Err()
+}
+
+// findAllDescendants returns every descendant of taskID regardless of status.
+// Used by `cancel --purge --cascade` which erases the entire subtree.
+func findAllDescendants(tx dbtx, taskID int64) ([]*Task, error) {
+	rows, err := tx.Query(`
+		SELECT id, short_id, parent_id, title, description, status, sort_order,
+		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+		FROM tasks WHERE parent_id = ? AND deleted_at IS NULL
+	`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, t)
+		desc, err := findAllDescendants(tx, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, desc...)
+	}
+	return result, rows.Err()
+}
+
 func findIncompleteDescendants(tx dbtx, taskID int64) ([]*Task, error) {
 	rows, err := tx.Query(`
 		SELECT id, short_id, parent_id, title, description, status, sort_order,
@@ -337,6 +525,35 @@ func getEventsForTaskTree(db *sql.DB, shortID string) ([]EventEntry, error) {
 		WHERE e.task_id IN (SELECT id FROM tree)
 		ORDER BY e.created_at, e.id
 	`, shortID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []EventEntry
+	for rows.Next() {
+		var e EventEntry
+		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Actor, &e.Detail, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+func getEventsForTaskTreeSince(db *sql.DB, shortID string, since int64) ([]EventEntry, error) {
+	rows, err := db.Query(`
+		WITH RECURSIVE tree AS (
+			SELECT id FROM tasks WHERE short_id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
+		)
+		SELECT e.id, e.task_id, t.short_id, e.event_type, e.actor, e.detail, e.created_at
+		FROM events e
+		JOIN tasks t ON t.id = e.task_id
+		WHERE e.task_id IN (SELECT id FROM tree) AND e.created_at >= ?
+		ORDER BY e.created_at, e.id
+	`, shortID, since)
 	if err != nil {
 		return nil, err
 	}

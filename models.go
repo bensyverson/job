@@ -44,7 +44,6 @@ type TaskNode struct {
 type User struct {
 	ID        int64
 	Name      string
-	Key       string
 	CreatedAt int64
 }
 

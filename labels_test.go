@@ -1,0 +1,680 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
+
+// --- Runner tests ---
+
+func TestLabelAdd_Single_Happy(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	res, err := runLabelAdd(db, id, []string{"foo"}, testActor)
+	if err != nil {
+		t.Fatalf("runLabelAdd: %v", err)
+	}
+	if len(res.Added) != 1 || res.Added[0] != "foo" {
+		t.Errorf("Added: got %v, want [foo]", res.Added)
+	}
+	if len(res.Existing) != 0 {
+		t.Errorf("Existing: got %v, want []", res.Existing)
+	}
+
+	task := mustGet(t, db, id)
+	labels, err := getLabels(db, task.ID)
+	if err != nil {
+		t.Fatalf("getLabels: %v", err)
+	}
+	if len(labels) != 1 || labels[0] != "foo" {
+		t.Errorf("labels: got %v, want [foo]", labels)
+	}
+
+	detail, err := getLatestEventDetail(db, task.ID, "labeled")
+	if err != nil || detail == nil {
+		t.Fatalf("labeled event missing: err=%v detail=%v", err, detail)
+	}
+	names, _ := detail["names"].([]any)
+	if len(names) != 1 || names[0].(string) != "foo" {
+		t.Errorf("event names: got %v, want [foo]", names)
+	}
+}
+
+func TestLabelAdd_Variadic(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	res, err := runLabelAdd(db, id, []string{"foo", "bar", "baz"}, testActor)
+	if err != nil {
+		t.Fatalf("runLabelAdd: %v", err)
+	}
+	if len(res.Added) != 3 {
+		t.Errorf("Added: got %v, want 3", res.Added)
+	}
+	task := mustGet(t, db, id)
+	labels, _ := getLabels(db, task.ID)
+	if len(labels) != 3 {
+		t.Errorf("labels: got %v, want 3", labels)
+	}
+
+	// One event per call.
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE task_id = ? AND event_type = 'labeled'", task.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("labeled events: got %d, want 1", n)
+	}
+}
+
+func TestLabelAdd_Idempotent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if _, err := runLabelAdd(db, id, []string{"foo"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	res, err := runLabelAdd(db, id, []string{"foo"}, testActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Added) != 0 {
+		t.Errorf("Added: got %v, want []", res.Added)
+	}
+	if len(res.Existing) != 1 || res.Existing[0] != "foo" {
+		t.Errorf("Existing: got %v, want [foo]", res.Existing)
+	}
+
+	task := mustGet(t, db, id)
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE task_id = ? AND event_type = 'labeled'", task.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("labeled events: got %d, want 1 (no event on idempotent re-add)", n)
+	}
+}
+
+func TestLabelAdd_Mixed_SomeNew_SomeExisting(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if _, err := runLabelAdd(db, id, []string{"bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	res, err := runLabelAdd(db, id, []string{"foo", "bar"}, testActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Added) != 1 || res.Added[0] != "foo" {
+		t.Errorf("Added: got %v, want [foo]", res.Added)
+	}
+	if len(res.Existing) != 1 || res.Existing[0] != "bar" {
+		t.Errorf("Existing: got %v, want [bar]", res.Existing)
+	}
+
+	task := mustGet(t, db, id)
+	detail, _ := getLatestEventDetail(db, task.ID, "labeled")
+	names, _ := detail["names"].([]any)
+	existing, _ := detail["existing"].([]any)
+	if len(names) != 2 {
+		t.Errorf("event names len: got %d, want 2", len(names))
+	}
+	if len(existing) != 1 {
+		t.Errorf("event existing len: got %d, want 1", len(existing))
+	}
+}
+
+func TestLabelAdd_EmptyName_Errors(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	_, err := runLabelAdd(db, id, []string{""}, testActor)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if err.Error() != "label name is empty" {
+		t.Errorf("err: got %q, want %q", err.Error(), "label name is empty")
+	}
+}
+
+func TestLabelAdd_CommaInName_Errors(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	_, err := runLabelAdd(db, id, []string{"foo,bar"}, testActor)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	want := `label name "foo,bar" may not contain ','`
+	if err.Error() != want {
+		t.Errorf("err: got %q, want %q", err.Error(), want)
+	}
+}
+
+func TestLabelAdd_WhitespaceTrimmed(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	if _, err := runLabelAdd(db, id, []string{" foo "}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	task := mustGet(t, db, id)
+	labels, _ := getLabels(db, task.ID)
+	if len(labels) != 1 || labels[0] != "foo" {
+		t.Errorf("labels: got %v, want [foo]", labels)
+	}
+}
+
+func TestLabelAdd_TaskNotFound_Errors(t *testing.T) {
+	db := setupTestDB(t)
+	_, err := runLabelAdd(db, "noExs", []string{"foo"}, testActor)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `"noExs" not found`) {
+		t.Errorf("err: %v", err)
+	}
+}
+
+func TestLabelAdd_DoesNotRequireClaim(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	if err := runClaim(db, id, "1h", "alice", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runLabelAdd(db, id, []string{"foo"}, "bob"); err != nil {
+		t.Fatalf("bob should be able to label even when alice holds claim: %v", err)
+	}
+}
+
+func TestLabelRemove_Happy(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo", "bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := runLabelRemove(db, id, []string{"foo"}, testActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != "foo" {
+		t.Errorf("Removed: got %v, want [foo]", res.Removed)
+	}
+	task := mustGet(t, db, id)
+	labels, _ := getLabels(db, task.ID)
+	if len(labels) != 1 || labels[0] != "bar" {
+		t.Errorf("labels remaining: got %v, want [bar]", labels)
+	}
+}
+
+func TestLabelRemove_Idempotent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+
+	res, err := runLabelRemove(db, id, []string{"foo"}, testActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Removed) != 0 {
+		t.Errorf("Removed: got %v, want []", res.Removed)
+	}
+	if len(res.Absent) != 1 || res.Absent[0] != "foo" {
+		t.Errorf("Absent: got %v, want [foo]", res.Absent)
+	}
+
+	task := mustGet(t, db, id)
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE task_id = ? AND event_type = 'unlabeled'", task.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("unlabeled events: got %d, want 0", n)
+	}
+}
+
+func TestLabelRemove_PartiallyAbsent(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	res, err := runLabelRemove(db, id, []string{"foo", "bar"}, testActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != "foo" {
+		t.Errorf("Removed: got %v, want [foo]", res.Removed)
+	}
+	if len(res.Absent) != 1 || res.Absent[0] != "bar" {
+		t.Errorf("Absent: got %v, want [bar]", res.Absent)
+	}
+}
+
+// --- Schema & migration ---
+
+func TestSchema_HasTaskLabelsTable(t *testing.T) {
+	db := setupTestDB(t)
+	var name string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='task_labels'").Scan(&name)
+	if err != nil {
+		t.Fatalf("task_labels table missing: %v", err)
+	}
+}
+
+func TestOpenDB_CreatesLabelsTable_OnExistingDB(t *testing.T) {
+	dbFile := setupCLI(t)
+	// Drop table to simulate a pre-Phase-7 db.
+	db := openTestDB(t, dbFile)
+	if _, err := db.Exec("DROP TABLE task_labels"); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	db.Close()
+
+	// Re-open: openDB now runs initSchema, so the table should be re-created.
+	db2, err := openDB(dbFile)
+	if err != nil {
+		t.Fatalf("openDB: %v", err)
+	}
+	defer db2.Close()
+	var name string
+	if err := db2.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='task_labels'").Scan(&name); err != nil {
+		t.Fatalf("task_labels table not re-created: %v", err)
+	}
+}
+
+// --- YAML import ---
+
+func TestImport_PersistsLabels(t *testing.T) {
+	db := setupTestDB(t)
+	tmp := t.TempDir() + "/plan.md"
+	body := "```yaml\n" +
+		"tasks:\n" +
+		"  - title: Root\n" +
+		"    labels: [a, b]\n" +
+		"```\n"
+	if err := writeFile(tmp, body); err != nil {
+		t.Fatal(err)
+	}
+	res, err := runImport(db, tmp, "", false, testActor)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if len(res.Tasks) != 1 {
+		t.Fatalf("tasks: %d", len(res.Tasks))
+	}
+	task := mustGet(t, db, res.Tasks[0].ID)
+	labels, _ := getLabels(db, task.ID)
+	if len(labels) != 2 {
+		t.Errorf("labels: got %v, want [a b]", labels)
+	}
+
+	// labeled event present alongside created.
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE task_id = ? AND event_type = 'labeled'", task.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("labeled events: got %d, want 1", n)
+	}
+}
+
+func TestImport_LabelValidation_RejectsCommaInName(t *testing.T) {
+	db := setupTestDB(t)
+	tmp := t.TempDir() + "/plan.md"
+	body := "```yaml\n" +
+		"tasks:\n" +
+		"  - title: Root\n" +
+		"    labels: [\"a,b\"]\n" +
+		"```\n"
+	if err := writeFile(tmp, body); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runImport(db, tmp, "", false, testActor)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "labels[0]") {
+		t.Errorf("err should reference labels path: %v", err)
+	}
+	if !strings.Contains(err.Error(), "may not contain ','") {
+		t.Errorf("err should mention comma rule: %v", err)
+	}
+}
+
+// --- Filters ---
+
+func TestList_LabelFilter_MatchesOnly(t *testing.T) {
+	db := setupTestDB(t)
+	a := mustAdd(t, db, "", "A")
+	b := mustAdd(t, db, "", "B")
+	if _, err := runLabelAdd(db, a, []string{"foo"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := runListFiltered(db, "", testActor, false, "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].Task.ShortID != a {
+		t.Errorf("nodes: got %+v, want [%s]; b=%s", nodes, a, b)
+	}
+}
+
+func TestList_LabelFilter_NoMatch_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	mustAdd(t, db, "", "A")
+	nodes, err := runListFiltered(db, "", testActor, false, "nope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 0 {
+		t.Errorf("nodes: got %d, want 0", len(nodes))
+	}
+}
+
+func TestNext_LabelFilter(t *testing.T) {
+	db := setupTestDB(t)
+	a := mustAdd(t, db, "", "A")
+	b := mustAdd(t, db, "", "B")
+	if _, err := runLabelAdd(db, b, []string{"foo"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	task, err := runNextFiltered(db, "", testActor, "foo")
+	if err != nil {
+		t.Fatalf("next filtered: %v", err)
+	}
+	if task.ShortID != b {
+		t.Errorf("next: got %s, want %s; a=%s", task.ShortID, b, a)
+	}
+}
+
+func TestNextAll_LabelFilter(t *testing.T) {
+	db := setupTestDB(t)
+	a := mustAdd(t, db, "", "A")
+	b := mustAdd(t, db, "", "B")
+	c := mustAdd(t, db, "", "C")
+	if _, err := runLabelAdd(db, a, []string{"x"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runLabelAdd(db, c, []string{"x"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := runNextAllFiltered(db, "", testActor, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("tasks: got %d, want 2 (a=%s b=%s c=%s)", len(tasks), a, b, c)
+	}
+}
+
+// --- Display ---
+
+func TestInfo_ShowsLabelsLine(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo", "bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	info, err := runInfo(db, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.Labels) != 2 {
+		t.Errorf("labels: got %v, want 2", info.Labels)
+	}
+}
+
+func TestInfo_Json_IncludesLabels(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "info", id, "--format=json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	labels, ok := got["labels"].([]any)
+	if !ok {
+		t.Fatalf("labels missing or wrong type: %v", got["labels"])
+	}
+	if len(labels) != 1 || labels[0].(string) != "foo" {
+		t.Errorf("labels: got %v, want [foo]", labels)
+	}
+}
+
+func TestInfo_Json_EmptyLabels(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "info", id, "--format=json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	if labels, ok := got["labels"].([]any); !ok || len(labels) != 0 {
+		t.Errorf("labels: got %v, want []", got["labels"])
+	}
+}
+
+func TestList_ShowsLabelsInParens(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "labels: foo") {
+		t.Errorf("missing labels in parens:\n%s", stdout)
+	}
+}
+
+func TestLog_LabeledEvent_Description(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo", "bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	events, err := runLog(db, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range events {
+		if e.EventType == "labeled" {
+			desc := formatEventDescription(e.EventType, e.Detail)
+			want := "labeled: foo, bar"
+			if desc != want {
+				t.Errorf("desc: got %q, want %q", desc, want)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no labeled event in log")
+	}
+}
+
+// --- CLI shape ---
+
+func TestLabelCLI_Add_Md_Single_Shape(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "label", "add", id, "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Labeled: " + id + " (+foo)\n"
+	if stdout != want {
+		t.Errorf("got %q, want %q", stdout, want)
+	}
+}
+
+func TestLabelCLI_Add_Md_Mixed_Shape(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "label", "add", id, "foo", "bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Labeled: " + id + " (+foo; already had: bar)\n"
+	if stdout != want {
+		t.Errorf("got %q, want %q", stdout, want)
+	}
+}
+
+func TestLabelCLI_AllExisting_Shape(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo", "bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "label", "add", id, "foo", "bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Already labeled: " + id + " (foo, bar)\n"
+	if stdout != want {
+		t.Errorf("got %q, want %q", stdout, want)
+	}
+}
+
+func TestLabelCLI_Remove_Shapes(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	if _, err := runLabelAdd(db, id, []string{"foo", "bar"}, testActor); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "label", "remove", id, "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Unlabeled: " + id + " (-foo)\n"
+	if stdout != want {
+		t.Errorf("got %q, want %q", stdout, want)
+	}
+
+	// Mixed
+	stdout2, _, err := runCLI(t, dbFile, "--as", "alice", "label", "remove", id, "bar", "qux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantMixed := "Unlabeled: " + id + " (-bar; was absent: qux)\n"
+	if stdout2 != wantMixed {
+		t.Errorf("got %q, want %q", stdout2, wantMixed)
+	}
+
+	// All absent
+	stdout3, _, err := runCLI(t, dbFile, "--as", "alice", "label", "remove", id, "qux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAbsent := "Already unlabeled: " + id + " (qux)\n"
+	if stdout3 != wantAbsent {
+		t.Errorf("got %q, want %q", stdout3, wantAbsent)
+	}
+}
+
+func TestLabelCLI_Json_Shape(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "label", "add", id, "foo", "--format=json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	if got["id"].(string) != id {
+		t.Errorf("id: got %v, want %s", got["id"], id)
+	}
+	added, _ := got["added"].([]any)
+	if len(added) != 1 || added[0].(string) != "foo" {
+		t.Errorf("added: got %v", got["added"])
+	}
+	existing, _ := got["existing"].([]any)
+	if len(existing) != 0 {
+		t.Errorf("existing: got %v, want []", got["existing"])
+	}
+}
+
+// --- Error polish ---
+
+func TestDone_IncompleteSubtasks_SuggestsCascade(t *testing.T) {
+	db := setupTestDB(t)
+	parent := mustAdd(t, db, "", "Parent")
+	child := mustAdd(t, db, parent, "Child")
+
+	_, _, err := runDone(db, []string{parent}, false, "", nil, testActor)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	wantSuffix := "(run 'job done --cascade " + parent + "' to close all)."
+	if !strings.HasSuffix(err.Error(), wantSuffix) {
+		t.Errorf("err should end with %q\n  got: %q", wantSuffix, err.Error())
+	}
+	if !strings.Contains(err.Error(), child) {
+		t.Errorf("err should reference child id %s: %v", child, err)
+	}
+}
+
+func TestClaim_AlreadyClaimedByYou_SuggestsHeartbeat(t *testing.T) {
+	db := setupTestDB(t)
+	id := mustAdd(t, db, "", "Task")
+	if err := runClaim(db, id, "1h", "alice", false); err != nil {
+		t.Fatal(err)
+	}
+	err := runClaim(db, id, "1h", "alice", false)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	want := "task " + id + " is already claimed by you. Use 'heartbeat' to refresh, or 'release' to stop."
+	if err.Error() != want {
+		t.Errorf("err:\n  got:  %q\n  want: %q", err.Error(), want)
+	}
+}
+
+// writeFile is a tiny helper for tests so we don't import os everywhere.
+func writeFile(path, contents string) error {
+	return os.WriteFile(path, []byte(contents), 0o644)
+}

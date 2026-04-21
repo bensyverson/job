@@ -1,29 +1,34 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 )
 
-var dbPath string
+var (
+	dbPath string
+	asFlag string
+)
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "job",
 		Short:         "A lightweight CLI task manager",
+		Long:          rootLongHelp,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	cmd.PersistentFlags().StringVar(&dbPath, "db", "", "path to job database (default: .jobs.db)")
-	cmd.AddCommand(newLoginCmd())
-	cmd.AddCommand(newLogoutCmd())
+	cmd.PersistentFlags().StringVar(&asFlag, "as", "", "identity to use for writes (e.g. --as alice)")
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newAddCmd())
 	cmd.AddCommand(newListCmd())
@@ -31,19 +36,95 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newReopenCmd())
 	cmd.AddCommand(newEditCmd())
 	cmd.AddCommand(newNoteCmd())
-	cmd.AddCommand(newRemoveCmd())
+	cmd.AddCommand(newCancelCmd())
 	cmd.AddCommand(newMoveCmd())
 	cmd.AddCommand(newInfoCmd())
 	cmd.AddCommand(newBlockCmd())
 	cmd.AddCommand(newUnblockCmd())
 	cmd.AddCommand(newClaimCmd())
+	cmd.AddCommand(newHeartbeatCmd())
 	cmd.AddCommand(newReleaseCmd())
+	cmd.AddCommand(newLabelCmd())
 	cmd.AddCommand(newNextCmd())
 	cmd.AddCommand(newClaimNextCmd())
 	cmd.AddCommand(newLogCmd())
 	cmd.AddCommand(newTailCmd())
+	cmd.AddCommand(newImportCmd())
+	cmd.AddCommand(newSchemaCmd())
+	cmd.AddCommand(newStatusCmd())
 	return cmd
 }
+
+const rootLongHelp = `job — a lightweight task tracker for multi-phase, multi-agent work.
+
+Use job for any task with more than a few steps, work that benefits from
+a durable audit trail, or work that may involve multiple agents
+coordinating. For ad-hoc one-off todos, built-in session notes are fine;
+use job when persistence, attribution, or coordination matter.
+
+QUICKSTART
+
+  1. Plan in a Markdown doc with a YAML code fence:
+
+       ` + "```" + `yaml
+       tasks:
+         - title: Root task
+           children:
+             - title: First subtask
+             - title: Second subtask
+       ` + "```" + `
+
+  2. Import:  job import plan.md
+     (Use --dry-run first if you want to preview without creating.)
+
+  3. Work:    job --as claude claim-next
+              job --as claude done <id> "notes on what was done"
+
+  4. Observe: job list         (actionable tasks)
+              job status       (one-line summary)
+              job log <id>     (history of a task and its subtree)
+
+IDENTITY
+
+  Writes require --as <name>. Reads (list, info, log, status, next,
+  tail, schema) work without it.
+
+    job --as alice claim 87TNz     # explicit identity per write
+
+  For "set once, forget" ergonomics, shell-alias it:
+    alias job='job --as alice'     # in .zshrc, .bashrc, etc.
+
+  Identity is free-form. Pick a stable name per agent or user; if two
+  agents use the same name they share attribution, so choose unique
+  names in multi-agent workflows.
+
+VERBS (grouped by role)
+
+  Setup:        init, schema
+  Planning:     add, import, edit, block, unblock, move, label
+  Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
+  Observation:  list, info, log, status, next, next all, tail
+
+  For full options on any verb:  job <verb> --help
+
+OUTPUT
+
+  Dense Markdown by default, token-efficient for both human and LLM
+  readers. --format=json on any read verb for deterministic parsers
+  or subscriber agents on live streams.
+
+  List output uses GFM checkboxes so you can paste ` + "`job list all`" + `
+  straight into a PR or issue and have it render as a task list.
+
+ORCHESTRATION
+
+  For multi-agent workflows, see:
+    job next all                       # full claimable frontier
+    job tail <id> --format=json        # streaming JSON-lines event stream
+    job tail --until-close <id>        # block until <id> closes
+    job --as <name> cancel <id>        # non-destructively stop work
+    job --as <name> heartbeat <id>     # refresh a long-running claim
+`
 
 func openDBFromCmd() (*sql.DB, error) {
 	path := resolveDBPath(dbPath)
@@ -55,13 +136,14 @@ func openDBFromCmd() (*sql.DB, error) {
 
 func newInitCmd() *cobra.Command {
 	var force bool
+	var writeGitignore bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new job database",
-		Long:  "Initialize a new .jobs.db in the current directory. Errors if one already exists unless --force is used.",
+		Long:  "Initialize a new .jobs.db in the current directory. Errors if one already exists unless --force is used. Use --gitignore to append recommended entries to .gitignore.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := resolveDBPath(dbPath)
+			path := resolveDBPathForInit(dbPath)
 			if _, err := os.Stat(path); err == nil && !force {
 				return fmt.Errorf("%s already exists. Use --force to overwrite", path)
 			}
@@ -78,11 +160,44 @@ func newInitCmd() *cobra.Command {
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "Initialized %s\n", path)
 			}
+
+			if writeGitignore {
+				dir := filepath.Dir(path)
+				if dir == "" {
+					dir = "."
+				}
+				written, alreadyPresent, gerr := writeGitignoreEntries(dir)
+				if gerr != nil {
+					return gerr
+				}
+				if len(written) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "Wrote %d entries to .gitignore: %s\n", len(written), strings.Join(written, ", "))
+				} else if len(alreadyPresent) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), ".gitignore already includes %s\n", humanJoin(alreadyPresent))
+				}
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout())
+				fmt.Fprintln(cmd.OutOrStdout(), gitignoreHint)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing database")
+	cmd.Flags().BoolVar(&writeGitignore, "gitignore", false, "append recommended entries to .gitignore")
 	return cmd
+}
+
+func humanJoin(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	case 2:
+		return items[0] + " and " + items[1]
+	default:
+		return strings.Join(items[:len(items)-1], ", ") + ", and " + items[len(items)-1]
+	}
 }
 
 func newAddCmd() *cobra.Command {
@@ -100,7 +215,7 @@ func newAddCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
@@ -113,7 +228,7 @@ func newAddCmd() *cobra.Command {
 				title = args[0]
 			}
 
-			id, err := runAdd(db, parentShortID, title, desc, before, user.Name)
+			id, err := runAdd(db, parentShortID, title, desc, before, actor)
 			if err != nil {
 				return err
 			}
@@ -128,10 +243,11 @@ func newAddCmd() *cobra.Command {
 
 func newListCmd() *cobra.Command {
 	var format string
+	var labelFilter string
 	cmd := &cobra.Command{
 		Use:   "list [parent] [all]",
 		Short: "List tasks",
-		Long:  "List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks. Use 'all' to include done, claimed, and blocked tasks. Use --format=json for machine-readable output.",
+		Long:  "List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks. Use 'all' to include done, claimed, and blocked tasks. Use --label <name> to filter to tasks carrying that label. Use --format=json for machine-readable output.",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -139,11 +255,6 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
-
-			user, err := requireAuth(db)
-			if err != nil {
-				return err
-			}
 
 			var parentShortID string
 			showAll := false
@@ -155,7 +266,7 @@ func newListCmd() *cobra.Command {
 				}
 			}
 
-			nodes, err := runList(db, parentShortID, user.Name, showAll)
+			nodes, err := runListFiltered(db, parentShortID, "", showAll, labelFilter)
 			if err != nil {
 				return err
 			}
@@ -173,49 +284,91 @@ func newListCmd() *cobra.Command {
 				cmd.OutOrStdout().Write(b)
 				fmt.Fprintln(cmd.OutOrStdout())
 			} else {
+				if len(nodes) == 0 {
+					total, done, cerr := countTasks(db)
+					if cerr != nil {
+						return cerr
+					}
+					renderListEmpty(cmd.OutOrStdout(), total, done)
+					return nil
+				}
 				blockers, err := collectBlockers(db, nodes)
 				if err != nil {
 					return err
 				}
-				renderMarkdownList(cmd.OutOrStdout(), nodes, blockers, 0)
+				labels, err := collectLabels(db, nodes)
+				if err != nil {
+					return err
+				}
+				renderMarkdownList(cmd.OutOrStdout(), nodes, blockers, labels, 0)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().StringVar(&labelFilter, "label", "", "filter to tasks carrying this label")
 	return cmd
 }
 
-func collectBlockers(db *sql.DB, nodes []*TaskNode) (map[string][]string, error) {
-	result := make(map[string][]string)
+func countTasks(db *sql.DB) (total, done int, err error) {
+	if err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL").Scan(&total); err != nil {
+		return 0, 0, err
+	}
+	if err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL AND status = 'done'").Scan(&done); err != nil {
+		return 0, 0, err
+	}
+	return total, done, nil
+}
+
+func collectLabels(db *sql.DB, nodes []*TaskNode) (map[int64][]string, error) {
+	var ids []int64
 	var walk func([]*TaskNode)
 	walk = func(nodes []*TaskNode) {
 		for _, node := range nodes {
-			blockers, err := getBlockers(db, node.Task.ShortID)
-			if err != nil {
-				return
-			}
-			if len(blockers) > 0 {
-				var ids []string
-				for _, b := range blockers {
-					ids = append(ids, b.ShortID)
-				}
-				result[node.Task.ShortID] = ids
-			}
+			ids = append(ids, node.Task.ID)
 			walk(node.Children)
 		}
 	}
 	walk(nodes)
+	return getLabelsForTaskIDs(db, ids)
+}
+
+func collectBlockers(db *sql.DB, nodes []*TaskNode) (map[string][]string, error) {
+	var ids []int64
+	shortByID := make(map[int64]string)
+	var walk func([]*TaskNode)
+	walk = func(nodes []*TaskNode) {
+		for _, node := range nodes {
+			ids = append(ids, node.Task.ID)
+			shortByID[node.Task.ID] = node.Task.ShortID
+			walk(node.Children)
+		}
+	}
+	walk(nodes)
+
+	byID, err := getBlockersForTaskIDs(db, ids)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]string, len(byID))
+	for id, blockers := range byID {
+		if short, ok := shortByID[id]; ok && len(blockers) > 0 {
+			result[short] = blockers
+		}
+	}
 	return result, nil
 }
 
 func newDoneCmd() *cobra.Command {
-	var force bool
+	var cascade bool
+	var note string
+	var resultStr string
+	var format string
 	cmd := &cobra.Command{
-		Use:   "done <id> [note]",
-		Short: "Mark a task as done",
-		Long:  "Mark a task as done. Requires all subtasks to be done unless --force is used. An optional note is recorded (e.g. a git commit hash). Idempotent: already-done tasks report success.",
-		Args:  cobra.RangeArgs(1, 2),
+		Use:   "done <id> [<id>...]",
+		Short: "Mark one or more tasks as done",
+		Long:  "Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Idempotent: already-done tasks are reported, not re-recorded.",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -223,45 +376,188 @@ func newDoneCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
 
-			shortID := args[0]
-			var note string
-			if len(args) == 2 {
-				note = args[1]
-			}
-
-			forced, alreadyDone, err := runDone(db, shortID, force, note, user.Name)
-			if err != nil {
-				return err
-			}
-
-			if alreadyDone {
-				fmt.Fprintf(cmd.OutOrStdout(), "Already done: %s\n", shortID)
-			} else if len(forced) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Done: %s (and %d subtasks)\n", shortID, len(forced))
-			} else {
-				if note != "" {
-					fmt.Fprintf(cmd.OutOrStdout(), "Done: %s (note: %s)\n", shortID, note)
-				} else {
-					fmt.Fprintf(cmd.OutOrStdout(), "Done: %s\n", shortID)
+			var resultRaw json.RawMessage
+			if resultStr != "" {
+				if !json.Valid([]byte(resultStr)) {
+					return fmt.Errorf("--result: invalid JSON: %s", resultStr)
 				}
+				resultRaw = json.RawMessage(resultStr)
 			}
+
+			closed, alreadyDone, err := runDone(db, args, cascade, note, resultRaw, actor)
+			if err != nil {
+				return err
+			}
+
+			// Determine last-named input id still targetable for the context block.
+			lastCtxID := ""
+			for i := len(args) - 1; i >= 0; i-- {
+				lastCtxID = args[i]
+				break
+			}
+
+			var ctx *DoneContext
+			if lastCtxID != "" {
+				c, cerr := computeDoneContext(db, lastCtxID)
+				if cerr != nil {
+					return cerr
+				}
+				ctx = c
+			}
+
+			if format == "json" {
+				return renderDoneJSON(cmd.OutOrStdout(), closed, alreadyDone, ctx)
+			}
+
+			// Idempotent single-ID already-done: preserve Phase 3 wording.
+			if len(closed) == 0 && len(alreadyDone) == 1 && len(args) == 1 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Already done: %s\n", alreadyDone[0])
+				return nil
+			}
+
+			renderDoneAck(cmd.OutOrStdout(), closed, alreadyDone, ctx)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "force mark all incomplete subtasks as done")
+	cmd.Flags().BoolVar(&cascade, "cascade", false, "close the target and all open descendants")
+	cmd.Flags().StringVarP(&note, "message", "m", "", "record a completion note")
+	cmd.Flags().StringVar(&resultStr, "result", "", "structured JSON result recorded on the done event")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
 }
 
+func renderDoneAck(w io.Writer, closed []*ClosedResult, alreadyDone []string, finalCtx *DoneContext) {
+	single := len(closed) == 1 && len(alreadyDone) == 0 && len(closed[0].CascadeClosed) == 0
+
+	if single {
+		c := closed[0]
+		fmt.Fprintf(w, "Done: %s %q\n", c.ShortID, c.Title)
+	} else if len(closed) == 1 && len(closed[0].CascadeClosed) > 0 && len(alreadyDone) == 0 {
+		c := closed[0]
+		fmt.Fprintf(w, "Done: %s %q (and %d subtasks)\n", c.ShortID, c.Title, len(c.CascadeClosed))
+	} else if len(closed) > 0 {
+		fmt.Fprintf(w, "Closed %d tasks:\n", len(closed))
+		for _, c := range closed {
+			if len(c.CascadeClosed) > 0 {
+				fmt.Fprintf(w, "- Done: %s %q (and %d subtasks)\n", c.ShortID, c.Title, len(c.CascadeClosed))
+			} else {
+				fmt.Fprintf(w, "- Done: %s %q\n", c.ShortID, c.Title)
+			}
+		}
+	}
+	if len(alreadyDone) > 0 {
+		fmt.Fprintf(w, "  already done: %s\n", strings.Join(alreadyDone, ", "))
+	}
+
+	if finalCtx == nil {
+		return
+	}
+
+	// Only render the trailing context block when we actually closed something,
+	// since an already-done-only call won't have a meaningful "next" context
+	// beyond whole-tree completion.
+	if len(closed) == 0 {
+		return
+	}
+
+	ctx := finalCtx
+
+	if ctx.WholeTreeComplete {
+		fmt.Fprintf(w, "  All tasks in %s complete. (%d done, 0 open)\n", ctx.WholeTreeRootID, ctx.WholeTreeDoneCount)
+		return
+	}
+
+	if ctx.ParentNowCloseable && ctx.ParentID != "" {
+		fmt.Fprintf(w, "  Parent %s complete — run 'job done %s' to close it.\n", ctx.ParentID, ctx.ParentID)
+		if ctx.NextAfterParent != nil {
+			fmt.Fprintf(w, "  Then: %s %q\n", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)
+		}
+		return
+	}
+
+	if ctx.SkippedBlocked != nil && ctx.NextSibling != nil {
+		fmt.Fprintf(w, "  Next sibling %s is blocked on %s. Skipping to %s.\n",
+			ctx.SkippedBlocked.ShortID, ctx.SkippedBlockedBy, ctx.NextSibling.ShortID)
+	} else if ctx.NextSibling != nil {
+		fmt.Fprintf(w, "  Next: %s %q\n", ctx.NextSibling.ShortID, ctx.NextSibling.Title)
+	}
+
+	if ctx.ParentID != "" && !ctx.ParentWasDone {
+		fmt.Fprintf(w, "  Parent %s: %d of %d complete\n", ctx.ParentID, ctx.ParentDoneCount, ctx.ParentTotalCount)
+	}
+}
+
+type doneJSONClosed struct {
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	CascadeClosed []string `json:"cascade_closed"`
+}
+
+type doneJSONNext struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+type doneJSONParent struct {
+	ID    string `json:"id"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+}
+
+type doneJSON struct {
+	Closed      []doneJSONClosed `json:"closed"`
+	AlreadyDone []string         `json:"already_done"`
+	Next        *doneJSONNext    `json:"next"`
+	Parent      *doneJSONParent  `json:"parent"`
+}
+
+func renderDoneJSON(w io.Writer, closed []*ClosedResult, alreadyDone []string, ctx *DoneContext) error {
+	out := doneJSON{
+		AlreadyDone: alreadyDone,
+	}
+	if out.AlreadyDone == nil {
+		out.AlreadyDone = []string{}
+	}
+	for _, c := range closed {
+		jc := doneJSONClosed{ID: c.ShortID, Title: c.Title, CascadeClosed: c.CascadeClosed}
+		if jc.CascadeClosed == nil {
+			jc.CascadeClosed = []string{}
+		}
+		out.Closed = append(out.Closed, jc)
+	}
+	if out.Closed == nil {
+		out.Closed = []doneJSONClosed{}
+	}
+	if ctx != nil && len(closed) > 0 {
+		if ctx.NextSibling != nil {
+			out.Next = &doneJSONNext{ID: ctx.NextSibling.ShortID, Title: ctx.NextSibling.Title}
+		} else if ctx.NextAfterParent != nil && ctx.ParentNowCloseable {
+			out.Next = &doneJSONNext{ID: ctx.NextAfterParent.ShortID, Title: ctx.NextAfterParent.Title}
+		}
+		if ctx.ParentID != "" {
+			out.Parent = &doneJSONParent{ID: ctx.ParentID, Done: ctx.ParentDoneCount, Total: ctx.ParentTotalCount}
+		}
+	}
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	w.Write(b)
+	fmt.Fprintln(w)
+	return nil
+}
+
 func newReopenCmd() *cobra.Command {
+	var cascade bool
 	cmd := &cobra.Command{
 		Use:   "reopen <id>",
-		Short: "Reopen a completed task",
-		Long:  "Reopen a completed task, setting it back to available. If closed with --force, also reopens all force-closed descendants.",
+		Short: "Reopen a completed or canceled task",
+		Long:  "Reopen a completed or canceled task, setting it back to available. Use --cascade to also reopen all done/canceled descendants.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -270,12 +566,12 @@ func newReopenCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
 
-			reopened, err := runReopen(db, args[0], user.Name)
+			reopened, err := runReopen(db, args[0], cascade, actor)
 			if err != nil {
 				return err
 			}
@@ -288,15 +584,18 @@ func newReopenCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&cascade, "cascade", false, "also reopen all done descendants")
 	return cmd
 }
 
 func newEditCmd() *cobra.Command {
+	var title string
+	var desc string
 	cmd := &cobra.Command{
-		Use:   "edit <id> <title>",
-		Short: "Change a task's title",
-		Long:  "Change a task's title to the provided value.",
-		Args:  cobra.ExactArgs(2),
+		Use:   "edit <id>",
+		Short: "Change a task's title and/or description",
+		Long:  "Replace a task's title and/or description. At least one of --title or --desc must be provided. Use --desc \"\" to clear the description.",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -304,55 +603,43 @@ func newEditCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
 
-			if err := runEdit(db, args[0], args[1], user.Name); err != nil {
+			var titlePtr, descPtr *string
+			if cmd.Flags().Changed("title") {
+				t := title
+				titlePtr = &t
+			}
+			if cmd.Flags().Changed("desc") {
+				d := desc
+				descPtr = &d
+			}
+			if titlePtr == nil && descPtr == nil {
+				return fmt.Errorf("edit requires --title and/or --desc")
+			}
+
+			if err := runEdit(db, args[0], titlePtr, descPtr, actor); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Edited: %s\n", args[0])
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&title, "title", "", "new title (replaces current)")
+	cmd.Flags().StringVar(&desc, "desc", "", "new description (replaces current; pass \"\" to clear)")
 	return cmd
 }
 
 func newNoteCmd() *cobra.Command {
+	var message string
+	var resultStr string
 	cmd := &cobra.Command{
-		Use:   "note <id> <text>",
+		Use:   "note <id>",
 		Short: "Append a note to a task's description",
-		Long:  "Append text to a task's description, prefixed with a timestamp. The description becomes an append-only scratchpad for progress notes.",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			db, err := openDBFromCmd()
-			if err != nil {
-				return err
-			}
-			defer db.Close()
-
-			user, err := requireAuth(db)
-			if err != nil {
-				return err
-			}
-
-			if err := runNote(db, args[0], args[1], user.Name); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Noted: %s\n", args[0])
-			return nil
-		},
-	}
-	return cmd
-}
-
-func newRemoveCmd() *cobra.Command {
-	var force bool
-	cmd := &cobra.Command{
-		Use:   "remove <id> [all]",
-		Short: "Remove a task",
-		Long:  "Soft-delete a task. Requires interactive confirmation unless --force is used. If the task has children, specify 'all' to remove them as well.",
+		Long:  "Append text to a task's description, prefixed with a timestamp. Pass the body via -m or read from stdin with `-`. Use --result to attach a structured JSON blob to the event without touching the description.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -361,46 +648,108 @@ func newRemoveCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
 
 			shortID := args[0]
-			removeAll := false
-			if len(args) == 2 && args[1] == "all" {
-				removeAll = true
+			stdinForm := len(args) == 2 && args[1] == "-"
+			if len(args) == 2 && !stdinForm {
+				return fmt.Errorf("note: unexpected argument %q (use -m \"<text>\" or stdin via -)", args[1])
 			}
 
-			if !force {
-				task, _ := getTaskByShortID(db, shortID)
-				if task == nil {
-					return fmt.Errorf("task %q not found", shortID)
-				}
-				fmt.Fprintf(cmd.OutOrStderr(), "Remove %s? [y/N] ", task.Title)
-				reader := bufio.NewReader(os.Stdin)
-				input, _ := reader.ReadString('\n')
-				input = strings.TrimSpace(input)
-				if input != "y" && input != "Y" {
-					fmt.Fprintln(cmd.OutOrStdout(), "Cancelled")
-					return nil
-				}
+			hasMessage := cmd.Flags().Changed("message")
+			if !hasMessage && !stdinForm {
+				return fmt.Errorf("note requires -m \"<text>\" or stdin via -")
+			}
+			if hasMessage && stdinForm {
+				return fmt.Errorf("note -m and stdin form are mutually exclusive")
 			}
 
-			count, err := runRemove(db, shortID, removeAll, force, user.Name)
+			text := message
+			if stdinForm {
+				b, rerr := io.ReadAll(cmd.InOrStdin())
+				if rerr != nil {
+					return rerr
+				}
+				text = strings.TrimRight(string(b), "\n\r")
+			}
+			if text == "" {
+				return fmt.Errorf("note text is empty")
+			}
+
+			var resultRaw json.RawMessage
+			if resultStr != "" {
+				if !json.Valid([]byte(resultStr)) {
+					return fmt.Errorf("--result: invalid JSON: %s", resultStr)
+				}
+				resultRaw = json.RawMessage(resultStr)
+			}
+
+			if err := runNote(db, shortID, text, resultRaw, actor); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Noted: %s\n", shortID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&message, "message", "m", "", "note text to append")
+	cmd.Flags().StringVar(&resultStr, "result", "", "structured JSON result recorded on the noted event")
+	return cmd
+}
+
+func newCancelCmd() *cobra.Command {
+	var reason string
+	var cascade bool
+	var purge bool
+	var yes bool
+	var format string
+	cmd := &cobra.Command{
+		Use:   "cancel <id> [<id>...]",
+		Short: "Non-destructively stop work on one or more tasks",
+		Long:  "Mark one or more tasks as canceled, atomically. --reason is required. --cascade also cancels open descendants. --purge erases the task and its events instead of transitioning state; --purge --cascade requires --yes.",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
 
-			if count > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "Removed: %s (and %d subtasks)\n", shortID, count)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Removed: %s\n", shortID)
+			canceled, alreadyCanceled, purged, err := runCancel(db, args, reason, cascade, purge, yes, actor)
+			if err != nil {
+				return err
 			}
+
+			if format == "json" {
+				return renderCancelJSON(cmd.OutOrStdout(), canceled, alreadyCanceled, purged, reason)
+			}
+
+			if purge {
+				renderPurgeAck(cmd.OutOrStdout(), purged, reason)
+				return nil
+			}
+
+			if len(canceled) == 0 && len(alreadyCanceled) == 1 && len(args) == 1 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Already canceled: %s\n", alreadyCanceled[0])
+				return nil
+			}
+
+			renderCancelAck(cmd.OutOrStdout(), canceled, alreadyCanceled, reason)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "skip confirmation prompt")
+	cmd.Flags().StringVar(&reason, "reason", "", "human-readable reason (required)")
+	cmd.Flags().BoolVar(&cascade, "cascade", false, "also cancel/purge open descendants")
+	cmd.Flags().BoolVar(&purge, "purge", false, "erase the task row and its events instead of transitioning state")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm irrecoverable purge of a subtree (required with --purge --cascade)")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
 }
 
@@ -417,7 +766,7 @@ func newMoveCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
@@ -427,7 +776,7 @@ func newMoveCmd() *cobra.Command {
 				return fmt.Errorf("direction must be 'before' or 'after', got %q", direction)
 			}
 
-			if err := runMove(db, args[0], direction, args[2], user.Name); err != nil {
+			if err := runMove(db, args[0], direction, args[2], actor); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Moved: %s %s %s\n", args[0], direction, args[2])
@@ -450,10 +799,6 @@ func newInfoCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
-
-			if _, err := requireAuth(db); err != nil {
-				return err
-			}
 
 			info, err := runInfo(db, args[0])
 			if err != nil {
@@ -486,7 +831,7 @@ func newBlockCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
@@ -495,7 +840,7 @@ func newBlockCmd() *cobra.Command {
 				return fmt.Errorf("usage: job block <blocked> by <blocker>")
 			}
 
-			if err := runBlock(db, args[0], args[2], user.Name); err != nil {
+			if err := runBlock(db, args[0], args[2], actor); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Blocked: %s (blocked by %s)\n", args[0], args[2])
@@ -518,7 +863,7 @@ func newUnblockCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
@@ -527,7 +872,7 @@ func newUnblockCmd() *cobra.Command {
 				return fmt.Errorf("usage: job unblock <blocked> from <blocker>")
 			}
 
-			if err := runUnblock(db, args[0], args[2], user.Name); err != nil {
+			if err := runUnblock(db, args[0], args[2], actor); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Unblocked: %s (was blocked by %s)\n", args[0], args[2])
@@ -542,7 +887,7 @@ func newClaimCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim <id> [duration]",
 		Short: "Claim a task",
-		Long:  "Claim a task, marking it as in-progress. Duration defaults to 1h. Supported units: s, m, h, d. Use --force to override an existing claim.",
+		Long:  "Claim a task, marking it as in-progress. Duration defaults to 15m. Supported units: s, m, h, d. Use --force to override an existing claim.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -551,7 +896,7 @@ func newClaimCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
@@ -570,11 +915,11 @@ func newClaimCmd() *cobra.Command {
 				}
 			}
 
-			if err := runClaim(db, shortID, duration, user.Name, force); err != nil {
+			if err := runClaim(db, shortID, duration, actor, force); err != nil {
 				return err
 			}
 
-			durStr := "1h"
+			durStr := formatDuration(defaultClaimTTLSeconds)
 			if duration != "" {
 				durStr = duration
 			}
@@ -591,6 +936,122 @@ func newClaimCmd() *cobra.Command {
 	return cmd
 }
 
+func newHeartbeatCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "heartbeat <id> [<id>...]",
+		Short: "Extend your live claim(s) by 15 minutes",
+		Long:  "Refresh one or more live claims held by the caller. Extends claim_expires_at by 15 minutes and emits a heartbeat event. All targets must currently be claimed by the caller; any other state errors and rolls back the whole call.",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			actor, err := requireAs(db)
+			if err != nil {
+				return err
+			}
+
+			results, err := runHeartbeat(db, args, actor)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				return renderHeartbeatJSON(cmd.OutOrStdout(), results)
+			}
+			renderHeartbeatAck(cmd.OutOrStdout(), results)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
+func newLabelCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "label",
+		Short: "Add or remove labels on a task",
+		Long:  "Manage flat, free-form labels on a task. Subcommands: 'add' and 'remove'. Names are variadic per call, idempotent, and atomic. Labels are local to each task (no inheritance).",
+	}
+	cmd.AddCommand(newLabelAddCmd())
+	cmd.AddCommand(newLabelRemoveCmd())
+	return cmd
+}
+
+func newLabelAddCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "add <id> <name> [<name>...]",
+		Short: "Add one or more labels to a task",
+		Long:  "Add one or more labels to a task. Idempotent: names that are already attached are reported, not re-recorded. Emits a single 'labeled' event per call when at least one new label is added.",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			actor, err := requireAs(db)
+			if err != nil {
+				return err
+			}
+
+			res, err := runLabelAdd(db, args[0], args[1:], actor)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				return renderLabelJSON(cmd.OutOrStdout(), res)
+			}
+			renderLabelAck(cmd.OutOrStdout(), res)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
+func newLabelRemoveCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "remove <id> <name> [<name>...]",
+		Short: "Remove one or more labels from a task",
+		Long:  "Remove one or more labels from a task. Idempotent: names that are not present are reported, not re-recorded. Emits a single 'unlabeled' event per call when at least one label is actually removed.",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			actor, err := requireAs(db)
+			if err != nil {
+				return err
+			}
+
+			res, err := runLabelRemove(db, args[0], args[1:], actor)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				return renderUnlabelJSON(cmd.OutOrStdout(), res)
+			}
+			renderUnlabelAck(cmd.OutOrStdout(), res)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
 func newReleaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "release <id>",
@@ -604,12 +1065,12 @@ func newReleaseCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
 
-			if err := runRelease(db, args[0], user.Name); err != nil {
+			if err := runRelease(db, args[0], actor); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Released: %s\n", args[0])
@@ -621,11 +1082,12 @@ func newReleaseCmd() *cobra.Command {
 
 func newNextCmd() *cobra.Command {
 	var format string
+	var labelFilter string
 	cmd := &cobra.Command{
-		Use:   "next [parent]",
-		Short: "Show the next available task",
-		Long:  "Show the next available (unblocked, unclaimed, not done) task. Without a parent, searches root-level tasks. Use --format=json for machine-readable output.",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "next [parent] [all]",
+		Short: "Show the next available task (or all of them with `all`)",
+		Long:  "Show the next available (unblocked, unclaimed, not done) task. With 'all' (in either position), returns the full claimable frontier instead. Use --label <name> to filter to tasks carrying that label. Without a parent, searches root-level tasks.",
+		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -633,17 +1095,29 @@ func newNextCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
-			if err != nil {
-				return err
-			}
-
 			var parentShortID string
-			if len(args) == 1 {
-				parentShortID = args[0]
+			showAll := false
+			for _, a := range args {
+				if a == "all" {
+					showAll = true
+				} else {
+					parentShortID = a
+				}
 			}
 
-			task, err := runNext(db, parentShortID, user.Name)
+			if showAll {
+				tasks, err := runNextAllFiltered(db, parentShortID, "", labelFilter)
+				if err != nil {
+					return err
+				}
+				if format == "json" {
+					return renderNextAllJSON(cmd.OutOrStdout(), tasks)
+				}
+				renderNextAllText(cmd.OutOrStdout(), tasks)
+				return nil
+			}
+
+			task, err := runNextFiltered(db, parentShortID, "", labelFilter)
 			if err != nil {
 				return err
 			}
@@ -658,6 +1132,7 @@ func newNextCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().StringVar(&labelFilter, "label", "", "filter to tasks carrying this label")
 	return cmd
 }
 
@@ -667,7 +1142,7 @@ func newClaimNextCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim-next [parent] [duration]",
 		Short: "Find and claim the next available task",
-		Long:  "Find the next available task and claim it in one step. Without a parent, searches root-level tasks.",
+		Long:  "Find the next available task and claim it in one step. Duration defaults to 15m. Supported units: s, m, h, d. Without a parent, searches root-level tasks.",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -676,7 +1151,7 @@ func newClaimNextCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			user, err := requireAuth(db)
+			actor, err := requireAs(db)
 			if err != nil {
 				return err
 			}
@@ -693,7 +1168,7 @@ func newClaimNextCmd() *cobra.Command {
 				}
 			}
 
-			task, err := runClaimNext(db, parentShortID, duration, user.Name, force)
+			task, err := runClaimNext(db, parentShortID, duration, actor, force)
 			if err != nil {
 				return err
 			}
@@ -702,7 +1177,7 @@ func newClaimNextCmd() *cobra.Command {
 				renderTaskJSON(cmd.OutOrStdout(), task)
 				fmt.Fprintln(cmd.OutOrStdout())
 			} else {
-				durStr := "1h"
+				durStr := formatDuration(defaultClaimTTLSeconds)
 				if duration != "" {
 					durStr = duration
 				}
@@ -721,6 +1196,7 @@ func newClaimNextCmd() *cobra.Command {
 
 func newLogCmd() *cobra.Command {
 	var format string
+	var since string
 	cmd := &cobra.Command{
 		Use:   "log <id>",
 		Short: "Show event history for a task and its descendants",
@@ -732,11 +1208,17 @@ func newLogCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			if _, err := requireAuth(db); err != nil {
-				return err
+			var sincePtr *int64
+			if since != "" {
+				ts, perr := time.Parse(time.RFC3339, since)
+				if perr != nil {
+					return fmt.Errorf("--since: invalid RFC3339 timestamp: %s", since)
+				}
+				u := ts.Unix()
+				sincePtr = &u
 			}
 
-			events, err := runLog(db, args[0])
+			events, err := runLog(db, args[0], sincePtr)
 			if err != nil {
 				return err
 			}
@@ -755,14 +1237,18 @@ func newLogCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().StringVar(&since, "since", "", "only events at or after this RFC3339 timestamp")
 	return cmd
 }
 
-func newTailCmd() *cobra.Command {
+func newImportCmd() *cobra.Command {
+	var parent string
+	var dryRun bool
 	var format string
 	cmd := &cobra.Command{
-		Use:   "tail <id>",
-		Short: "Stream events in real-time for a task and its descendants",
+		Use:   "import <file.md>",
+		Short: "Import tasks from a Markdown plan with a YAML tasks: block",
+		Long:  "Parse the first fenced YAML block whose top-level key is tasks: and create every task atomically. Use --dry-run to validate without writing. Use --parent <id> to nest the import under an existing task.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -771,9 +1257,92 @@ func newTailCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			if _, err := requireAuth(db); err != nil {
+			actor, err := requireAs(db)
+			if err != nil {
 				return err
 			}
+
+			res, err := runImport(db, args[0], parent, dryRun, actor)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				b, err := json.Marshal(res)
+				if err != nil {
+					return err
+				}
+				cmd.OutOrStdout().Write(b)
+				fmt.Fprintln(cmd.OutOrStdout())
+				return nil
+			}
+
+			for _, t := range res.Tasks {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", t.ID, t.Title)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&parent, "parent", "", "make imported roots children of this task")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate the plan without writing to the database")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}
+
+func newSchemaCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "schema",
+		Short: "Print the JSON Schema for `job import`",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSchema(cmd.OutOrStdout())
+		},
+	}
+	return cmd
+}
+
+func newStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show a one-line summary of task counts and recent activity",
+		Long:  "Print a one-line summary: open / claimed by you (if --as is set) / done, plus the time since the last event. No --as required.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			s, err := runStatus(db, asFlag)
+			if err != nil {
+				return err
+			}
+			renderStatus(cmd.OutOrStdout(), s)
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newTailCmd() *cobra.Command {
+	var format string
+	var eventsFlag string
+	var usersFlag string
+	var untilClose []string
+	var timeoutStr string
+	var quiet bool
+	cmd := &cobra.Command{
+		Use:   "tail <id>",
+		Short: "Stream events in real-time for a task and its descendants",
+		Long:  "Stream events for a task and its descendants. Use --until-close <id> (repeatable) to block until each named task reaches done/canceled, then exit 0. --until-close with no value watches the positional task. --timeout <duration> bounds the wait; on expiry exits 2. --quiet suppresses the streamed event output while preserving close/exit messages.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
 
 			shortID := args[0]
 			task, err := getTaskByShortID(db, shortID)
@@ -784,7 +1353,49 @@ func newTailCmd() *cobra.Command {
 				return fmt.Errorf("task %q not found", shortID)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Tailing events for %s (Ctrl+C to stop)...\n", shortID)
+			filter := EventFilter{
+				Types: parseFilterList(eventsFlag),
+				Users: parseFilterList(usersFlag),
+			}
+
+			// --until-close was passed (flag changed) but only self-sentinel
+			// entries, or no value: default to the positional id.
+			if cmd.Flags().Changed("until-close") {
+				cleaned := make([]string, 0, len(untilClose))
+				sawSelf := false
+				for _, id := range untilClose {
+					if id == "" || id == "_" {
+						sawSelf = true
+						continue
+					}
+					cleaned = append(cleaned, id)
+				}
+				if sawSelf || len(cleaned) == 0 {
+					cleaned = append(cleaned, shortID)
+				}
+				untilClose = cleaned
+			}
+
+			var timeout time.Duration
+			if timeoutStr != "" {
+				secs, perr := parseDuration(timeoutStr)
+				if perr != nil {
+					return perr
+				}
+				timeout = time.Duration(secs) * time.Second
+			}
+
+			if len(untilClose) > 0 {
+				return runTailUntilClose(
+					cmd.Context(), db, shortID, untilClose, timeout,
+					defaultTailUntilClosePollInterval,
+					quiet, format, filter, cmd.OutOrStdout(),
+				)
+			}
+
+			if format != "json" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Tailing events for %s (Ctrl+C to stop)...\n", shortID)
+			}
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -795,94 +1406,24 @@ func newTailCmd() *cobra.Command {
 			}()
 
 			return runTail(ctx, db, shortID, 1*time.Second, func(events []EventEntry) error {
-				if format == "json" {
-					for _, e := range events {
-						b, err := formatEventLogJSON([]EventEntry{e})
-						if err != nil {
-							return err
-						}
-						cmd.OutOrStdout().Write(b)
-						fmt.Fprintln(cmd.OutOrStdout())
-					}
-				} else {
-					renderEventLogMarkdown(cmd.OutOrStdout(), events)
+				events = filterEvents(events, filter)
+				if len(events) == 0 {
+					return nil
 				}
+				if format == "json" {
+					return formatEventLogJSONLines(cmd.OutOrStdout(), events)
+				}
+				renderEventLogMarkdown(cmd.OutOrStdout(), events)
 				return nil
 			})
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().StringVar(&eventsFlag, "events", "", "comma-separated list of event types to include (default: all except heartbeat)")
+	cmd.Flags().StringVar(&usersFlag, "users", "", "comma-separated list of actor names to include")
+	cmd.Flags().StringSliceVar(&untilClose, "until-close", nil, "block until the named task closes; repeatable; use --until-close=_ to default to the positional id")
+	cmd.Flags().Lookup("until-close").NoOptDefVal = "_"
+	cmd.Flags().StringVar(&timeoutStr, "timeout", "", "exit 2 if no close occurs in this duration (e.g. 30s, 5m)")
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress event stream while waiting; preserves close and timeout messages")
 	return cmd
-}
-
-func newLoginCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "login [name] [key]",
-		Short: "Log in or create a user",
-		Long: `Log in or create a user.
-
-  job login              Create a new user with a random name and key
-  job login <name>       Create user <name> if it doesn't exist, or log in if it does
-  job login <name> <key> Log in as <name> with the given key
-
-Use: eval $(job login) to set environment variables in your shell.`,
-		Args: cobra.MaximumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			db, err := openDBFromCmd()
-			if err != nil {
-				return err
-			}
-			defer db.Close()
-
-			var name, key string
-			if len(args) >= 1 {
-				name = args[0]
-			}
-			if len(args) >= 2 {
-				key = args[1]
-			}
-
-			if name != "" && key == "" {
-				existing, err := getUserByName(db, name)
-				if err != nil {
-					return err
-				}
-				if existing != nil {
-					fmt.Fprintf(cmd.OutOrStderr(), "Enter key for %s: ", name)
-					reader := bufio.NewReader(os.Stdin)
-					input, err := reader.ReadString('\n')
-					if err != nil {
-						return fmt.Errorf("failed to read key: %w", err)
-					}
-					key = strings.TrimSpace(input)
-				}
-			}
-
-			result, err := runLogin(db, name, key)
-			if err != nil {
-				return err
-			}
-
-			if result.IsNew {
-				fmt.Fprintf(cmd.OutOrStderr(), "Created user %s with key %s\n", result.Name, result.Key)
-			} else {
-				fmt.Fprintf(cmd.OutOrStderr(), "Logged in as %s\n", result.Name)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), formatLoginExport(result.Name, result.Key))
-			return nil
-		},
-	}
-	return cmd
-}
-
-func newLogoutCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "logout",
-		Short: "Log out the current user",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), formatLogoutExport())
-			return nil
-		},
-	}
 }

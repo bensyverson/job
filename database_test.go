@@ -4,11 +4,67 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestResolveDBPath_FlagWins(t *testing.T) {
+	t.Setenv("JOBS_DB", "/should/be/ignored")
+	got := resolveDBPath("/tmp/x.db")
+	if got != "/tmp/x.db" {
+		t.Errorf("resolveDBPath(%q) = %q, want %q", "/tmp/x.db", got, "/tmp/x.db")
+	}
+}
+
+func TestResolveDBPath_EnvWins(t *testing.T) {
+	t.Setenv("JOBS_DB", "/tmp/env-chosen.db")
+	got := resolveDBPath("")
+	if got != "/tmp/env-chosen.db" {
+		t.Errorf("resolveDBPath(\"\") = %q, want %q", got, "/tmp/env-chosen.db")
+	}
+}
+
+func TestResolveDBPath_WalksUp(t *testing.T) {
+	t.Setenv("JOBS_DB", "")
+	root := t.TempDir()
+	a := filepath.Join(root, "a")
+	c := filepath.Join(a, "b", "c")
+	if err := os.MkdirAll(c, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	dbFile := filepath.Join(a, ".jobs.db")
+	if err := os.WriteFile(dbFile, []byte(""), 0o644); err != nil {
+		t.Fatalf("write db: %v", err)
+	}
+	t.Chdir(c)
+
+	got := resolveDBPath("")
+	// Resolve symlinks for compare; macOS tempdirs often involve /var -> /private/var.
+	wantAbs, _ := filepath.EvalSymlinks(dbFile)
+	gotAbs, _ := filepath.EvalSymlinks(got)
+	if gotAbs != wantAbs {
+		t.Errorf("resolveDBPath = %q, want %q", got, dbFile)
+	}
+}
+
+func TestResolveDBPath_NoAncestor_FallsBackToCwd(t *testing.T) {
+	t.Setenv("JOBS_DB", "")
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Chdir(sub)
+
+	got := resolveDBPath("")
+	if got != defaultDBName {
+		t.Errorf("resolveDBPath = %q, want literal %q", got, defaultDBName)
+	}
+}
 
 const testActor = "TestActor"
 
@@ -43,7 +99,7 @@ func mustAddDesc(t *testing.T, db *sql.DB, parentShortID, title, desc string) st
 
 func mustDone(t *testing.T, db *sql.DB, shortID string) {
 	t.Helper()
-	if _, _, err := runDone(db, shortID, false, "", testActor); err != nil {
+	if _, _, err := runDone(db, []string{shortID}, false, "", nil, testActor); err != nil {
 		t.Fatalf("done task %s: %v", shortID, err)
 	}
 }
@@ -337,12 +393,12 @@ func TestRunDone_LeafTask(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Task")
 
-	forced, _, err := runDone(db, id, false, "", testActor)
+	closed, _, err := runDone(db, []string{id}, false, "", nil, testActor)
 	if err != nil {
 		t.Fatalf("runDone: %v", err)
 	}
-	if len(forced) != 0 {
-		t.Errorf("forced: got %d, want 0", len(forced))
+	if len(closed) != 1 || len(closed[0].CascadeClosed) != 0 {
+		t.Errorf("closed: got %+v, want 1 target with no cascade", closed)
 	}
 
 	task := mustGet(t, db, id)
@@ -355,7 +411,7 @@ func TestRunDone_WithNote(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Task")
 
-	if _, _, err := runDone(db, id, false, "abc1234", testActor); err != nil {
+	if _, _, err := runDone(db, []string{id}, false, "abc1234", nil, testActor); err != nil {
 		t.Fatalf("runDone: %v", err)
 	}
 
@@ -370,26 +426,29 @@ func TestRunDone_IncompleteChildren(t *testing.T) {
 	pid := mustAdd(t, db, "", "Parent")
 	mustAdd(t, db, pid, "Incomplete child")
 
-	_, _, err := runDone(db, pid, false, "", testActor)
+	_, _, err := runDone(db, []string{pid}, false, "", nil, testActor)
 	if err == nil {
 		t.Fatal("expected error for incomplete children")
 	}
 	if !strings.Contains(err.Error(), "Incomplete child") || !strings.Contains(err.Error(), "incomplete") {
 		t.Errorf("error should mention incomplete children: %v", err)
 	}
+	if !strings.Contains(err.Error(), "--cascade") {
+		t.Errorf("error should suggest --cascade: %v", err)
+	}
 }
 
-func TestRunDone_ForceClosesChildren(t *testing.T) {
+func TestRunDone_CascadeClosesChildren(t *testing.T) {
 	db := setupTestDB(t)
 	pid := mustAdd(t, db, "", "Parent")
 	cid := mustAdd(t, db, pid, "Child")
 
-	forced, _, err := runDone(db, pid, true, "", testActor)
+	closed, _, err := runDone(db, []string{pid}, true, "", nil, testActor)
 	if err != nil {
-		t.Fatalf("runDone --force: %v", err)
+		t.Fatalf("runDone --cascade: %v", err)
 	}
-	if len(forced) != 1 || forced[0] != cid {
-		t.Errorf("forced: got %v, want [%s]", forced, cid)
+	if len(closed) != 1 || len(closed[0].CascadeClosed) != 1 || closed[0].CascadeClosed[0] != cid {
+		t.Errorf("closed: got %+v, want 1 target cascading [%s]", closed, cid)
 	}
 
 	child := mustGet(t, db, cid)
@@ -398,18 +457,18 @@ func TestRunDone_ForceClosesChildren(t *testing.T) {
 	}
 }
 
-func TestRunDone_ForceNested(t *testing.T) {
+func TestRunDone_CascadeNested(t *testing.T) {
 	db := setupTestDB(t)
 	pid := mustAdd(t, db, "", "Parent")
 	cid := mustAdd(t, db, pid, "Child")
 	gcid := mustAdd(t, db, cid, "Grandchild")
 
-	forced, _, err := runDone(db, pid, true, "", testActor)
+	closed, _, err := runDone(db, []string{pid}, true, "", nil, testActor)
 	if err != nil {
-		t.Fatalf("runDone --force: %v", err)
+		t.Fatalf("runDone --cascade: %v", err)
 	}
-	if len(forced) != 2 {
-		t.Errorf("forced: got %d, want 2", len(forced))
+	if len(closed) != 1 || len(closed[0].CascadeClosed) != 2 {
+		t.Errorf("closed cascade count: got %+v, want 2", closed)
 	}
 
 	for _, id := range []string{cid, gcid} {
@@ -425,15 +484,15 @@ func TestRunDone_AlreadyDone(t *testing.T) {
 	id := mustAdd(t, db, "", "Task")
 	mustDone(t, db, id)
 
-	forced, alreadyDone, err := runDone(db, id, false, "", testActor)
+	closed, alreadyDone, err := runDone(db, []string{id}, false, "", nil, testActor)
 	if err != nil {
 		t.Fatalf("runDone on already-done should be idempotent: %v", err)
 	}
-	if !alreadyDone {
-		t.Error("expected alreadyDone=true for already-done task")
+	if len(alreadyDone) != 1 || alreadyDone[0] != id {
+		t.Errorf("alreadyDone: got %v, want [%s]", alreadyDone, id)
 	}
-	if len(forced) != 0 {
-		t.Errorf("forced: got %d, want 0", len(forced))
+	if len(closed) != 0 {
+		t.Errorf("closed: got %+v, want 0", closed)
 	}
 }
 
@@ -445,18 +504,18 @@ func TestRunDone_BlockedTaskSucceeds(t *testing.T) {
 		t.Fatalf("runBlock: %v", err)
 	}
 
-	forced, _, err := runDone(db, blocked, false, "", testActor)
+	closed, _, err := runDone(db, []string{blocked}, false, "", nil, testActor)
 	if err != nil {
 		t.Fatalf("done on blocked task should succeed: %v", err)
 	}
-	if len(forced) != 0 {
-		t.Errorf("forced: got %d, want 0", len(forced))
+	if len(closed) != 1 {
+		t.Errorf("closed: got %+v, want 1", closed)
 	}
 }
 
 func TestRunDone_NotFound(t *testing.T) {
 	db := setupTestDB(t)
-	_, _, err := runDone(db, "noExs", false, "", testActor)
+	_, _, err := runDone(db, []string{"noExs"}, false, "", nil, testActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}
@@ -465,7 +524,7 @@ func TestRunDone_NotFound(t *testing.T) {
 func TestRunDone_DoneEvent(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Task")
-	if _, _, err := runDone(db, id, false, "abc1234", testActor); err != nil {
+	if _, _, err := runDone(db, []string{id}, false, "abc1234", nil, testActor); err != nil {
 		t.Fatalf("runDone: %v", err)
 	}
 
@@ -480,17 +539,17 @@ func TestRunDone_DoneEvent(t *testing.T) {
 	if detail["note"] != "abc1234" {
 		t.Errorf("note: got %v, want %q", detail["note"], "abc1234")
 	}
-	if detail["force"] != false {
-		t.Errorf("force: got %v, want false", detail["force"])
+	if detail["cascade"] != false {
+		t.Errorf("cascade: got %v, want false", detail["cascade"])
 	}
 }
 
-func TestRunDone_ForceEventRecordsChildren(t *testing.T) {
+func TestRunDone_CascadeEventRecordsChildren(t *testing.T) {
 	db := setupTestDB(t)
 	pid := mustAdd(t, db, "", "Parent")
 	cid := mustAdd(t, db, pid, "Child")
 
-	if _, _, err := runDone(db, pid, true, "", testActor); err != nil {
+	if _, _, err := runDone(db, []string{pid}, true, "", nil, testActor); err != nil {
 		t.Fatalf("runDone: %v", err)
 	}
 
@@ -499,15 +558,15 @@ func TestRunDone_ForceEventRecordsChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getLatestEventDetail: %v", err)
 	}
-	children, ok := detail["force_closed_children"].([]any)
+	children, ok := detail["cascade_closed"].([]any)
 	if !ok {
-		t.Fatalf("force_closed_children: got %T, want []any", detail["force_closed_children"])
+		t.Fatalf("cascade_closed: got %T, want []any", detail["cascade_closed"])
 	}
 	if len(children) != 1 {
-		t.Fatalf("force_closed_children: got %d, want 1", len(children))
+		t.Fatalf("cascade_closed: got %d, want 1", len(children))
 	}
 	if children[0] != cid {
-		t.Errorf("force_closed_children[0]: got %v, want %s", children[0], cid)
+		t.Errorf("cascade_closed[0]: got %v, want %s", children[0], cid)
 	}
 }
 
@@ -518,7 +577,7 @@ func TestRunReopen_DoneTask(t *testing.T) {
 	id := mustAdd(t, db, "", "Task")
 	mustDone(t, db, id)
 
-	reopened, err := runReopen(db, id, testActor)
+	reopened, err := runReopen(db, id, false, testActor)
 	if err != nil {
 		t.Fatalf("runReopen: %v", err)
 	}
@@ -535,16 +594,16 @@ func TestRunReopen_DoneTask(t *testing.T) {
 	}
 }
 
-func TestRunReopen_ForceClosedChildren(t *testing.T) {
+func TestRunReopen_CascadeReopensChildren(t *testing.T) {
 	db := setupTestDB(t)
 	pid := mustAdd(t, db, "", "Parent")
 	cid := mustAdd(t, db, pid, "Child")
 
-	if _, _, err := runDone(db, pid, true, "", testActor); err != nil {
-		t.Fatalf("runDone --force: %v", err)
+	if _, _, err := runDone(db, []string{pid}, true, "", nil, testActor); err != nil {
+		t.Fatalf("runDone --cascade: %v", err)
 	}
 
-	reopened, err := runReopen(db, pid, testActor)
+	reopened, err := runReopen(db, pid, true, testActor)
 	if err != nil {
 		t.Fatalf("runReopen: %v", err)
 	}
@@ -562,7 +621,7 @@ func TestRunReopen_AvailableTask(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Task")
 
-	_, err := runReopen(db, id, testActor)
+	_, err := runReopen(db, id, false, testActor)
 	if err == nil {
 		t.Fatal("expected error when reopening available task")
 	}
@@ -570,7 +629,7 @@ func TestRunReopen_AvailableTask(t *testing.T) {
 
 func TestRunReopen_NotFound(t *testing.T) {
 	db := setupTestDB(t)
-	_, err := runReopen(db, "noExs", testActor)
+	_, err := runReopen(db, "noExs", false, testActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}
@@ -581,7 +640,7 @@ func TestRunReopen_ReopenedEvent(t *testing.T) {
 	id := mustAdd(t, db, "", "Task")
 	mustDone(t, db, id)
 
-	if _, err := runReopen(db, id, testActor); err != nil {
+	if _, err := runReopen(db, id, false, testActor); err != nil {
 		t.Fatalf("runReopen: %v", err)
 	}
 
@@ -595,17 +654,17 @@ func TestRunReopen_ReopenedEvent(t *testing.T) {
 	}
 }
 
-func TestRunReopen_ForceClosedNested(t *testing.T) {
+func TestRunReopen_CascadeNested(t *testing.T) {
 	db := setupTestDB(t)
 	pid := mustAdd(t, db, "", "Parent")
 	cid := mustAdd(t, db, pid, "Child")
 	gcid := mustAdd(t, db, cid, "Grandchild")
 
-	if _, _, err := runDone(db, pid, true, "", testActor); err != nil {
-		t.Fatalf("runDone --force: %v", err)
+	if _, _, err := runDone(db, []string{pid}, true, "", nil, testActor); err != nil {
+		t.Fatalf("runDone --cascade: %v", err)
 	}
 
-	reopened, err := runReopen(db, pid, testActor)
+	reopened, err := runReopen(db, pid, true, testActor)
 	if err != nil {
 		t.Fatalf("runReopen: %v", err)
 	}
@@ -627,7 +686,8 @@ func TestRunEdit_ChangesTitle(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Old title")
 
-	if err := runEdit(db, id, "New title", testActor); err != nil {
+	nt := "New title"
+	if err := runEdit(db, id, &nt, nil, testActor); err != nil {
 		t.Fatalf("runEdit: %v", err)
 	}
 
@@ -641,7 +701,8 @@ func TestRunEdit_RecordsEvent(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Old title")
 
-	if err := runEdit(db, id, "New title", testActor); err != nil {
+	nt := "New title"
+	if err := runEdit(db, id, &nt, nil, testActor); err != nil {
 		t.Fatalf("runEdit: %v", err)
 	}
 
@@ -663,7 +724,8 @@ func TestRunEdit_RecordsEvent(t *testing.T) {
 
 func TestRunEdit_NotFound(t *testing.T) {
 	db := setupTestDB(t)
-	err := runEdit(db, "noExs", "New title", testActor)
+	nt := "New title"
+	err := runEdit(db, "noExs", &nt, nil, testActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}
@@ -675,7 +737,7 @@ func TestRunNote_AppendsToEmptyDescription(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Task")
 
-	if err := runNote(db, id, "First note", testActor); err != nil {
+	if err := runNote(db, id, "First note", nil, testActor); err != nil {
 		t.Fatalf("runNote: %v", err)
 	}
 
@@ -689,7 +751,7 @@ func TestRunNote_AppendsToExistingDescription(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAddDesc(t, db, "", "Task", "Original desc")
 
-	if err := runNote(db, id, "Added note", testActor); err != nil {
+	if err := runNote(db, id, "Added note", nil, testActor); err != nil {
 		t.Fatalf("runNote: %v", err)
 	}
 
@@ -709,7 +771,7 @@ func TestRunNote_RecordsEvent(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "Task")
 
-	if err := runNote(db, id, "A note", testActor); err != nil {
+	if err := runNote(db, id, "A note", nil, testActor); err != nil {
 		t.Fatalf("runNote: %v", err)
 	}
 
@@ -728,150 +790,9 @@ func TestRunNote_RecordsEvent(t *testing.T) {
 
 func TestRunNote_NotFound(t *testing.T) {
 	db := setupTestDB(t)
-	err := runNote(db, "noExs", "A note", testActor)
+	err := runNote(db, "noExs", "A note", nil, testActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
-	}
-}
-
-// --- Remove (soft delete) ---
-
-func TestRunRemove_LeafTask(t *testing.T) {
-	db := setupTestDB(t)
-	id := mustAdd(t, db, "", "Task")
-
-	count, err := runRemove(db, id, false, false, testActor)
-	if err != nil {
-		t.Fatalf("runRemove: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("removed children: got %d, want 0", count)
-	}
-
-	task, err := getTaskByShortID(db, id)
-	if err != nil {
-		t.Fatalf("getTaskByShortID: %v", err)
-	}
-	if task != nil {
-		t.Error("task should not be visible after removal")
-	}
-
-	deletedTask, err := getTaskByShortIDIncludeDeleted(db, id)
-	if err != nil {
-		t.Fatalf("getTaskByShortIDIncludeDeleted: %v", err)
-	}
-	if deletedTask == nil {
-		t.Fatal("task should still exist in DB (soft delete)")
-	}
-	if deletedTask.DeletedAt == nil {
-		t.Error("deleted_at should be set")
-	}
-}
-
-func TestRunRemove_HasChildren(t *testing.T) {
-	db := setupTestDB(t)
-	pid := mustAdd(t, db, "", "Parent")
-	mustAdd(t, db, pid, "Child")
-
-	_, err := runRemove(db, pid, false, false, testActor)
-	if err == nil {
-		t.Fatal("expected error when removing task with children without 'all'")
-	}
-}
-
-func TestRunRemove_WithAll(t *testing.T) {
-	db := setupTestDB(t)
-	pid := mustAdd(t, db, "", "Parent")
-	cid := mustAdd(t, db, pid, "Child")
-
-	count, err := runRemove(db, pid, true, false, testActor)
-	if err != nil {
-		t.Fatalf("runRemove: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("removed children: got %d, want 1", count)
-	}
-
-	for _, id := range []string{pid, cid} {
-		task, _ := getTaskByShortID(db, id)
-		if task != nil {
-			t.Errorf("%s should not be visible after removal", id)
-		}
-		deletedTask, _ := getTaskByShortIDIncludeDeleted(db, id)
-		if deletedTask == nil {
-			t.Errorf("%s should still exist in DB (soft delete)", id)
-		}
-	}
-}
-
-func TestRunRemove_RecordsEvent(t *testing.T) {
-	db := setupTestDB(t)
-	id := mustAdd(t, db, "", "Task to remove")
-	task := mustGet(t, db, id)
-
-	if _, err := runRemove(db, id, false, false, testActor); err != nil {
-		t.Fatalf("runRemove: %v", err)
-	}
-
-	detail, err := getLatestEventDetail(db, task.ID, "removed")
-	if err != nil {
-		t.Fatalf("getLatestEventDetail: %v", err)
-	}
-	if detail == nil {
-		t.Fatal("expected removed event")
-	}
-	if detail["title"] != "Task to remove" {
-		t.Errorf("title: got %v, want %q", detail["title"], "Task to remove")
-	}
-}
-
-func TestRunRemove_NotFound(t *testing.T) {
-	db := setupTestDB(t)
-	_, err := runRemove(db, "noExs", false, false, testActor)
-	if err == nil {
-		t.Fatal("expected error for non-existent task")
-	}
-}
-
-func TestRunRemove_RemovedTaskNotInList(t *testing.T) {
-	db := setupTestDB(t)
-	id1 := mustAdd(t, db, "", "Keep")
-	id2 := mustAdd(t, db, "", "Remove")
-
-	if _, err := runRemove(db, id2, false, false, testActor); err != nil {
-		t.Fatalf("runRemove: %v", err)
-	}
-
-	nodes, err := runList(db, "", testActor, false)
-	if err != nil {
-		t.Fatalf("runList: %v", err)
-	}
-	if len(nodes) != 1 {
-		t.Fatalf("expected 1 node, got %d", len(nodes))
-	}
-	if nodes[0].Task.ShortID != id1 {
-		t.Errorf("got %s, want %s", nodes[0].Task.ShortID, id1)
-	}
-}
-
-func TestRunRemove_RemovesBlockingRelationships(t *testing.T) {
-	db := setupTestDB(t)
-	blocker := mustAdd(t, db, "", "Blocker")
-	blocked := mustAdd(t, db, "", "Blocked")
-	if err := runBlock(db, blocked, blocker, testActor); err != nil {
-		t.Fatalf("runBlock: %v", err)
-	}
-
-	if _, err := runRemove(db, blocker, false, false, testActor); err != nil {
-		t.Fatalf("runRemove: %v", err)
-	}
-
-	blocks, err := getBlockers(db, blocked)
-	if err != nil {
-		t.Fatalf("getBlockers: %v", err)
-	}
-	if len(blocks) != 0 {
-		t.Errorf("expected no blockers after removal, got %d", len(blocks))
 	}
 }
 
@@ -1204,8 +1125,18 @@ func TestParseDuration_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseDuration: %v", err)
 	}
-	if got != 3600 {
-		t.Errorf("got %d, want 3600 (1h default)", got)
+	if got != defaultClaimTTLSeconds {
+		t.Errorf("got %d, want %d (15m default)", got, defaultClaimTTLSeconds)
+	}
+}
+
+func TestParseDuration_DefaultIs15m(t *testing.T) {
+	got, err := parseDuration("")
+	if err != nil {
+		t.Fatalf("parseDuration: %v", err)
+	}
+	if got != 900 {
+		t.Errorf("default TTL: got %d, want 900", got)
 	}
 }
 
@@ -1310,8 +1241,8 @@ func TestRunClaim_AlreadyClaimed(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when claiming already-claimed task")
 	}
-	if !strings.Contains(err.Error(), "already claimed") {
-		t.Errorf("error should mention already claimed: %v", err)
+	if !strings.Contains(err.Error(), "claimed by") {
+		t.Errorf("error should mention who holds the claim: %v", err)
 	}
 }
 
@@ -1865,7 +1796,7 @@ func TestRunLog_SingleTask(t *testing.T) {
 	db := setupTestDB(t)
 	id := mustAdd(t, db, "", "My task")
 
-	events, err := runLog(db, id)
+	events, err := runLog(db, id, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -1885,7 +1816,7 @@ func TestRunLog_WithDescendants(t *testing.T) {
 	pid := mustAdd(t, db, "", "Parent")
 	cid := mustAdd(t, db, pid, "Child")
 
-	events, err := runLog(db, pid)
+	events, err := runLog(db, pid, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -1906,7 +1837,7 @@ func TestRunLog_VariousEventTypes(t *testing.T) {
 	mustClaim(t, db, id, "1h")
 	mustRelease(t, db, id)
 
-	events, err := runLog(db, id)
+	events, err := runLog(db, id, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -1930,7 +1861,7 @@ func TestRunLog_EventsOrderedByTime(t *testing.T) {
 	mustAdd(t, db, pid, "Child A")
 	mustAdd(t, db, pid, "Child B")
 
-	events, err := runLog(db, pid)
+	events, err := runLog(db, pid, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -1951,7 +1882,7 @@ func TestRunLog_DoesNotIncludeOtherBranches(t *testing.T) {
 	otherID := mustAdd(t, db, "", "Other root")
 	mustAdd(t, db, otherID, "Other child")
 
-	events, err := runLog(db, pid)
+	events, err := runLog(db, pid, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -1967,7 +1898,7 @@ func TestRunLog_DoesNotIncludeOtherBranches(t *testing.T) {
 
 func TestRunLog_TaskNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	_, err := runLog(db, "noExs")
+	_, err := runLog(db, "noExs", nil)
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}
@@ -1979,7 +1910,7 @@ func TestRunLog_FormattedMarkdown(t *testing.T) {
 	cid := mustAdd(t, db, pid, "Child task")
 	mustDone(t, db, cid)
 
-	events, err := runLog(db, pid)
+	events, err := runLog(db, pid, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -2007,7 +1938,7 @@ func TestRunLog_FormattedJSON(t *testing.T) {
 	id := mustAdd(t, db, "", "Task")
 	mustClaim(t, db, id, "1h")
 
-	events, err := runLog(db, id)
+	events, err := runLog(db, id, nil)
 	if err != nil {
 		t.Fatalf("runLog: %v", err)
 	}
@@ -2032,30 +1963,6 @@ func TestRunLog_FormattedJSON(t *testing.T) {
 	}
 	if result[0]["short_id"] != id {
 		t.Errorf("event 0 short_id: got %v, want %s", result[0]["short_id"], id)
-	}
-}
-
-func TestRunLog_ExcludesSoftDeletedDescendants(t *testing.T) {
-	db := setupTestDB(t)
-	pid := mustAdd(t, db, "", "Parent")
-	cid := mustAdd(t, db, pid, "Child to remove")
-	mustRemove(t, db, cid, false, true)
-
-	events, err := runLog(db, pid)
-	if err != nil {
-		t.Fatalf("runLog: %v", err)
-	}
-	for _, e := range events {
-		if e.ShortID == cid {
-			t.Error("should not include events from soft-deleted descendants")
-		}
-	}
-}
-
-func mustRemove(t *testing.T, db *sql.DB, shortID string, removeAll, force bool) {
-	t.Helper()
-	if _, err := runRemove(db, shortID, removeAll, force, testActor); err != nil {
-		t.Fatalf("remove %s: %v", shortID, err)
 	}
 }
 
@@ -2112,13 +2019,34 @@ func TestRunTail_PicksUpNewEvents(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	var mu sync.Mutex
 	var collected []EventEntry
+	initialDrained := make(chan struct{})
+	claimSeen := make(chan struct{})
 	done := make(chan struct{})
 
 	go func() {
+		sawInitial := false
 		runTail(ctx, db, id, 10*time.Millisecond, func(events []EventEntry) error {
+			mu.Lock()
 			collected = append(collected, events...)
-			if len(collected) >= 1 {
+			hasClaim := false
+			for _, e := range events {
+				if e.EventType == "claimed" {
+					hasClaim = true
+				}
+			}
+			mu.Unlock()
+			if !sawInitial {
+				sawInitial = true
+				close(initialDrained)
+			}
+			if hasClaim {
+				select {
+				case <-claimSeen:
+				default:
+					close(claimSeen)
+				}
 				cancel()
 			}
 			return nil
@@ -2126,13 +2054,16 @@ func TestRunTail_PicksUpNewEvents(t *testing.T) {
 		close(done)
 	}()
 
+	// Wait for the tail to drain the pre-existing `created` event before
+	// firing mustClaim — otherwise the first poll might include `created`
+	// only, the callback cancels, and mustClaim's event never arrives.
+	<-initialDrained
 	mustClaim(t, db, id, "1h")
-
+	<-claimSeen
 	<-done
 
-	if len(collected) < 1 {
-		t.Fatalf("expected at least 1 event, got %d", len(collected))
-	}
+	mu.Lock()
+	defer mu.Unlock()
 	found := false
 	for _, e := range collected {
 		if e.EventType == "claimed" {

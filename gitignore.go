@@ -74,7 +74,7 @@ func writeGitignoreEntries(dir string) (written []string, alreadyPresent []strin
 }
 
 func gitignoreHasEntry(content, name string) bool {
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue

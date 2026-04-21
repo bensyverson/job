@@ -76,10 +76,7 @@ func checkClaimOwnership(tx dbtx, shortID, caller string) error {
 		).Scan(&claimedAt); err != nil && err != sql.ErrNoRows {
 			return err
 		}
-		ago := now - claimedAt
-		if ago < 0 {
-			ago = 0
-		}
+		ago := max(now-claimedAt, 0)
 		return fmt.Errorf("your claim on %s expired; it is now held by %s (claimed %s ago). Run 'claim %s' to take it back.",
 			shortID, *task.ClaimedBy, formatDuration(ago), shortID)
 	}

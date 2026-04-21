@@ -33,7 +33,7 @@ func parseFilterList(s string) map[string]bool {
 		return nil
 	}
 	out := make(map[string]bool)
-	for _, p := range strings.Split(s, ",") {
+	for p := range strings.SplitSeq(s, ",") {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			out[p] = true

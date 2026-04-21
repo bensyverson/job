@@ -85,10 +85,7 @@ func renderStatus(w io.Writer, s *StatusSummary) {
 
 	line := strings.Join(parts, ", ")
 	if s.LastActivity > 0 {
-		ago := nowUnix() - s.LastActivity
-		if ago < 0 {
-			ago = 0
-		}
+		ago := max(nowUnix()-s.LastActivity, 0)
 		line += fmt.Sprintf(" (last activity: %s ago)", formatDuration(ago))
 	}
 	fmt.Fprintln(w, line)

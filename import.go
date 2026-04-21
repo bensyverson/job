@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -480,12 +481,7 @@ func validateRefs(flat []*parsedTask) error {
 }
 
 func isRoot(flat []*parsedTask, tree []*parsedTask, p *parsedTask) bool {
-	for _, r := range tree {
-		if r == p {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(tree, p)
 }
 
 func findParsedParent(tree []*parsedTask, target *parsedTask) *parsedTask {

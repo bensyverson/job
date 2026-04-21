@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func renderListString(db interface{}, nodes []*TaskNode, blockers map[string][]string) string {
+func renderListString(db any, nodes []*TaskNode, blockers map[string][]string) string {
 	var buf bytes.Buffer
 	renderMarkdownList(&buf, nodes, blockers, nil, 0)
 	return buf.String()

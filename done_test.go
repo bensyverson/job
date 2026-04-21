@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -355,5 +356,361 @@ func TestFormatEvent_LegacyForce_Renders(t *testing.T) {
 	}
 	if !strings.Contains(out, "and 1 subtasks") {
 		t.Errorf("legacy force should surface cascade count: %q", out)
+	}
+}
+
+// --- P2: done --claim-next ---------------------------------------------
+
+// The flag closes the target AND claims the next available leaf in one
+// call, collapsing the most common close-then-advance flow.
+func TestDone_ClaimNext_ClosesAndClaims(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := mustAdd(t, db, "", "Root")
+	a := mustAdd(t, db, root, "A")
+	b := mustAdd(t, db, root, "B")
+	db.Close()
+
+	// alice claims a, then done --claim-next: should close a, then claim b.
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "--claim-next")
+	if err != nil {
+		t.Fatalf("done --claim-next: %v", err)
+	}
+	if !strings.Contains(stdout, "Done: "+a) {
+		t.Errorf("ack should include Done line for closed task:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Claimed: "+b) {
+		t.Errorf("ack should include Claimed line for next leaf:\n%s", stdout)
+	}
+
+	// Verify DB state: b is claimed by alice.
+	db2 := openTestDB(t, dbFile)
+	bt := mustGet(t, db2, b)
+	if bt.Status != "claimed" || bt.ClaimedBy == nil || *bt.ClaimedBy != "alice" {
+		t.Errorf("b should be claimed by alice; status=%q, claimed_by=%v", bt.Status, bt.ClaimedBy)
+	}
+}
+
+// Output shape matches bare claim's ack: each line is greppable and the
+// Claimed line starts with the literal "Claimed:" so tailing agents can
+// use `^Claimed:` regardless of how the claim was acquired.
+func TestDone_ClaimNext_OutputShapeMatchesClaim(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := mustAdd(t, db, "", "Root")
+	a := mustAdd(t, db, root, "A")
+	_ = mustAdd(t, db, root, "B")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "--claim-next")
+	if err != nil {
+		t.Fatalf("done --claim-next: %v", err)
+	}
+	lines := strings.Split(stdout, "\n")
+	foundClaimed := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Claimed: ") {
+			foundClaimed = true
+			if !strings.Contains(line, "expires in") {
+				t.Errorf("Claimed line should include expiry, got: %q", line)
+			}
+		}
+	}
+	if !foundClaimed {
+		t.Errorf("expected a line starting with 'Claimed:' for greppability:\n%s", stdout)
+	}
+}
+
+// When there is no next leaf (the closed task was the last work), the
+// done succeeds and the ack simply omits the Claimed line (the existing
+// "All tasks in X complete" ack still fires).
+func TestDone_ClaimNext_NoNextLeaf_Succeeds(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := mustAdd(t, db, "", "Root")
+	a := mustAdd(t, db, root, "A")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "--claim-next")
+	if err != nil {
+		t.Fatalf("done --claim-next should not error when no next leaf: %v", err)
+	}
+	if !strings.Contains(stdout, "Done: "+a) {
+		t.Errorf("ack should include Done line:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Claimed:") {
+		t.Errorf("ack should NOT include Claimed line when no next leaf:\n%s", stdout)
+	}
+}
+
+// If the next leaf got claimed by someone else between the done and the
+// auto-claim, done still succeeds; a status line names the taken leaf
+// instead of erroring (done is irreversible, claim is opportunistic).
+func TestDone_ClaimNext_RaceLostReportsStatus(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := mustAdd(t, db, "", "Root")
+	a := mustAdd(t, db, root, "A")
+	b := mustAdd(t, db, root, "B")
+	db.Close()
+
+	// alice claims a; bob claims b before alice finishes.
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if _, _, err := runCLI(t, dbFile, "--as", "bob", "claim", b); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	// alice: done a --claim-next. b is gone; no other leaf.
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "--claim-next")
+	if err != nil {
+		t.Fatalf("done --claim-next should not error on race: %v", err)
+	}
+	if !strings.Contains(stdout, "Done: "+a) {
+		t.Errorf("ack should include Done line:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Claimed: "+b) {
+		t.Errorf("should not claim b, which bob already has:\n%s", stdout)
+	}
+}
+
+// --- P4: positional-prose detection -------------------------------------
+
+// A multi-word second positional to `done` is prose, not an ID. Suggest -m.
+func TestDone_PositionalProse_MultiWord_SuggestsDashM(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "wrote the red tests")
+	if err == nil {
+		t.Fatal("expected error for prose second positional")
+	}
+	if !strings.Contains(err.Error(), "-m") {
+		t.Errorf("error should suggest -m: %v", err)
+	}
+}
+
+// A single-word non-ID second positional is ambiguous. Heuristic: err on
+// the side of suggesting -m (typoed IDs are rarer than forgotten -m).
+func TestDone_PositionalProse_SingleWordNonID_SuggestsDashM(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	// "done" is 4 chars, not a valid 5-char short-ID shape.
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "done")
+	if err == nil {
+		t.Fatal("expected error for non-ID-shaped second positional")
+	}
+	if !strings.Contains(err.Error(), "-m") {
+		t.Errorf("error should suggest -m: %v", err)
+	}
+}
+
+// A valid 5-char short-ID-shaped second positional is treated as a task
+// ID (multi-done), not as prose.
+func TestDone_TwoValidIDs_StillWorks(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := mustAdd(t, db, "", "A")
+	b := mustAdd(t, db, "", "B")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, b); err != nil {
+		t.Fatalf("done of two valid IDs should work: %v", err)
+	}
+}
+
+// claim with a prose second positional: suggest -m.
+func TestClaim_PositionalProse_SuggestsDashM(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "claim", id, "heading into this now")
+	if err == nil {
+		t.Fatal("expected error for prose second positional on claim")
+	}
+	// claim's second arg is a duration, not a note. Suggest -m isn't the
+	// right pointer here — the right pointer is "that's not a duration".
+	// But for the feedback author's muscle memory, suggest a helpful hint.
+	if !strings.Contains(err.Error(), "duration") && !strings.Contains(err.Error(), "-m") {
+		t.Errorf("error should explain the second arg shape: %v", err)
+	}
+}
+
+// --- P3: -m @file / -m - stdin support ---------------------------------
+
+// -m @path reads the note body from a file.
+func TestDone_DashM_AtFile_ReadsFromFile(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	notePath := t.TempDir() + "/note.txt"
+	contents := "multi-line\nevidence payload\nwith backticks ```and stuff```"
+	if err := os.WriteFile(notePath, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "-m", "@"+notePath); err != nil {
+		t.Fatalf("done -m @file: %v", err)
+	}
+
+	db2 := openTestDB(t, dbFile)
+	task := mustGet(t, db2, id)
+	if task.CompletionNote == nil || *task.CompletionNote != contents {
+		t.Errorf("note: got %v, want %q", task.CompletionNote, contents)
+	}
+}
+
+// -m - reads the note body from stdin.
+func TestDone_DashM_DashReadsStdin(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	contents := "stdin piped note\nwith newlines"
+	if _, _, err := runCLIWithStdin(t, dbFile, contents, "--as", "alice", "done", id, "-m", "-"); err != nil {
+		t.Fatalf("done -m -: %v", err)
+	}
+
+	db2 := openTestDB(t, dbFile)
+	task := mustGet(t, db2, id)
+	if task.CompletionNote == nil || *task.CompletionNote != contents {
+		t.Errorf("note: got %v, want %q", task.CompletionNote, contents)
+	}
+}
+
+// Literal strings starting with anything other than @ or - are unchanged.
+func TestDone_DashM_LiteralStringStillWorks(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "-m", "plain literal"); err != nil {
+		t.Fatalf("done -m: %v", err)
+	}
+
+	db2 := openTestDB(t, dbFile)
+	task := mustGet(t, db2, id)
+	if task.CompletionNote == nil || *task.CompletionNote != "plain literal" {
+		t.Errorf("note: got %v, want 'plain literal'", task.CompletionNote)
+	}
+}
+
+// @nonexistent errors with a clear message — don't silently treat as
+// literal; the user meant a file.
+func TestDone_DashM_AtNonexistentFile_Errors(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "-m", "@/does/not/exist.txt")
+	if err == nil {
+		t.Fatal("expected error for @nonexistent file")
+	}
+	if !strings.Contains(err.Error(), "-m @") && !strings.Contains(err.Error(), "read note file") {
+		t.Errorf("error should explain @-file failure: %v", err)
+	}
+}
+
+// File contents preserve internal newlines verbatim.
+func TestDone_DashM_AtFile_PreservesNewlines(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	notePath := t.TempDir() + "/note.txt"
+	contents := "line 1\nline 2\nline 3"
+	if err := os.WriteFile(notePath, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "-m", "@"+notePath); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+
+	db2 := openTestDB(t, dbFile)
+	task := mustGet(t, db2, id)
+	if task.CompletionNote == nil {
+		t.Fatal("no completion note")
+	}
+	if !strings.Contains(*task.CompletionNote, "\n") {
+		t.Errorf("newlines not preserved: %q", *task.CompletionNote)
+	}
+	if *task.CompletionNote != contents {
+		t.Errorf("note mismatch:\n got: %q\nwant: %q", *task.CompletionNote, contents)
+	}
+}
+
+// The same resolution applies to `note -m`.
+func TestNote_DashM_AtFile_ReadsFromFile(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := mustAdd(t, db, "", "Task")
+	db.Close()
+
+	notePath := t.TempDir() + "/note.txt"
+	contents := "note body from file"
+	if err := os.WriteFile(notePath, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "note", id, "-m", "@"+notePath); err != nil {
+		t.Fatalf("note -m @file: %v", err)
+	}
+
+	db2 := openTestDB(t, dbFile)
+	task := mustGet(t, db2, id)
+	if !strings.Contains(task.Description, contents) {
+		t.Errorf("note body not appended: description=%q", task.Description)
+	}
+}
+
+// -m "<note>" composes with --claim-next: the note attaches to the
+// closed task and the claim still fires.
+func TestDone_ClaimNext_CombinesWithNote(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := mustAdd(t, db, "", "Root")
+	a := mustAdd(t, db, root, "A")
+	b := mustAdd(t, db, root, "B")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "-m", "wrapped up the red tests", "--claim-next"); err != nil {
+		t.Fatalf("done -m --claim-next: %v", err)
+	}
+
+	// Verify note recorded on a, and b claimed by alice.
+	db2 := openTestDB(t, dbFile)
+	at := mustGet(t, db2, a)
+	if at.CompletionNote == nil || *at.CompletionNote != "wrapped up the red tests" {
+		t.Errorf("completion note not recorded; got %v", at.CompletionNote)
+	}
+	bt := mustGet(t, db2, b)
+	if bt.Status != "claimed" || bt.ClaimedBy == nil || *bt.ClaimedBy != "alice" {
+		t.Errorf("b should be claimed; got status=%q, claimed_by=%v", bt.Status, bt.ClaimedBy)
 	}
 }

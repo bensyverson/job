@@ -19,6 +19,48 @@ var (
 	asFlag string
 )
 
+// looksLikeShortID returns true if s has the shape of a job short-ID:
+// exactly 5 characters, each in [a-zA-Z0-9]. Used to detect when a user
+// passed prose where an ID was expected.
+func looksLikeShortID(s string) bool {
+	if len(s) != 5 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
+// resolveMessage expands a -m flag value. Three forms:
+//   - "@path": read the file at path. Errors clearly if the file is missing.
+//   - "-": read from stdin.
+//   - anything else: returned as the literal string.
+//
+// Rationale: shell-quoting multi-line evidence payloads into -m "..." is
+// painful (backticks, nested quotes); file and stdin forms sidestep it.
+func resolveMessage(raw string, stdin io.Reader) (string, error) {
+	if raw == "-" {
+		b, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", fmt.Errorf("-m -: read stdin: %w", err)
+		}
+		return strings.TrimRight(string(b), "\n\r"), nil
+	}
+	if strings.HasPrefix(raw, "@") {
+		path := raw[1:]
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("-m @%s: read note file: %w", path, err)
+		}
+		return string(b), nil
+	}
+	return raw, nil
+}
+
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "job",
@@ -368,10 +410,11 @@ func newDoneCmd() *cobra.Command {
 	var note string
 	var resultStr string
 	var format string
+	var claimNext bool
 	cmd := &cobra.Command{
 		Use:   "done <id> [<id>...]",
 		Short: "Mark one or more tasks as done",
-		Long:  "Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Idempotent: already-done tasks are reported, not re-recorded.",
+		Long:  "Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Use --claim-next to atomically claim the next available leaf after closing, collapsing the close-then-advance flow into one call. Idempotent: already-done tasks are reported, not re-recorded.",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -383,6 +426,23 @@ func newDoneCmd() *cobra.Command {
 			actor, err := requireAs(db)
 			if err != nil {
 				return err
+			}
+
+			// Catch the `done <id> "prose"` footgun early with a specific
+			// suggestion, before runDone emits a generic "task not found".
+			for i, a := range args {
+				if !looksLikeShortID(a) {
+					return fmt.Errorf("done: %q does not look like a task ID (5-char alphanumeric). Did you mean `-m %q`? (positional arg #%d)",
+						a, a, i+1)
+				}
+			}
+
+			if cmd.Flags().Changed("message") {
+				resolved, rerr := resolveMessage(note, cmd.InOrStdin())
+				if rerr != nil {
+					return rerr
+				}
+				note = resolved
 			}
 
 			var resultRaw json.RawMessage
@@ -424,6 +484,27 @@ func newDoneCmd() *cobra.Command {
 				ctx = c
 			}
 
+			// --claim-next: attempt to claim the next leaf. Done is irreversible,
+			// claim is opportunistic — if the leaf got taken between done and
+			// claim, we report a status line instead of erroring.
+			var claimed *Task
+			var claimRaceTaken string
+			if claimNext && len(closed) > 0 {
+				t, cerr := runClaimNextFiltered(db, "", "", actor, false, false)
+				if cerr == nil {
+					claimed = t
+				} else {
+					// Distinguish "no work available" from "someone grabbed it".
+					// runClaimNext wraps runNext, which emits "No available tasks."
+					// on empty. Other errors (race on claim, task not found) we
+					// surface as a race status line with whatever detail we have.
+					msg := cerr.Error()
+					if !strings.Contains(msg, "No available tasks") {
+						claimRaceTaken = msg
+					}
+				}
+			}
+
 			if format == "json" {
 				return renderDoneJSON(cmd.OutOrStdout(), closed, alreadyDone, ctx)
 			}
@@ -435,6 +516,13 @@ func newDoneCmd() *cobra.Command {
 			}
 
 			renderDoneAck(cmd.OutOrStdout(), closed, alreadyDone, ctx)
+
+			if claimed != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n",
+					claimed.ShortID, claimed.Title, formatDuration(defaultClaimTTLSeconds))
+			} else if claimRaceTaken != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Next leaf unavailable: %s\n", claimRaceTaken)
+			}
 			return nil
 		},
 	}
@@ -442,6 +530,7 @@ func newDoneCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&note, "message", "m", "", "record a completion note")
 	cmd.Flags().StringVar(&resultStr, "result", "", "structured JSON result recorded on the done event")
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().BoolVar(&claimNext, "claim-next", false, "after closing, atomically claim the next available leaf")
 	return cmd
 }
 
@@ -703,6 +792,12 @@ func newNoteCmd() *cobra.Command {
 					return rerr
 				}
 				text = strings.TrimRight(string(b), "\n\r")
+			} else if hasMessage {
+				resolved, rerr := resolveMessage(message, cmd.InOrStdin())
+				if rerr != nil {
+					return rerr
+				}
+				text = resolved
 			}
 			if text == "" {
 				return fmt.Errorf("note text is empty")

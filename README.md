@@ -118,8 +118,9 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 |---------|-------------|
 | `job done <id> [<id>...]` | Mark one or more tasks done, atomically. Idempotent: already-done IDs are reported, not re-recorded. |
 | | `--cascade` Also close all open descendants. |
-| | `-m "<note>"` Record a completion note. |
+| | `-m "<note>"` Record a completion note. Also accepts `-m @path` (read from file) or `-m -` (read from stdin) for multi-line payloads. |
 | | `--result '<json>'` Record structured JSON on the `done` event. |
+| | `--claim-next` After closing, atomically claim the next available leaf. Collapses the close-then-advance flow into one call. On race (leaf grabbed by another agent between close and claim), done still succeeds and a status line names the taken leaf — claim is opportunistic, close is irreversible. |
 | | `--format=json` Machine-readable output. |
 | `job reopen <id>` | Reopen a completed task. `--cascade` also reopens all done descendants. |
 
@@ -128,7 +129,7 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 | Command | Description |
 |---------|-------------|
 | `job edit <id> [--title <t>] [--desc <d>]` | Replace title and/or description. `--desc ""` clears the description. |
-| `job note <id> -m "<text>"` | Append a timestamped note to a task's description. Use `job note <id> -` to read the note body from stdin. `--result '<json>'` attaches structured JSON to the event without touching the description. |
+| `job note <id> -m "<text>"` | Append a timestamped note to a task's description. The message argument also accepts `-m @path/to/file.txt` to read the note from a file (handy for multi-line evidence payloads where shell quoting is painful) and `-m -` to read from stdin. The positional `job note <id> -` form for stdin is still supported. `--result '<json>'` attaches structured JSON to the event without touching the description. |
 | `job move <id> before\|after <sibling>` | Reorder a task among its siblings. |
 
 ### Cancellation

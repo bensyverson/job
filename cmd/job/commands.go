@@ -223,70 +223,113 @@ func collectLabels(db *sql.DB, nodes []*job.TaskNode) (map[int64][]string, error
 	return job.GetLabelsForTaskIDs(db, ids)
 }
 
-func renderDoneAck(w io.Writer, closed []*job.ClosedResult, alreadyDone []string, finalCtx *job.DoneContext) {
-	single := len(closed) == 1 && len(alreadyDone) == 0 && len(closed[0].CascadeClosed) == 0
+// AckLine is a single pre-formatted line in the done-ack output plan.
+// Building a plan before rendering (instead of inlining fmt.Fprintfs) lets
+// the builder apply append/skip conditions (suppress redundant lines,
+// suppress Next when a claim fired) without tangling the render into
+// nested branches.
+type AckLine string
 
+// doneAckOptions carries out-of-band context the plan builder needs that
+// isn't part of the domain's DoneContext: whether --claim-next produced a
+// Claimed line in this same call (which makes a Next line redundant).
+type doneAckOptions struct {
+	// suppressNext is true when a successful claim-next claim will be
+	// emitted after the ack. The Claimed line already names the same
+	// next-work; a separate Next line would duplicate it.
+	suppressNext bool
+}
+
+func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCtx *job.DoneContext, opts doneAckOptions) []AckLine {
+	var lines []AckLine
+
+	single := len(closed) == 1 && len(alreadyDone) == 0 && len(closed[0].CascadeClosed) == 0
 	if single {
 		c := closed[0]
-		fmt.Fprintf(w, "Done: %s %q\n", c.ShortID, c.Title)
+		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q", c.ShortID, c.Title)))
 	} else if len(closed) == 1 && len(closed[0].CascadeClosed) > 0 && len(alreadyDone) == 0 {
 		c := closed[0]
-		fmt.Fprintf(w, "Done: %s %q (and %d subtasks)\n", c.ShortID, c.Title, len(c.CascadeClosed))
+		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q (and %d subtasks)", c.ShortID, c.Title, len(c.CascadeClosed))))
 	} else if len(closed) > 0 {
-		fmt.Fprintf(w, "Closed %d tasks:\n", len(closed))
+		lines = append(lines, AckLine(fmt.Sprintf("Closed %d tasks:", len(closed))))
 		for _, c := range closed {
 			if len(c.CascadeClosed) > 0 {
-				fmt.Fprintf(w, "- Done: %s %q (and %d subtasks)\n", c.ShortID, c.Title, len(c.CascadeClosed))
+				lines = append(lines, AckLine(fmt.Sprintf("- Done: %s %q (and %d subtasks)", c.ShortID, c.Title, len(c.CascadeClosed))))
 			} else {
-				fmt.Fprintf(w, "- Done: %s %q\n", c.ShortID, c.Title)
+				lines = append(lines, AckLine(fmt.Sprintf("- Done: %s %q", c.ShortID, c.Title)))
 			}
 		}
 	}
 	if len(alreadyDone) > 0 {
-		fmt.Fprintf(w, "  already done: %s\n", strings.Join(alreadyDone, ", "))
+		lines = append(lines, AckLine(fmt.Sprintf("  already done: %s", strings.Join(alreadyDone, ", "))))
 	}
 
 	// Surface auto-closed ancestors (leaf-frontier cascade) on every closed
-	// result, regardless of final-context state. One line per ancestor.
+	// result. Track the highest auto-closed ancestor across all results so we
+	// can suppress a redundant "All tasks in X complete." that would just
+	// restate what the last Auto-closed line already said.
+	highestAutoClosed := ""
 	for _, c := range closed {
 		for _, anc := range c.AutoClosedAncestors {
-			fmt.Fprintf(w, "  Auto-closed: %s %q\n", anc.ShortID, anc.Title)
+			lines = append(lines, AckLine(fmt.Sprintf("  Auto-closed: %s %q", anc.ShortID, anc.Title)))
+			// AutoClosedAncestors is ordered nearest-parent first, so the
+			// last element is the highest. Overwriting on each iteration
+			// naturally leaves `highestAutoClosed` pointing at that element.
+			highestAutoClosed = anc.ShortID
 		}
 	}
 
 	if finalCtx == nil {
-		return
+		return lines
 	}
-
-	// Only render the trailing context block when we actually closed something,
-	// since an already-done-only call won't have a meaningful "next" context
-	// beyond whole-tree completion.
+	// Trailing context is only meaningful when we actually closed something;
+	// an already-done-only call has nothing to say about "what's next."
 	if len(closed) == 0 {
-		return
+		return lines
 	}
 
 	ctx := finalCtx
 
-	if ctx.WholeTreeComplete {
-		fmt.Fprintf(w, "  All tasks in %s complete. (%d done, 0 open)\n", ctx.WholeTreeRootID, ctx.WholeTreeDoneCount)
-		// Fall through so we can also surface NextAfterParent if there's more
-		// work at a higher scope (another root-level subtree).
+	// Improvement 1: suppress "All tasks in X complete." when X equals the
+	// highest auto-closed ancestor. The Auto-closed line already emitted
+	// conveys the same "this whole thing just closed" signal; saying it
+	// twice is noise.
+	if ctx.WholeTreeComplete && ctx.WholeTreeRootID != highestAutoClosed {
+		lines = append(lines, AckLine(fmt.Sprintf("  All tasks in %s complete. (%d done, 0 open)", ctx.WholeTreeRootID, ctx.WholeTreeDoneCount)))
 	}
 
+	// Improvement 3: suppress Next: when --claim-next already claimed the
+	// next work in the same call. The Claimed line names the same target,
+	// so a Next line would be a stale duplicate. Skip-blocked info is kept
+	// even when suppressing Next — it's context on a different sibling.
 	if ctx.SkippedBlocked != nil && ctx.NextSibling != nil {
-		fmt.Fprintf(w, "  Next sibling %s is blocked on %s. Skipping to %s.\n",
-			ctx.SkippedBlocked.ShortID, ctx.SkippedBlockedBy, ctx.NextSibling.ShortID)
-	} else if ctx.NextSibling != nil {
-		fmt.Fprintf(w, "  Next: %s %q\n", ctx.NextSibling.ShortID, ctx.NextSibling.Title)
-	} else if ctx.NextAfterParent != nil {
-		// Parent auto-closed; surface the next work past it.
-		fmt.Fprintf(w, "  Next: %s %q\n", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)
+		lines = append(lines, AckLine(fmt.Sprintf("  Next sibling %s is blocked on %s. Skipping to %s.",
+			ctx.SkippedBlocked.ShortID, ctx.SkippedBlockedBy, ctx.NextSibling.ShortID)))
+	} else if !opts.suppressNext {
+		if ctx.NextSibling != nil {
+			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextSibling.ShortID, ctx.NextSibling.Title)))
+		} else if ctx.NextAfterParent != nil {
+			// Parent auto-closed; surface the next work past it.
+			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)))
+		}
 	}
 
 	// Only show "Parent X: N of M complete" when the parent is still open.
 	// An auto-closed parent has nothing meaningful to report here.
 	if ctx.ParentID != "" && !ctx.ParentWasDone && !ctx.ParentAutoClosed {
-		fmt.Fprintf(w, "  Parent %s: %d of %d complete\n", ctx.ParentID, ctx.ParentDoneCount, ctx.ParentTotalCount)
+		lines = append(lines, AckLine(fmt.Sprintf("  Parent %s: %d of %d complete", ctx.ParentID, ctx.ParentDoneCount, ctx.ParentTotalCount)))
+	}
+
+	return lines
+}
+
+func renderDoneAck(w io.Writer, closed []*job.ClosedResult, alreadyDone []string, finalCtx *job.DoneContext) {
+	renderDoneAckWithOptions(w, closed, alreadyDone, finalCtx, doneAckOptions{})
+}
+
+func renderDoneAckWithOptions(w io.Writer, closed []*job.ClosedResult, alreadyDone []string, finalCtx *job.DoneContext, opts doneAckOptions) {
+	for _, line := range buildDoneAckLines(closed, alreadyDone, finalCtx, opts) {
+		fmt.Fprintln(w, string(line))
 	}
 }
 

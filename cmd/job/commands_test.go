@@ -558,8 +558,10 @@ func TestDone_EnrichedAck_LastChild_WithParentSibling(t *testing.T) {
 
 func TestDone_EnrichedAck_WholeTreeDone(t *testing.T) {
 	// Under leaf-frontier semantics, closing the last open child auto-closes
-	// every ancestor up to the root. The whole-tree ack fires on that single
-	// close, not on a subsequent manual close of the root.
+	// every ancestor up to the root. The Auto-closed line for the root
+	// already conveys "the whole tree just closed", so the "All tasks in X
+	// complete" line is suppressed when the whole-tree root equals the
+	// highest auto-closed ancestor (P7 improvement 1).
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	root := job.MustAdd(t, db, "", "Root")
@@ -570,9 +572,12 @@ func TestDone_EnrichedAck_WholeTreeDone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
-	want := "  All tasks in " + root + " complete. (2 done, 0 open)"
-	if !strings.Contains(stdout, want) {
-		t.Errorf("missing whole-tree line:\n%s", stdout)
+	wantAuto := "  Auto-closed: " + root + " \"Root\""
+	if !strings.Contains(stdout, wantAuto) {
+		t.Errorf("missing Auto-closed line for root:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "All tasks in "+root+" complete") {
+		t.Errorf("whole-tree line should be suppressed (duplicates Auto-closed):\n%s", stdout)
 	}
 }
 

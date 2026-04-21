@@ -118,7 +118,13 @@ func newDoneCmd() *cobra.Command {
 				return nil
 			}
 
-			renderDoneAck(cmd.OutOrStdout(), closed, alreadyDone, ctx)
+			// Suppress the ack's Next line when --claim-next successfully
+			// claimed the next leaf: the Claimed line below already names
+			// the target. Race-lost claims still surface Next as a useful
+			// fallback ("you didn't get anything, try this instead").
+			renderDoneAckWithOptions(cmd.OutOrStdout(), closed, alreadyDone, ctx, doneAckOptions{
+				suppressNext: claimed != nil,
+			})
 
 			if claimed != nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n",

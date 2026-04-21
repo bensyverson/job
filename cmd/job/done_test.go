@@ -715,3 +715,141 @@ func TestDone_ClaimNext_CombinesWithNote(t *testing.T) {
 		t.Errorf("b should be claimed; got status=%q, claimed_by=%v", bt.Status, bt.ClaimedBy)
 	}
 }
+
+// --- P7: output tightening ---------------------------------------------
+
+// Improvement 1 (simple case): closing the only child of a root auto-closes
+// the root. The `Auto-closed: <root>` line says everything that needs to be
+// said; the trailing `All tasks in <root> complete.` is a redundant
+// duplicate and should be suppressed.
+func TestDone_AutoCloseIsWholeTreeRoot_SuppressesWholeTreeLine(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	c1 := job.MustAdd(t, db, root, "C1")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c1)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	wantAuto := "  Auto-closed: " + root + " \"Root\""
+	if !strings.Contains(stdout, wantAuto) {
+		t.Errorf("auto-closed line should still fire:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "All tasks in "+root+" complete") {
+		t.Errorf("whole-tree line duplicates the auto-closed line and should be suppressed:\n%s", stdout)
+	}
+}
+
+// Improvement 1 (nested): closing the only leaf in a root->p1->c1 chain
+// auto-closes p1 AND root. The highest auto-closed ancestor equals the
+// whole-tree root, so `All tasks in root complete` must still be
+// suppressed — the two Auto-closed lines already convey the cascade.
+func TestDone_NestedAutoCloseAllTheWayUp_SuppressesWholeTreeLine(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	p1 := job.MustAdd(t, db, root, "P1")
+	c1 := job.MustAdd(t, db, p1, "C1")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c1)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if !strings.Contains(stdout, "  Auto-closed: "+p1) {
+		t.Errorf("expected auto-closed line for p1:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "  Auto-closed: "+root) {
+		t.Errorf("expected auto-closed line for root:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "All tasks in "+root+" complete") {
+		t.Errorf("whole-tree line should be suppressed when root is the highest auto-closed ancestor:\n%s", stdout)
+	}
+}
+
+// Improvement 2: Next: should resolve to a claimable leaf, not a parent
+// that still has open children. Here done c1 auto-closes p1; the next
+// top-level sibling is p2, but p2 is a non-leaf — the actionable next
+// task is c2 (p2's leaf).
+func TestDone_NextResolvesToLeafUnderSiblingParent(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	p1 := job.MustAdd(t, db, "", "P1")
+	p2 := job.MustAdd(t, db, "", "P2")
+	c1 := job.MustAdd(t, db, p1, "C1")
+	c2 := job.MustAdd(t, db, p2, "C2")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c1)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	// Must not point at the non-leaf parent.
+	if strings.Contains(stdout, "Next: "+p2+" \"P2\"") {
+		t.Errorf("Next should not point at non-leaf parent p2:\n%s", stdout)
+	}
+	wantLeaf := "Next: " + c2 + " \"C2\""
+	if !strings.Contains(stdout, wantLeaf) {
+		t.Errorf("Next should resolve to leaf c2:\n%s", stdout)
+	}
+}
+
+// Improvement 3 (success): when --claim-next successfully claims the next
+// leaf, the ack must not also emit a Next: line pointing at the same
+// work. The Claimed: line already tells the user what was picked up.
+func TestDone_ClaimNext_SuccessfulClaim_SuppressesNextLine(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	a := job.MustAdd(t, db, root, "A")
+	b := job.MustAdd(t, db, root, "B")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "--claim-next")
+	if err != nil {
+		t.Fatalf("done --claim-next: %v", err)
+	}
+	if !strings.Contains(stdout, "Claimed: "+b) {
+		t.Fatalf("setup: Claimed line should fire:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Next: ") {
+		t.Errorf("Next: line should be suppressed when Claimed: already fired:\n%s", stdout)
+	}
+}
+
+// Improvement 3 (race fallback): when --claim-next loses the race (or
+// finds nothing to claim), the Next: line is a useful fallback and must
+// still fire if the DoneContext has a next sibling.
+func TestDone_ClaimNext_RaceLost_NextStillFires(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	a := job.MustAdd(t, db, root, "A")
+	b := job.MustAdd(t, db, root, "B")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "claim", a); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if _, _, err := runCLI(t, dbFile, "--as", "bob", "claim", b); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, "--claim-next")
+	if err != nil {
+		t.Fatalf("done --claim-next: %v", err)
+	}
+	if strings.Contains(stdout, "Claimed: ") {
+		t.Fatalf("setup: no successful claim expected:\n%s", stdout)
+	}
+	// The claim attempt failed; Next should still name b as the
+	// useful fallback target.
+	wantNext := "Next: " + b + " \"B\""
+	if !strings.Contains(stdout, wantNext) {
+		t.Errorf("Next: fallback should still fire on race-lost claim-next:\n%s", stdout)
+	}
+}

@@ -845,6 +845,13 @@ func ComputeDoneContext(db *sql.DB, closedShortID string, autoClosedSet map[stri
 			if err != nil {
 				return nil, err
 			}
+			// If the raw sibling is itself a parent-with-open-children, the
+			// actionable "Next" for the user is a leaf under that sibling — not
+			// the parent, which isn't claimable under leaf-frontier semantics.
+			nextSib, err = descendToClaimableLeaf(db, nextSib)
+			if err != nil {
+				return nil, err
+			}
 			ctx.NextSibling = nextSib
 			ctx.SkippedBlocked = skipped
 			ctx.SkippedBlockedBy = skippedBy
@@ -873,6 +880,12 @@ func ComputeDoneContext(db *sql.DB, closedShortID string, autoClosedSet map[stri
 					return nil, err
 				}
 				nextAfter, _, _, err := findNextSibling(db, grandSiblings, topClosed)
+				if err != nil {
+					return nil, err
+				}
+				// Same leaf-frontier fix: if the next top-level sibling is a
+				// parent-with-open-children, surface its first claimable leaf.
+				nextAfter, err = descendToClaimableLeaf(db, nextAfter)
 				if err != nil {
 					return nil, err
 				}
@@ -1047,6 +1060,33 @@ func subtreeCompleteness(db *sql.DB, rootID int64) (allDone bool, doneCount int,
 		return false, 0, nil
 	}
 	return allDone, doneCount, nil
+}
+
+// descendToClaimableLeaf resolves a "Next:" candidate to an actionable leaf.
+// If t has no open children, t is already a leaf and is returned unchanged.
+// If t has open children, it isn't directly claimable under leaf-frontier
+// semantics, so we descend into t's subtree and return the first claimable
+// leaf (depth-first by sort_order). Returns nil if the subtree is entirely
+// blocked or contains no available work. Passing a nil t returns nil.
+func descendToClaimableLeaf(db *sql.DB, t *Task) (*Task, error) {
+	if t == nil {
+		return nil, nil
+	}
+	open, err := countOpenChildren(db, t.ID)
+	if err != nil {
+		return nil, err
+	}
+	if open == 0 {
+		return t, nil
+	}
+	leaves, err := queryAvailableLeafFrontier(db, &t.ID, 1, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(leaves) == 0 {
+		return nil, nil
+	}
+	return leaves[0], nil
 }
 
 type TaskInfo struct {

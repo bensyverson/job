@@ -341,9 +341,9 @@ func TestDone_EnrichedAck_MultiID_FinalContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
-	wantParent := "  Parent " + parent + " complete — run 'job done " + parent + "' to close it."
+	wantParent := "  Auto-closed: " + parent + " \"P\""
 	if !strings.Contains(stdout, wantParent) {
-		t.Errorf("missing parent-closeable line:\n%s", stdout)
+		t.Errorf("missing auto-closed line:\n%s", stdout)
 	}
 }
 

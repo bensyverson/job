@@ -81,20 +81,20 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func mustAdd(t *testing.T, db *sql.DB, parentShortID, title string) string {
 	t.Helper()
-	id, err := runAdd(db, parentShortID, title, "", "", testActor)
+	res, err := runAdd(db, parentShortID, title, "", "", testActor)
 	if err != nil {
 		t.Fatalf("add task %q: %v", title, err)
 	}
-	return id
+	return res.ShortID
 }
 
 func mustAddDesc(t *testing.T, db *sql.DB, parentShortID, title, desc string) string {
 	t.Helper()
-	id, err := runAdd(db, parentShortID, title, desc, "", testActor)
+	res, err := runAdd(db, parentShortID, title, desc, "", testActor)
 	if err != nil {
 		t.Fatalf("add task %q: %v", title, err)
 	}
-	return id
+	return res.ShortID
 }
 
 func mustDone(t *testing.T, db *sql.DB, shortID string) {
@@ -120,10 +120,11 @@ func mustGet(t *testing.T, db *sql.DB, shortID string) *Task {
 
 func TestRunAdd_RootTask(t *testing.T) {
 	db := setupTestDB(t)
-	id, err := runAdd(db, "", "Root task", "", "", testActor)
+	res, err := runAdd(db, "", "Root task", "", "", testActor)
 	if err != nil {
 		t.Fatalf("runAdd: %v", err)
 	}
+	id := res.ShortID
 	if len(id) != 5 {
 		t.Fatalf("expected 5-char ID, got %q", id)
 	}
@@ -146,10 +147,11 @@ func TestRunAdd_RootTask(t *testing.T) {
 func TestRunAdd_Subtask(t *testing.T) {
 	db := setupTestDB(t)
 	pid := mustAdd(t, db, "", "Parent")
-	cid, err := runAdd(db, pid, "Child", "", "", testActor)
+	cres, err := runAdd(db, pid, "Child", "", "", testActor)
 	if err != nil {
 		t.Fatalf("runAdd: %v", err)
 	}
+	cid := cres.ShortID
 
 	child := mustGet(t, db, cid)
 	if child.ParentID == nil {
@@ -192,10 +194,11 @@ func TestRunAdd_Before(t *testing.T) {
 	db := setupTestDB(t)
 	id1 := mustAdd(t, db, "", "First")
 	id2 := mustAdd(t, db, "", "Last")
-	id3, err := runAdd(db, "", "Middle", "", id2, testActor)
+	id3res, err := runAdd(db, "", "Middle", "", id2, testActor)
 	if err != nil {
 		t.Fatalf("runAdd before: %v", err)
 	}
+	id3 := id3res.ShortID
 
 	t1 := mustGet(t, db, id1)
 	t2 := mustGet(t, db, id2)

@@ -98,7 +98,7 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 |---------|-------------|
 | `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. |
 | `job info <id>` | Show full details for one task. |
-| `job next [parent]` | Show the next available task. |
+| `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. |
 | `job status` | One-line summary: open / claimed by you / done, plus time since the last event. |
 
 All four support `--format=json` (except `status`, which is always plain text).
@@ -152,10 +152,20 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 |---------|-------------|
 | `job claim <id> [duration]` | Claim a task. Duration defaults to `15m`. Units: `s`, `m`, `h`, `d`. |
 | `job release <id>` | Release a claim. |
-| `job claim-next [parent] [duration]` | Find and claim the next available task in one step. |
+| `job claim-next [parent] [duration]` | Find and claim the next available leaf in one step. Pass `--include-parents` to claim any available task. |
 | `job heartbeat <id> [<id>...]` | Extend your live claim(s) by 15 minutes. Errors if the caller doesn't hold the claim. |
 
 Claims are attributed to the `--as` name. Claims expire automatically. `--force` overrides an existing claim. For long-running work, `heartbeat` refreshes a live claim without re-acquiring it.
+
+#### Leaf-frontier semantics
+
+A task is "claimable" iff it has no open children. Parents with open children are descended through, not surfaced, so `next`, `next all`, and `claim-next` return the set of leaves ready to work on.
+
+- `claim <parent-with-open-children>` is refused — the lock has no referent, since the parent's executable work is in its descendants. Claim a leaf instead, or use `--include-parents` on `next` / `claim-next` to fall back to the legacy behavior.
+- When the last open child of a parent is `done`, the parent **auto-closes**, cascading upward. The agent who closed the last child is attributed on every auto-close. Canceled siblings don't block the cascade (they're already "not open").
+- Adding an open child to a **claimed** parent **auto-releases** the parent's claim. The parent no longer has executable work of its own, so the lock has no referent. The `released` event records the trigger and the prior claimant.
+
+These three behaviors together mean parents are pure scaffolding: you never explicitly claim or close them, and `next` always points at real work.
 
 ### Blocking
 

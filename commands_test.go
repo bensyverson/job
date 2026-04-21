@@ -73,14 +73,16 @@ func TestWriteRequiresAs(t *testing.T) {
 
 	// Seed: create a task using direct API, so we have a target id
 	db := openTestDB(t, dbFile)
-	id, err := runAdd(db, "", "Seed", "", "", "seeder")
+	idRes, err := runAdd(db, "", "Seed", "", "", "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	other, err := runAdd(db, "", "Other", "", "", "seeder")
+	id := idRes.ShortID
+	otherRes, err := runAdd(db, "", "Other", "", "", "seeder")
 	if err != nil {
 		t.Fatalf("seed 2: %v", err)
 	}
+	other := otherRes.ShortID
 	db.Close()
 
 	cases := []struct {
@@ -120,10 +122,11 @@ func TestWriteRequiresAs(t *testing.T) {
 func TestReadDoesNotRequireAs(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	id, err := runAdd(db, "", "Seed", "", "", "seeder")
+	res, err := runAdd(db, "", "Seed", "", "", "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	id := res.ShortID
 	db.Close()
 
 	cases := [][]string{
@@ -292,10 +295,11 @@ func TestReleaseWrongHolder(t *testing.T) {
 func TestNoEnvFallback(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	id, err := runAdd(db, "", "Seed", "", "", "seeder")
+	res, err := runAdd(db, "", "Seed", "", "", "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	id := res.ShortID
 	db.Close()
 
 	t.Setenv("JOBS_USER", "bob")
@@ -541,25 +545,27 @@ func TestDone_EnrichedAck_LastChild_WithParentSibling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
-	wantParent := "  Parent " + p1 + " complete — run 'job done " + p1 + "' to close it."
-	if !strings.Contains(stdout, wantParent) {
-		t.Errorf("missing parent-closeable line:\n%s", stdout)
+	wantAuto := `  Auto-closed: ` + p1 + ` "Phase 1"`
+	if !strings.Contains(stdout, wantAuto) {
+		t.Errorf("missing auto-closed line:\n%s", stdout)
 	}
-	wantThen := `  Then: ` + p2 + ` "Phase 2"`
-	if !strings.Contains(stdout, wantThen) {
-		t.Errorf("missing Then line:\n%s", stdout)
+	wantNext := `  Next: ` + p2 + ` "Phase 2"`
+	if !strings.Contains(stdout, wantNext) {
+		t.Errorf("missing Next line:\n%s", stdout)
 	}
 }
 
 func TestDone_EnrichedAck_WholeTreeDone(t *testing.T) {
+	// Under leaf-frontier semantics, closing the last open child auto-closes
+	// every ancestor up to the root. The whole-tree ack fires on that single
+	// close, not on a subsequent manual close of the root.
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	root := mustAdd(t, db, "", "Root")
 	c1 := mustAdd(t, db, root, "C1")
-	mustDone(t, db, c1)
 	db.Close()
 
-	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", root)
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c1)
 	if err != nil {
 		t.Fatalf("done: %v", err)
 	}
@@ -909,10 +915,11 @@ func TestReadSideEffectsUseEmptyActor(t *testing.T) {
 
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	id, err := runAdd(db, "", "Seed", "", "", "seeder")
+	res, err := runAdd(db, "", "Seed", "", "", "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	id := res.ShortID
 	baseTime := time.Now()
 	currentNowFunc = func() time.Time { return baseTime }
 	if err := runClaim(db, id, "1h", "alice", false); err != nil {

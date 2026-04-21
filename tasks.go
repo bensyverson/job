@@ -9,49 +9,70 @@ import (
 )
 
 type ClosedResult struct {
-	ShortID       string
-	Title         string
-	CascadeClosed []string
+	ShortID             string
+	Title               string
+	CascadeClosed       []string
+	AutoClosedAncestors []AutoClosedAncestor
 }
 
-func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string) (string, error) {
+// AutoClosedAncestor names an ancestor that was auto-closed by the
+// leaf-frontier cascade (when its last open child closed). Walking from
+// the closer upward; the first entry is the direct parent.
+type AutoClosedAncestor struct {
+	ShortID string
+	Title   string
+}
+
+// AddResult carries the outcome of runAdd. ShortID is always set on
+// success; AutoReleasedParent is set when the add triggered an auto-release
+// of a claimed parent (leaf-frontier semantics — a parent with an open
+// child has no executable work of its own).
+type AddResult struct {
+	ShortID             string
+	AutoReleasedParent  string
+	AutoReleasedByActor string
+}
+
+func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string) (*AddResult, error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback()
 
+	var parent *Task
 	var parentID *int64
 	if parentShortID != "" {
-		parent, err := getTaskByShortID(tx, parentShortID)
+		p, err := getTaskByShortID(tx, parentShortID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		if parent == nil {
-			return "", fmt.Errorf("task %q not found", parentShortID)
+		if p == nil {
+			return nil, fmt.Errorf("task %q not found", parentShortID)
 		}
-		parentID = &parent.ID
+		parent = p
+		parentID = &p.ID
 	}
 
 	shortID, err := generateShortID(tx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	var sortOrder int
 	if beforeShortID != "" {
 		beforeTask, err := getTaskByShortID(tx, beforeShortID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if beforeTask == nil {
-			return "", fmt.Errorf("task %q not found", beforeShortID)
+			return nil, fmt.Errorf("task %q not found", beforeShortID)
 		}
 		if (beforeTask.ParentID == nil) != (parentID == nil) {
-			return "", fmt.Errorf("task %q is not a sibling of the new task", beforeShortID)
+			return nil, fmt.Errorf("task %q is not a sibling of the new task", beforeShortID)
 		}
 		if beforeTask.ParentID != nil && parentID != nil && *beforeTask.ParentID != *parentID {
-			return "", fmt.Errorf("task %q is not a sibling of the new task", beforeShortID)
+			return nil, fmt.Errorf("task %q is not a sibling of the new task", beforeShortID)
 		}
 		sortOrder = beforeTask.SortOrder
 		if parentID == nil {
@@ -60,7 +81,7 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 			_, err = tx.Exec("UPDATE tasks SET sort_order = sort_order + 1 WHERE parent_id = ? AND sort_order >= ? AND deleted_at IS NULL", *parentID, sortOrder)
 		}
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		var maxSort sql.NullInt64
@@ -70,7 +91,7 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 			err = tx.QueryRow("SELECT MAX(sort_order) FROM tasks WHERE parent_id = ? AND deleted_at IS NULL", *parentID).Scan(&maxSort)
 		}
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if maxSort.Valid {
 			sortOrder = int(maxSort.Int64) + 1
@@ -85,7 +106,7 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 		RETURNING id
 	`, shortID, parentID, title, desc, sortOrder, now, now).Scan(&taskID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	eventParentID := ""
@@ -98,10 +119,37 @@ func runAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 		"description": desc,
 		"sort_order":  sortOrder,
 	}); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return shortID, tx.Commit()
+	result := &AddResult{ShortID: shortID}
+
+	// Leaf-frontier auto-release: adding an open child to a claimed parent
+	// releases the parent's claim. The parent has no executable work of its
+	// own — its work is in its children — so the lock has no referent.
+	if parent != nil && parent.Status == "claimed" {
+		prior := ""
+		if parent.ClaimedBy != nil {
+			prior = *parent.ClaimedBy
+		}
+		if _, err := tx.Exec(
+			"UPDATE tasks SET status = 'available', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
+			now, parent.ID,
+		); err != nil {
+			return nil, err
+		}
+		if err := recordEvent(tx, parent.ID, "released", actor, map[string]any{
+			"auto_released":      true,
+			"triggered_by_child": shortID,
+			"prior_claimant":     prior,
+		}); err != nil {
+			return nil, err
+		}
+		result.AutoReleasedParent = parent.ShortID
+		result.AutoReleasedByActor = prior
+	}
+
+	return result, tx.Commit()
 }
 
 func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
@@ -175,6 +223,69 @@ func filterByLabel(nodes []*TaskNode, labeledIDs map[int64]bool) []*TaskNode {
 		}
 	}
 	return out
+}
+
+// cascadeAutoCloseAncestors walks the ancestor chain from taskID upward,
+// auto-closing each ancestor whose open children have all been closed
+// (status is now "done" or "canceled"). Emits a "done" event on each
+// auto-closed ancestor with detail.auto_closed=true, attributing the close
+// to actor (the agent who closed the last open descendant). Returns the
+// ordered list of auto-closed ancestors, nearest-parent first.
+func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, actor string, now int64) ([]AutoClosedAncestor, error) {
+	var result []AutoClosedAncestor
+	cursorID := taskID
+	for {
+		var parentID *int64
+		if err := tx.QueryRow(
+			"SELECT parent_id FROM tasks WHERE id = ?", cursorID,
+		).Scan(&parentID); err != nil {
+			return nil, err
+		}
+		if parentID == nil {
+			return result, nil
+		}
+
+		row := tx.QueryRow(`
+			SELECT id, short_id, parent_id, title, description, status, sort_order,
+			       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+			FROM tasks WHERE id = ?`, *parentID)
+		p, err := scanTask(row)
+		if err != nil {
+			return nil, err
+		}
+		// If the parent is already done/canceled, stop the cascade — nothing
+		// to do, and we shouldn't walk past it.
+		if p.Status == "done" || p.Status == "canceled" {
+			return result, nil
+		}
+
+		open, err := countOpenChildren(tx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		if open > 0 {
+			return result, nil
+		}
+
+		if _, err := tx.Exec(
+			"UPDATE tasks SET status = 'done', updated_at = ? WHERE id = ?",
+			now, p.ID,
+		); err != nil {
+			return nil, err
+		}
+		if err := recordEvent(tx, p.ID, "done", actor, map[string]any{
+			"auto_closed":  true,
+			"triggered_by": triggerShortID,
+		}); err != nil {
+			return nil, err
+		}
+		if err := recordBlocksUnblockedOn(tx, p.ID, p.ShortID, actor); err != nil {
+			return nil, err
+		}
+
+		result = append(result, AutoClosedAncestor{ShortID: p.ShortID, Title: p.Title})
+		cursorID = p.ID
+	}
 }
 
 // runDone closes one or more tasks atomically. If cascade is true, each target
@@ -319,10 +430,18 @@ func runDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 			return nil, nil, err
 		}
 
+		// Leaf-frontier cascade: after closing this target, auto-close any
+		// ancestors whose last open child has just been closed.
+		autoClosed, err := cascadeAutoCloseAncestors(tx, p.target.task.ID, p.target.shortID, actor, now)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		closed = append(closed, &ClosedResult{
-			ShortID:       p.target.shortID,
-			Title:         p.target.task.Title,
-			CascadeClosed: p.cascadeShorts,
+			ShortID:             p.target.shortID,
+			Title:               p.target.task.Title,
+			CascadeClosed:       p.cascadeShorts,
+			AutoClosedAncestors: autoClosed,
 		})
 	}
 
@@ -674,14 +793,18 @@ type DoneContext struct {
 	ParentWasDone      bool
 	ParentDoneCount    int
 	ParentTotalCount   int
-	ParentNowCloseable bool
+	ParentAutoClosed   bool
 	NextAfterParent    *Task
 	WholeTreeComplete  bool
 	WholeTreeDoneCount int
 	WholeTreeRootID    string
 }
 
-func computeDoneContext(db *sql.DB, closedShortID string) (*DoneContext, error) {
+// computeDoneContext computes the trailing-context block for a done ack.
+// autoClosedSet names ancestors that were auto-closed by the leaf-frontier
+// cascade in this same call — they are "done" now but were not done before,
+// which we need to distinguish to compute ParentWasDone correctly.
+func computeDoneContext(db *sql.DB, closedShortID string, autoClosedSet map[string]bool) (*DoneContext, error) {
 	closed, err := getTaskByShortID(db, closedShortID)
 	if err != nil {
 		return nil, err
@@ -703,7 +826,10 @@ func computeDoneContext(db *sql.DB, closedShortID string) (*DoneContext, error) 
 		if parent != nil {
 			ctx.ParentID = parent.ShortID
 			ctx.ParentTitle = parent.Title
-			ctx.ParentWasDone = parent.Status == "done"
+			ctx.ParentAutoClosed = autoClosedSet[parent.ShortID]
+			// ParentWasDone means "already done before this call." If the parent
+			// just auto-closed in this call, it was NOT done before.
+			ctx.ParentWasDone = parent.Status == "done" && !ctx.ParentAutoClosed
 
 			siblings, err := getChildren(db, parent.ID)
 			if err != nil {
@@ -715,8 +841,6 @@ func computeDoneContext(db *sql.DB, closedShortID string) (*DoneContext, error) 
 					ctx.ParentDoneCount++
 				}
 			}
-			ctx.ParentNowCloseable = !ctx.ParentWasDone && ctx.ParentDoneCount == ctx.ParentTotalCount && ctx.ParentTotalCount > 0
-
 			nextSib, skipped, skippedBy, err := findNextSibling(db, siblings, closed)
 			if err != nil {
 				return nil, err
@@ -725,17 +849,30 @@ func computeDoneContext(db *sql.DB, closedShortID string) (*DoneContext, error) 
 			ctx.SkippedBlocked = skipped
 			ctx.SkippedBlockedBy = skippedBy
 
-			if ctx.ParentNowCloseable {
+			// When the parent auto-closed, walk up through any additional
+			// auto-closed ancestors to find the next work to surface.
+			if ctx.ParentAutoClosed {
+				topClosed := parent
+				for topClosed.ParentID != nil {
+					gp, err := getTaskByID(db, *topClosed.ParentID)
+					if err != nil {
+						return nil, err
+					}
+					if gp == nil || gp.Status != "done" {
+						break
+					}
+					topClosed = gp
+				}
 				var grandSiblings []*Task
-				if parent.ParentID != nil {
-					grandSiblings, err = getChildren(db, *parent.ParentID)
+				if topClosed.ParentID != nil {
+					grandSiblings, err = getChildren(db, *topClosed.ParentID)
 				} else {
 					grandSiblings, err = getRootTasks(db)
 				}
 				if err != nil {
 					return nil, err
 				}
-				nextAfter, _, _, err := findNextSibling(db, grandSiblings, parent)
+				nextAfter, _, _, err := findNextSibling(db, grandSiblings, topClosed)
 				if err != nil {
 					return nil, err
 				}

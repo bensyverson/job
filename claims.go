@@ -157,6 +157,20 @@ func expireStaleClaimsInTx(tx dbtx, actor string) error {
 	return nil
 }
 
+// countOpenChildren returns the number of direct children of taskID whose
+// status is neither "done" nor "canceled". Used to enforce leaf-frontier
+// claim semantics: a task with open children has no executable work of its
+// own and should not be claimed directly.
+func countOpenChildren(tx dbtx, taskID int64) (int, error) {
+	var n int
+	err := tx.QueryRow(
+		`SELECT COUNT(*) FROM tasks
+		 WHERE parent_id = ? AND status NOT IN ('done', 'canceled') AND deleted_at IS NULL`,
+		taskID,
+	).Scan(&n)
+	return n, err
+}
+
 func runClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -177,6 +191,16 @@ func runClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 	}
 	if task.Status == "done" {
 		return fmt.Errorf("task %s is done", shortID)
+	}
+	openChildren, err := countOpenChildren(tx, task.ID)
+	if err != nil {
+		return err
+	}
+	if openChildren > 0 {
+		return fmt.Errorf(
+			"task %s has %d open children; claim a leaf instead, or run 'next %s all' to see them",
+			shortID, openChildren, shortID,
+		)
 	}
 	if task.Status == "claimed" && !force {
 		holder := ""
@@ -271,9 +295,17 @@ func runRelease(db *sql.DB, shortID, actor string) error {
 // the given parent (or root tasks when parentShortID is empty), in sort order.
 // Used by both `next` (single) and `next all` (frontier). When labelName is
 // non-empty, only tasks carrying that label are returned.
-func queryAvailableTasks(db *sql.DB, parentShortID string, limit int, labelName string) ([]*Task, error) {
-	var parentFilter string
-	var args []any
+//
+// Leaf-frontier semantics: by default, tasks with open children are excluded
+// (they are not claimable work themselves — their children are). The search
+// descends through such parents and surfaces their leaf descendants instead.
+// Passing includeParents=true restores the pre-leaf-frontier behavior of
+// returning direct children of the scope only.
+//
+// "Open children" means status NOT IN ('done', 'canceled'). A task whose
+// children are all closed is itself treated as a leaf.
+func queryAvailableTasks(db *sql.DB, parentShortID string, limit int, labelName string, includeParents bool) ([]*Task, error) {
+	var parentID *int64
 	if parentShortID != "" {
 		parent, err := getTaskByShortID(db, parentShortID)
 		if err != nil {
@@ -282,8 +314,24 @@ func queryAvailableTasks(db *sql.DB, parentShortID string, limit int, labelName 
 		if parent == nil {
 			return nil, fmt.Errorf("task %q not found", parentShortID)
 		}
+		parentID = &parent.ID
+	}
+
+	if includeParents {
+		return queryAvailableDirectChildren(db, parentID, limit, labelName)
+	}
+	return queryAvailableLeafFrontier(db, parentID, limit, labelName)
+}
+
+// queryAvailableDirectChildren implements the legacy behavior used by
+// --include-parents: return direct children of the scope (or root tasks),
+// regardless of whether they have open children of their own.
+func queryAvailableDirectChildren(db *sql.DB, parentID *int64, limit int, labelName string) ([]*Task, error) {
+	var parentFilter string
+	var args []any
+	if parentID != nil {
 		parentFilter = "AND t.parent_id = ?"
-		args = append(args, parent.ID)
+		args = append(args, *parentID)
 	} else {
 		parentFilter = "AND t.parent_id IS NULL"
 	}
@@ -328,15 +376,90 @@ func queryAvailableTasks(db *sql.DB, parentShortID string, limit int, labelName 
 	return tasks, rows.Err()
 }
 
-func runNext(db *sql.DB, parentShortID, actor string) (*Task, error) {
-	return runNextFiltered(db, parentShortID, actor, "")
+// queryAvailableLeafFrontier implements leaf-frontier semantics: descend
+// through the subtree rooted at scope (or all roots) and return tasks that
+// are available, unblocked, and have no open children. Results are ordered
+// by depth-first sort_order traversal so sibling-declaration order is
+// preserved.
+func queryAvailableLeafFrontier(db *sql.DB, parentID *int64, limit int, labelName string) ([]*Task, error) {
+	var anchorFilter string
+	var args []any
+	if parentID != nil {
+		anchorFilter = "t.parent_id = ?"
+		args = append(args, *parentID)
+	} else {
+		anchorFilter = "t.parent_id IS NULL"
+	}
+
+	labelFilter := ""
+	if labelName != "" {
+		labelFilter = "AND EXISTS (SELECT 1 FROM task_labels tl WHERE tl.task_id = t.id AND tl.name = ?)"
+		args = append(args, labelName)
+	}
+
+	limitClause := ""
+	if limit > 0 {
+		limitClause = fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	// The recursive CTE builds a depth-first walk of the subtree. sort_path
+	// concatenates zero-padded sort_order values at each level so that
+	// lexicographic ordering matches preorder traversal. Six digits of padding
+	// accommodates sort_order values up to 999999, well above any realistic
+	// sibling count.
+	query := fmt.Sprintf(`
+		WITH RECURSIVE subtree(id, sort_path) AS (
+			SELECT t.id, printf('%%06d', t.sort_order)
+			FROM tasks t
+			WHERE %s AND t.deleted_at IS NULL
+			UNION ALL
+			SELECT t.id, s.sort_path || '/' || printf('%%06d', t.sort_order)
+			FROM tasks t JOIN subtree s ON t.parent_id = s.id
+			WHERE t.deleted_at IS NULL
+		)
+		SELECT t.id, t.short_id, t.parent_id, t.title, t.description, t.status, t.sort_order,
+		       t.claimed_by, t.claim_expires_at, t.completion_note, t.created_at, t.updated_at, t.deleted_at
+		FROM tasks t JOIN subtree s ON s.id = t.id
+		WHERE t.status = 'available' AND t.deleted_at IS NULL %s
+		  AND NOT EXISTS (
+		    SELECT 1 FROM blocks b
+		    JOIN tasks bt ON bt.id = b.blocker_id
+		    WHERE b.blocked_id = t.id AND bt.status != 'done' AND bt.deleted_at IS NULL
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM tasks c
+		    WHERE c.parent_id = t.id
+		      AND c.status NOT IN ('done', 'canceled')
+		      AND c.deleted_at IS NULL
+		  )
+		ORDER BY s.sort_path%s
+	`, anchorFilter, labelFilter, limitClause)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tasks []*Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, rows.Err()
 }
 
-func runNextFiltered(db *sql.DB, parentShortID, actor, labelName string) (*Task, error) {
+func runNext(db *sql.DB, parentShortID, actor string) (*Task, error) {
+	return runNextFiltered(db, parentShortID, actor, "", false)
+}
+
+func runNextFiltered(db *sql.DB, parentShortID, actor, labelName string, includeParents bool) (*Task, error) {
 	if err := expireStaleClaims(db, actor); err != nil {
 		return nil, err
 	}
-	tasks, err := queryAvailableTasks(db, parentShortID, 1, labelName)
+	tasks, err := queryAvailableTasks(db, parentShortID, 1, labelName, includeParents)
 	if err != nil {
 		return nil, err
 	}
@@ -347,18 +470,22 @@ func runNextFiltered(db *sql.DB, parentShortID, actor, labelName string) (*Task,
 }
 
 func runNextAll(db *sql.DB, parentShortID, actor string) ([]*Task, error) {
-	return runNextAllFiltered(db, parentShortID, actor, "")
+	return runNextAllFiltered(db, parentShortID, actor, "", false)
 }
 
-func runNextAllFiltered(db *sql.DB, parentShortID, actor, labelName string) ([]*Task, error) {
+func runNextAllFiltered(db *sql.DB, parentShortID, actor, labelName string, includeParents bool) ([]*Task, error) {
 	if err := expireStaleClaims(db, actor); err != nil {
 		return nil, err
 	}
-	return queryAvailableTasks(db, parentShortID, 0, labelName)
+	return queryAvailableTasks(db, parentShortID, 0, labelName, includeParents)
 }
 
 func runClaimNext(db *sql.DB, parentShortID, duration, actor string, force bool) (*Task, error) {
-	task, err := runNext(db, parentShortID, actor)
+	return runClaimNextFiltered(db, parentShortID, duration, actor, force, false)
+}
+
+func runClaimNextFiltered(db *sql.DB, parentShortID, duration, actor string, force, includeParents bool) (*Task, error) {
+	task, err := runNextFiltered(db, parentShortID, actor, "", includeParents)
 	if err != nil {
 		return nil, err
 	}

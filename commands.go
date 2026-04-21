@@ -228,11 +228,15 @@ func newAddCmd() *cobra.Command {
 				title = args[0]
 			}
 
-			id, err := runAdd(db, parentShortID, title, desc, before, actor)
+			res, err := runAdd(db, parentShortID, title, desc, before, actor)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), id)
+			fmt.Fprintln(cmd.OutOrStdout(), res.ShortID)
+			if res.AutoReleasedParent != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Released: %s (prior claim by %s auto-released — parent now has open children)\n",
+					res.AutoReleasedParent, res.AutoReleasedByActor)
+			}
 			return nil
 		},
 	}
@@ -401,9 +405,19 @@ func newDoneCmd() *cobra.Command {
 				break
 			}
 
+			// Collect all auto-closed ancestor IDs across all closed results so
+			// computeDoneContext can distinguish "already-done parent" from
+			// "just-auto-closed parent".
+			autoClosedSet := make(map[string]bool)
+			for _, c := range closed {
+				for _, anc := range c.AutoClosedAncestors {
+					autoClosedSet[anc.ShortID] = true
+				}
+			}
+
 			var ctx *DoneContext
 			if lastCtxID != "" {
-				c, cerr := computeDoneContext(db, lastCtxID)
+				c, cerr := computeDoneContext(db, lastCtxID, autoClosedSet)
 				if cerr != nil {
 					return cerr
 				}
@@ -454,6 +468,14 @@ func renderDoneAck(w io.Writer, closed []*ClosedResult, alreadyDone []string, fi
 		fmt.Fprintf(w, "  already done: %s\n", strings.Join(alreadyDone, ", "))
 	}
 
+	// Surface auto-closed ancestors (leaf-frontier cascade) on every closed
+	// result, regardless of final-context state. One line per ancestor.
+	for _, c := range closed {
+		for _, anc := range c.AutoClosedAncestors {
+			fmt.Fprintf(w, "  Auto-closed: %s %q\n", anc.ShortID, anc.Title)
+		}
+	}
+
 	if finalCtx == nil {
 		return
 	}
@@ -469,15 +491,8 @@ func renderDoneAck(w io.Writer, closed []*ClosedResult, alreadyDone []string, fi
 
 	if ctx.WholeTreeComplete {
 		fmt.Fprintf(w, "  All tasks in %s complete. (%d done, 0 open)\n", ctx.WholeTreeRootID, ctx.WholeTreeDoneCount)
-		return
-	}
-
-	if ctx.ParentNowCloseable && ctx.ParentID != "" {
-		fmt.Fprintf(w, "  Parent %s complete — run 'job done %s' to close it.\n", ctx.ParentID, ctx.ParentID)
-		if ctx.NextAfterParent != nil {
-			fmt.Fprintf(w, "  Then: %s %q\n", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)
-		}
-		return
+		// Fall through so we can also surface NextAfterParent if there's more
+		// work at a higher scope (another root-level subtree).
 	}
 
 	if ctx.SkippedBlocked != nil && ctx.NextSibling != nil {
@@ -485,17 +500,28 @@ func renderDoneAck(w io.Writer, closed []*ClosedResult, alreadyDone []string, fi
 			ctx.SkippedBlocked.ShortID, ctx.SkippedBlockedBy, ctx.NextSibling.ShortID)
 	} else if ctx.NextSibling != nil {
 		fmt.Fprintf(w, "  Next: %s %q\n", ctx.NextSibling.ShortID, ctx.NextSibling.Title)
+	} else if ctx.NextAfterParent != nil {
+		// Parent auto-closed; surface the next work past it.
+		fmt.Fprintf(w, "  Next: %s %q\n", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)
 	}
 
-	if ctx.ParentID != "" && !ctx.ParentWasDone {
+	// Only show "Parent X: N of M complete" when the parent is still open.
+	// An auto-closed parent has nothing meaningful to report here.
+	if ctx.ParentID != "" && !ctx.ParentWasDone && !ctx.ParentAutoClosed {
 		fmt.Fprintf(w, "  Parent %s: %d of %d complete\n", ctx.ParentID, ctx.ParentDoneCount, ctx.ParentTotalCount)
 	}
 }
 
 type doneJSONClosed struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	CascadeClosed []string `json:"cascade_closed"`
+	ID                  string               `json:"id"`
+	Title               string               `json:"title"`
+	CascadeClosed       []string             `json:"cascade_closed"`
+	AutoClosedAncestors []doneJSONAutoClosed `json:"auto_closed_ancestors,omitempty"`
+}
+
+type doneJSONAutoClosed struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type doneJSONNext struct {
@@ -528,6 +554,9 @@ func renderDoneJSON(w io.Writer, closed []*ClosedResult, alreadyDone []string, c
 		if jc.CascadeClosed == nil {
 			jc.CascadeClosed = []string{}
 		}
+		for _, anc := range c.AutoClosedAncestors {
+			jc.AutoClosedAncestors = append(jc.AutoClosedAncestors, doneJSONAutoClosed{ID: anc.ShortID, Title: anc.Title})
+		}
 		out.Closed = append(out.Closed, jc)
 	}
 	if out.Closed == nil {
@@ -536,7 +565,7 @@ func renderDoneJSON(w io.Writer, closed []*ClosedResult, alreadyDone []string, c
 	if ctx != nil && len(closed) > 0 {
 		if ctx.NextSibling != nil {
 			out.Next = &doneJSONNext{ID: ctx.NextSibling.ShortID, Title: ctx.NextSibling.Title}
-		} else if ctx.NextAfterParent != nil && ctx.ParentNowCloseable {
+		} else if ctx.NextAfterParent != nil && ctx.ParentAutoClosed {
 			out.Next = &doneJSONNext{ID: ctx.NextAfterParent.ShortID, Title: ctx.NextAfterParent.Title}
 		}
 		if ctx.ParentID != "" {
@@ -1083,10 +1112,11 @@ func newReleaseCmd() *cobra.Command {
 func newNextCmd() *cobra.Command {
 	var format string
 	var labelFilter string
+	var includeParents bool
 	cmd := &cobra.Command{
 		Use:   "next [parent] [all]",
 		Short: "Show the next available task (or all of them with `all`)",
-		Long:  "Show the next available (unblocked, unclaimed, not done) task. With 'all' (in either position), returns the full claimable frontier instead. Use --label <name> to filter to tasks carrying that label. Without a parent, searches root-level tasks.",
+		Long:  "Show the next available (unblocked, unclaimed, not done) task. By default only leaves (tasks with no open children) are surfaced — tasks with open children are descended through, not returned. Pass --include-parents to surface any available task regardless of whether it has open children. With 'all' (in either position), returns the full claimable frontier instead. Use --label <name> to filter to tasks carrying that label. Without a parent, searches the entire tree.",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -1106,7 +1136,7 @@ func newNextCmd() *cobra.Command {
 			}
 
 			if showAll {
-				tasks, err := runNextAllFiltered(db, parentShortID, "", labelFilter)
+				tasks, err := runNextAllFiltered(db, parentShortID, "", labelFilter, includeParents)
 				if err != nil {
 					return err
 				}
@@ -1117,7 +1147,7 @@ func newNextCmd() *cobra.Command {
 				return nil
 			}
 
-			task, err := runNextFiltered(db, parentShortID, "", labelFilter)
+			task, err := runNextFiltered(db, parentShortID, "", labelFilter, includeParents)
 			if err != nil {
 				return err
 			}
@@ -1133,16 +1163,18 @@ func newNextCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	cmd.Flags().StringVar(&labelFilter, "label", "", "filter to tasks carrying this label")
+	cmd.Flags().BoolVar(&includeParents, "include-parents", false, "surface tasks with open children (legacy behavior)")
 	return cmd
 }
 
 func newClaimNextCmd() *cobra.Command {
 	var force bool
 	var format string
+	var includeParents bool
 	cmd := &cobra.Command{
 		Use:   "claim-next [parent] [duration]",
 		Short: "Find and claim the next available task",
-		Long:  "Find the next available task and claim it in one step. Duration defaults to 15m. Supported units: s, m, h, d. Without a parent, searches root-level tasks.",
+		Long:  "Find the next available task and claim it in one step. By default only leaves (tasks with no open children) are claimable — the search descends through parents to find work. Pass --include-parents to permit claiming any available task. Duration defaults to 15m. Supported units: s, m, h, d. Without a parent, searches the entire tree.",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -1168,7 +1200,7 @@ func newClaimNextCmd() *cobra.Command {
 				}
 			}
 
-			task, err := runClaimNext(db, parentShortID, duration, actor, force)
+			task, err := runClaimNextFiltered(db, parentShortID, duration, actor, force, includeParents)
 			if err != nil {
 				return err
 			}
@@ -1191,6 +1223,7 @@ func newClaimNextCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "override an existing claim")
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().BoolVar(&includeParents, "include-parents", false, "permit claiming tasks with open children (legacy behavior)")
 	return cmd
 }
 

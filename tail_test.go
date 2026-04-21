@@ -84,10 +84,11 @@ func TestTail_Events_Filter(t *testing.T) {
 
 func TestTail_Users_Filter(t *testing.T) {
 	db := setupTestDB(t)
-	id, err := runAdd(db, "", "X", "", "", "alice")
+	addRes, err := runAdd(db, "", "X", "", "", "alice")
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
+	id := addRes.ShortID
 	if _, err := runAdd(db, "", "Y", "", "", "bob"); err != nil {
 		t.Fatalf("add bob: %v", err)
 	}
@@ -110,10 +111,11 @@ func TestTail_Users_Filter(t *testing.T) {
 
 func TestTail_Events_Intersection_Users(t *testing.T) {
 	db := setupTestDB(t)
-	id, err := runAdd(db, "", "X", "", "", "alice")
+	addRes, err := runAdd(db, "", "X", "", "", "alice")
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
+	id := addRes.ShortID
 	if err := runClaim(db, id, "1h", "bob", false); err != nil {
 		t.Fatalf("claim: %v", err)
 	}

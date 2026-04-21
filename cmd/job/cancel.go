@@ -1,0 +1,61 @@
+package main
+
+import (
+	"fmt"
+	job "github.com/bensyverson/job/internal/job"
+	"github.com/spf13/cobra"
+)
+
+func newCancelCmd() *cobra.Command {
+	var reason string
+	var cascade bool
+	var purge bool
+	var yes bool
+	var format string
+	cmd := &cobra.Command{
+		Use:   "cancel <id> [<id>...]",
+		Short: "Non-destructively stop work on one or more tasks",
+		Long:  "Mark one or more tasks as canceled, atomically. --reason is required. --cascade also cancels open descendants. --purge erases the task and its events instead of transitioning state; --purge --cascade requires --yes.",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			actor, err := requireAs(db)
+			if err != nil {
+				return err
+			}
+
+			canceled, alreadyCanceled, purged, err := job.RunCancel(db, args, reason, cascade, purge, yes, actor)
+			if err != nil {
+				return err
+			}
+
+			if format == "json" {
+				return job.RenderCancelJSON(cmd.OutOrStdout(), canceled, alreadyCanceled, purged, reason)
+			}
+
+			if purge {
+				job.RenderPurgeAck(cmd.OutOrStdout(), purged, reason)
+				return nil
+			}
+
+			if len(canceled) == 0 && len(alreadyCanceled) == 1 && len(args) == 1 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Already canceled: %s\n", alreadyCanceled[0])
+				return nil
+			}
+
+			job.RenderCancelAck(cmd.OutOrStdout(), canceled, alreadyCanceled, reason)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "human-readable reason (required)")
+	cmd.Flags().BoolVar(&cascade, "cascade", false, "also cancel/purge open descendants")
+	cmd.Flags().BoolVar(&purge, "purge", false, "erase the task row and its events instead of transitioning state")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm irrecoverable purge of a subtree (required with --purge --cascade)")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	return cmd
+}

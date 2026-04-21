@@ -1,0 +1,138 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	job "github.com/bensyverson/job/internal/job"
+	"github.com/spf13/cobra"
+	"strings"
+)
+
+func newDoneCmd() *cobra.Command {
+	var cascade bool
+	var note string
+	var resultStr string
+	var format string
+	var claimNext bool
+	cmd := &cobra.Command{
+		Use:   "done <id> [<id>...]",
+		Short: "Mark one or more tasks as done",
+		Long:  "Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Use --claim-next to atomically claim the next available leaf after closing, collapsing the close-then-advance flow into one call. Idempotent: already-done tasks are reported, not re-recorded.",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			db, err := openDBFromCmd()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			actor, err := requireAs(db)
+			if err != nil {
+				return err
+			}
+
+			// Catch the `done <id> "prose"` footgun early with a specific
+			// suggestion, before job.RunDone emits a generic "task not found".
+			for i, a := range args {
+				if !looksLikeShortID(a) {
+					return fmt.Errorf("done: %q does not look like a task ID (5-char alphanumeric). Did you mean `-m %q`? (positional arg #%d)",
+						a, a, i+1)
+				}
+			}
+
+			if cmd.Flags().Changed("message") {
+				resolved, rerr := resolveMessage(note, cmd.InOrStdin())
+				if rerr != nil {
+					return rerr
+				}
+				note = resolved
+			}
+
+			var resultRaw json.RawMessage
+			if resultStr != "" {
+				if !json.Valid([]byte(resultStr)) {
+					return fmt.Errorf("--result: invalid JSON: %s", resultStr)
+				}
+				resultRaw = json.RawMessage(resultStr)
+			}
+
+			closed, alreadyDone, err := job.RunDone(db, args, cascade, note, resultRaw, actor)
+			if err != nil {
+				return err
+			}
+
+			// Determine last-named input id still targetable for the context block.
+			lastCtxID := ""
+			for i := len(args) - 1; i >= 0; i-- {
+				lastCtxID = args[i]
+				break
+			}
+
+			// Collect all auto-closed ancestor IDs across all closed results so
+			// job.ComputeDoneContext can distinguish "already-done parent" from
+			// "just-auto-closed parent".
+			autoClosedSet := make(map[string]bool)
+			for _, c := range closed {
+				for _, anc := range c.AutoClosedAncestors {
+					autoClosedSet[anc.ShortID] = true
+				}
+			}
+
+			var ctx *job.DoneContext
+			if lastCtxID != "" {
+				c, cerr := job.ComputeDoneContext(db, lastCtxID, autoClosedSet)
+				if cerr != nil {
+					return cerr
+				}
+				ctx = c
+			}
+
+			// --claim-next: attempt to claim the next leaf. Done is irreversible,
+			// claim is opportunistic — if the leaf got taken between done and
+			// claim, we report a status line instead of erroring.
+			var claimed *job.Task
+			var claimRaceTaken string
+			if claimNext && len(closed) > 0 {
+				t, cerr := job.RunClaimNextFiltered(db, "", "", actor, false, false)
+				if cerr == nil {
+					claimed = t
+				} else {
+					// Distinguish "no work available" from "someone grabbed it".
+					// job.RunClaimNext wraps job.RunNext, which emits "No available tasks."
+					// on empty. Other errors (race on claim, task not found) we
+					// surface as a race status line with whatever detail we have.
+					msg := cerr.Error()
+					if !strings.Contains(msg, "No available tasks") {
+						claimRaceTaken = msg
+					}
+				}
+			}
+
+			if format == "json" {
+				return renderDoneJSON(cmd.OutOrStdout(), closed, alreadyDone, ctx)
+			}
+
+			// Idempotent single-ID already-done: preserve Phase 3 wording.
+			if len(closed) == 0 && len(alreadyDone) == 1 && len(args) == 1 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Already done: %s\n", alreadyDone[0])
+				return nil
+			}
+
+			renderDoneAck(cmd.OutOrStdout(), closed, alreadyDone, ctx)
+
+			if claimed != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n",
+					claimed.ShortID, claimed.Title, job.FormatDuration(job.DefaultClaimTTLSeconds))
+			} else if claimRaceTaken != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Next leaf unavailable: %s\n", claimRaceTaken)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&cascade, "cascade", false, "close the target and all open descendants")
+	cmd.Flags().StringVarP(&note, "message", "m", "", "record a completion note")
+	cmd.Flags().StringVar(&resultStr, "result", "", "structured JSON result recorded on the done event")
+	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
+	cmd.Flags().BoolVar(&claimNext, "claim-next", false, "after closing, atomically claim the next available leaf")
+	return cmd
+}

@@ -47,27 +47,37 @@ job log <id>
 
 ## Identity
 
-Every write is attributed to the name passed via the global `--as` flag. Reads (`list`, `info`, `next`, `log`, `tail`) work without it.
+Every write is attributed to a named identity. Reads (`list`, `info`, `next`, `log`, `tail`, `status`) work without one.
+
+Resolution chain, first match wins:
+
+1. `--as <name>` flag on the call
+2. DB-level default identity (set at `init` time, unless strict mode is on)
+3. error: `identity required. Pass --as <name> ...`
 
 ```sh
-# A write: who did it is required
-job --as alice add "Write docs"
+# init records $USER as the default, so subsequent writes work unadorned:
+job init
+#   Default identity: ben (from $USER)
+job add "Write docs"                 # attributed to ben
 
-# A read: no identity needed
-job list
+# Override the default any time with --as:
+job --as alice add "Write tests"     # attributed to alice
+
+# Pick the default explicitly at init time:
+job init --default-identity claude
+
+# Or opt out entirely and require --as on every write:
+job init --strict
+job add "x"                          # → identity required. Pass --as <name> ...
+job --as alice add "x"               # ok
 ```
+
+Change the default after the fact with `job identity set <name>` (itself a write — requires explicit `--as`). Toggle strict mode with `job identity strict on|off`; turning strict off after a strict init leaves the default unset until `identity set` is called explicitly. There is no hidden `$USER` fallback at write time — the only source of the default is whatever's in the database.
 
 Users are created lazily — the first time a new name writes, its row is added to the `users` table.
 
-If you want "set once, forget" behavior in an interactive shell, a shell alias does the job:
-
-```sh
-alias job='job --as alice'
-```
-
-After that, `job add "x"` is attributed to alice. Different shells and different terminals can pick different names. The flag always wins over the alias, so `job --as bob add "x"` still attributes to bob.
-
-Multiple agents can work in the same directory simultaneously — each passes its own `--as`. There is no password or key; the name is an attribution label, not a security boundary.
+Multiple agents can work in the same directory simultaneously. Each passes its own `--as` (or shares the default for unrelated tasks). There is no password or key; the name is an attribution label, not a security boundary.
 
 ## Commands
 
@@ -75,7 +85,9 @@ Multiple agents can work in the same directory simultaneously — each passes it
 
 | Command | Description |
 |---------|-------------|
-| `job init [--force] [--gitignore]` | Create a `.jobs.db` in the current directory. `--force` overwrites an existing one. `init` always creates the database in the current directory even if an ancestor already has one — there is no silent no-op. `--gitignore` appends recommended entries (`.jobs.db-shm`, `.jobs.db-wal`) to `./.gitignore`. |
+| `job init [--force] [--gitignore] [--default-identity <name>] [--strict]` | Create a `.jobs.db` in the current directory. `--force` overwrites an existing one. `init` always creates the database in the current directory even if an ancestor already has one — there is no silent no-op. `--gitignore` appends recommended entries (`.jobs.db-shm`, `.jobs.db-wal`) to `./.gitignore`. `--default-identity <name>` records the writer identity (defaults to `$USER`); `--strict` opts out and requires `--as` on every write. See [Identity](#identity). |
+| `job identity set <name>` | Change the default writer identity. Requires `--as <name>` on the call (bootstrap discipline — the change itself is attributed). |
+| `job identity strict on\|off` | Toggle strict mode. Requires `--as`. |
 | `job schema` | Print the JSON Schema for the `job import` grammar. Useful for feeding an agent the exact shape it should produce. |
 
 Every command accepts `--db <path>` to use a different database file. You can also set `JOBS_DB`.
@@ -163,7 +175,7 @@ Claims are attributed to the `--as` name. Claims expire automatically. `--force`
 A task is "claimable" iff it has no open children. Parents with open children are descended through, not surfaced, so `next`, `next all`, and `claim-next` return the set of leaves ready to work on.
 
 - `claim <parent-with-open-children>` is refused — the lock has no referent, since the parent's executable work is in its descendants. Claim a leaf instead, or use `--include-parents` on `next` / `claim-next` to fall back to the legacy behavior.
-- When the last open child of a parent is `done`, the parent **auto-closes**, cascading upward. The agent who closed the last child is attributed on every auto-close. Canceled siblings don't block the cascade (they're already "not open").
+- When the last open child of a parent closes — whether via `done` **or** `cancel` — the parent **auto-closes**, cascading upward. The agent who closed the last child is attributed on every auto-close. The destination depends on the sibling mix: any sibling closed as `done` → the parent cascades to `done`; all siblings canceled → the parent cascades to `canceled`. Cancel-triggered cascades therefore drop "all work in this subtree was dropped" right up the tree, while done-triggered cascades behave as before.
 - Adding an open child to a **claimed** parent **auto-releases** the parent's claim. The parent no longer has executable work of its own, so the lock has no referent. The `released` event records the trigger and the prior claimant.
 
 These three behaviors together mean parents are pure scaffolding: you never explicitly claim or close them, and `next` always points at real work.
@@ -244,10 +256,10 @@ Run `job schema` for the full JSON Schema.
 
 | Command | Description |
 |---------|-------------|
-| `job log <id>` | Show full event history for a task and its descendants. |
+| `job log [<id>\|all]` | Show full event history for a task and its descendants. With no arg (or the literal `all`), streams events from every top-level tree — effectively the whole database. |
 | | `--since <rfc3339>` Only events at or after the given timestamp. |
 | | `--format=json` Pretty-printed JSON array. |
-| `job tail <id>` | Stream events in real-time. Polls every second until Ctrl+C. |
+| `job tail [<id>\|all]` | Stream events in real-time. Polls every second until Ctrl+C. With no arg (or `all`), streams globally from every top-level tree. |
 | | `--format=json` Emits one JSON object per line (JSON-lines), suitable for `jq -c` or line-based subscriber agents. |
 | | `--events <type,type,...>` Only emit events of the listed types. By default `heartbeat` events are hidden; pass `--events heartbeat` to opt in. |
 | | `--users <name,...>` Only emit events from the listed actors. |
@@ -299,3 +311,14 @@ job tail root --until-close=aM8eT --until-close=9aedB --timeout 10m
 ## Task IDs
 
 IDs are 5-character, case-sensitive, alphanumeric strings (e.g. `aM8eT`). A mismatch is an error, not a fuzzy match.
+
+## For contributors
+
+Package layout:
+
+- `cmd/job/` — cobra CLI. `package main`, one file per verb (`add.go`, `done.go`, `claim.go`, …) plus `commands.go` for `newRootCmd` and shared CLI helpers.
+- `internal/job/` — domain. Runs (`RunAdd`, `RunDone`, `RunClaim`, …), queries, renderers, event logic. The CLI imports this as `job "github.com/bensyverson/job/internal/job"` and calls through `job.X`.
+- `internal/migrations/` — forward-only SQL migration files (`NNNN_*.sql`). Exposed as an `embed.FS` via `migrations.FS()`. The runner (`internal/job/migrations.go`) applies unapplied migrations inside their own transactions on every `OpenDB` — fresh databases get the baseline; existing databases catch up to head automatically. Idempotent. To add a schema change, drop a new file with the next numeric prefix (e.g. `0003_add_column.sql`) and restart the server; never edit an applied migration.
+- `internal/server/` — stubbed package reserved for the upcoming `job serve` HTTP view.
+
+Test helpers `job.SetupTestDB`, `job.MustAdd`, `job.MustAddDesc`, `job.MustDone`, `job.MustClaim`, `job.MustGet`, and `job.TestActor` live in `internal/job/testhelpers.go` (non-test file) so both this package's own tests and the CLI integration tests in `cmd/job/` can share them.

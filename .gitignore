@@ -7,6 +7,8 @@
 
 # Go
 vendor/
+/.gocache/
+/.gotmp/
 
 # OS
 .DS_Store

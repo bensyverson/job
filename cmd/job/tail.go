@@ -16,10 +16,10 @@ func newTailCmd() *cobra.Command {
 	var timeoutStr string
 	var quiet bool
 	cmd := &cobra.Command{
-		Use:   "tail <id>",
-		Short: "Stream events in real-time for a task and its descendants",
-		Long:  "Stream events for a task and its descendants. Use --until-close <id> (repeatable) to block until each named task reaches done/canceled, then exit 0. --until-close with no value watches the positional task. --timeout <duration> bounds the wait; on expiry exits 2. --quiet suppresses the streamed event output while preserving close/exit messages.",
-		Args:  cobra.ExactArgs(1),
+		Use:   "tail [id|all]",
+		Short: "Stream events in real-time for a task and its descendants (or all trees)",
+		Long:  "Stream events for a task and its descendants. With no positional arg (or the literal 'all'), streams events from every top-level task in the database. Use --until-close <id> (repeatable) to block until each named task reaches done/canceled, then exit 0. --until-close with no value watches the positional task (errors in global scope). --timeout <duration> bounds the wait; on expiry exits 2. --quiet suppresses the streamed event output while preserving close/exit messages.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -27,13 +27,19 @@ func newTailCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			shortID := args[0]
-			task, err := job.GetTaskByShortID(db, shortID)
-			if err != nil {
-				return err
+			shortID := ""
+			if len(args) == 1 && args[0] != "all" {
+				shortID = args[0]
 			}
-			if task == nil {
-				return fmt.Errorf("task %q not found", shortID)
+
+			if shortID != "" {
+				task, err := job.GetTaskByShortID(db, shortID)
+				if err != nil {
+					return err
+				}
+				if task == nil {
+					return fmt.Errorf("task %q not found", shortID)
+				}
 			}
 
 			filter := job.EventFilter{
@@ -42,7 +48,9 @@ func newTailCmd() *cobra.Command {
 			}
 
 			// --until-close was passed (flag changed) but only self-sentinel
-			// entries, or no value: default to the positional id.
+			// entries, or no value: default to the positional id. In global
+			// scope there is no positional id, so the self-sentinel is an
+			// error rather than silently producing a watch on "".
 			if cmd.Flags().Changed("until-close") {
 				cleaned := make([]string, 0, len(untilClose))
 				sawSelf := false
@@ -54,6 +62,9 @@ func newTailCmd() *cobra.Command {
 					cleaned = append(cleaned, id)
 				}
 				if sawSelf || len(cleaned) == 0 {
+					if shortID == "" {
+						return fmt.Errorf("--until-close requires an id in global scope (no positional task to default to)")
+					}
 					cleaned = append(cleaned, shortID)
 				}
 				untilClose = cleaned
@@ -77,7 +88,11 @@ func newTailCmd() *cobra.Command {
 			}
 
 			if format != "json" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Tailing events for %s (Ctrl+C to stop)...\n", shortID)
+				scopeLabel := shortID
+				if scopeLabel == "" {
+					scopeLabel = "all"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Tailing events for %s (Ctrl+C to stop)...\n", scopeLabel)
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())

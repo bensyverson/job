@@ -484,6 +484,225 @@ func TestTail_Timeout_QuietJSON_ShapeOnExpiry(t *testing.T) {
 	}
 }
 
+// P8 red: RunTail with empty shortID streams events from all trees.
+func TestRunTail_EmptyAnchor_GlobalStream(t *testing.T) {
+	db := job.SetupTestDB(t)
+	a := job.MustAdd(t, db, "", "Alpha")
+	b := job.MustAdd(t, db, "", "Beta")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	initialDrained := make(chan struct{})
+	bothSeen := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		sawInitial := false
+		job.RunTail(ctx, db, "", 10*time.Millisecond, func(events []job.EventEntry) error {
+			mu.Lock()
+			for _, e := range events {
+				seen[e.ShortID] = true
+			}
+			haveBoth := seen[a] && seen[b]
+			mu.Unlock()
+			if !sawInitial {
+				sawInitial = true
+				close(initialDrained)
+			}
+			if haveBoth {
+				select {
+				case <-bothSeen:
+				default:
+					close(bothSeen)
+				}
+				cancel()
+			}
+			return nil
+		})
+		close(done)
+	}()
+
+	<-initialDrained
+	// Fire a fresh event in a different tree than the first one we saw.
+	if err := job.RunClaim(db, b, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	select {
+	case <-bothSeen:
+	case <-time.After(4 * time.Second):
+		t.Fatalf("timeout; seen=%v want {%s,%s}", seen, a, b)
+	}
+	<-done
+}
+
+// P8 red: `job tail` with no arg is accepted; `job tail all` is a synonym.
+// We exercise this via `--until-close=<id> --timeout` so the command
+// terminates deterministically. The global stream should include events
+// from sibling trees (not just the --until-close target).
+func TestTail_NoArg_GlobalStream_WithUntilClose(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alpha")
+	b := job.MustAdd(t, db, "", "Beta")
+	db.Close()
+
+	// Tail globally, block until b closes. Pre-close b so we exit promptly.
+	db2 := openTestDB(t, dbFile)
+	if _, _, err := job.RunDone(db2, []string{b}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("done b: %v", err)
+	}
+	db2.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "tail", "--until-close="+b, "--timeout", "3s")
+	if err != nil {
+		t.Fatalf("tail (no arg) --until-close=%s: %v\n%s", b, err, stdout)
+	}
+	// Preamble + already-done path should have fired; both ids should be
+	// referenceable but at minimum b must close cleanly.
+	if !strings.Contains(stdout, "Closed: "+b) {
+		t.Errorf("expected close line for %s:\n%s", b, stdout)
+	}
+	_ = a
+}
+
+func TestTail_All_Synonym(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	b := job.MustAdd(t, db, "", "Beta")
+	if _, _, err := job.RunDone(db, []string{b}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("done b: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "tail", "all", "--until-close="+b, "--timeout", "3s")
+	if err != nil {
+		t.Fatalf("tail all --until-close=%s: %v\n%s", b, err, stdout)
+	}
+	if !strings.Contains(stdout, "Closed: "+b) {
+		t.Errorf("expected close line for %s:\n%s", b, stdout)
+	}
+}
+
+// P8 red: existing `job tail <id>` still scopes to that tree.
+func TestTail_SpecificID_Unchanged(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "X")
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "tail", id, "--until-close=_", "--timeout", "3s")
+	if err != nil {
+		t.Fatalf("tail %s: %v\n%s", id, err, stdout)
+	}
+	if !strings.Contains(stdout, "Closed: "+id) {
+		t.Errorf("expected close line:\n%s", stdout)
+	}
+}
+
+// P8 red: `tail --until-close=<id>` still watches the named task even when
+// streaming globally (no positional anchor).
+func TestTail_Global_UntilCloseNamedTask(t *testing.T) {
+	db := job.SetupTestDB(t)
+	a := job.MustAdd(t, db, "", "Alpha")
+	target := job.MustAdd(t, db, "", "Target")
+
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	sw := safeWriter{buf: &buf, mu: &mu}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		// Empty positional → global stream, watch only target.
+		done <- job.RunTailUntilClose(ctx, db, "", []string{target}, 0, 20*time.Millisecond, false, "md", job.EventFilter{}, &sw)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	// Fire an event on a sibling tree — it should stream.
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, _, err := job.RunDone(db, []string{target}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("done target: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunTailUntilClose: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout")
+	}
+
+	mu.Lock()
+	out := buf.String()
+	mu.Unlock()
+	if !strings.Contains(out, "Closed: "+target+" (done)") {
+		t.Errorf("missing close line for %s:\n%s", target, out)
+	}
+	// Sibling event from a different tree should appear in the global stream.
+	if !strings.Contains(out, a) {
+		t.Errorf("expected sibling tree %s event in global stream:\n%s", a, out)
+	}
+}
+
+// P8 red: --events filter composes with global scope.
+func TestTail_Global_EventsFilter(t *testing.T) {
+	db := job.SetupTestDB(t)
+	a := job.MustAdd(t, db, "", "Alpha")
+	_ = a
+
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	sw := safeWriter{buf: &buf, mu: &mu}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	filter := job.EventFilter{Types: job.ParseFilterList("claimed")}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- job.RunTailUntilClose(ctx, db, "", []string{a}, 0, 20*time.Millisecond, false, "md", filter, &sw)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, _, err := job.RunDone(db, []string{a}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunTailUntilClose: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout")
+	}
+
+	mu.Lock()
+	out := buf.String()
+	mu.Unlock()
+	if !strings.Contains(out, "claimed") {
+		t.Errorf("claimed event should be in output:\n%s", out)
+	}
+	if strings.Contains(out, "created:") {
+		t.Errorf("created event should be filtered out by --events=claimed:\n%s", out)
+	}
+}
+
 // safeWriter is a mutex-guarded bytes.Buffer used by the tail tests so the
 // test goroutine and the tail goroutine don't race on the buffer.
 type safeWriter struct {

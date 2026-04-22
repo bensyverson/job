@@ -11,9 +11,10 @@ func newLogCmd() *cobra.Command {
 	var format string
 	var since string
 	cmd := &cobra.Command{
-		Use:   "log <id>",
-		Short: "Show event history for a task and its descendants",
-		Args:  cobra.ExactArgs(1),
+		Use:   "log [id|all]",
+		Short: "Show event history for a task and its descendants (or all trees)",
+		Long:  "Show event history for a task and its descendants. With no positional arg (or the literal 'all'), streams events from every top-level task in the database. Filters (--since) compose with the chosen scope.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -31,7 +32,12 @@ func newLogCmd() *cobra.Command {
 				sincePtr = &u
 			}
 
-			events, err := job.RunLog(db, args[0], sincePtr)
+			shortID := ""
+			if len(args) == 1 && args[0] != "all" {
+				shortID = args[0]
+			}
+
+			events, err := job.RunLog(db, shortID, sincePtr)
 			if err != nil {
 				return err
 			}

@@ -63,13 +63,18 @@ func FilterEvents(events []EventEntry, filter EventFilter) []EventEntry {
 	return out
 }
 
+// RunLog returns the log for a single task-subtree when shortID is non-empty,
+// or the global event log across every top-level tree when shortID is "".
+// The empty form powers `job log` / `job log all`.
 func RunLog(db *sql.DB, shortID string, since *int64) ([]EventEntry, error) {
-	task, err := GetTaskByShortID(db, shortID)
-	if err != nil {
-		return nil, err
-	}
-	if task == nil {
-		return nil, fmt.Errorf("task %q not found", shortID)
+	if shortID != "" {
+		task, err := GetTaskByShortID(db, shortID)
+		if err != nil {
+			return nil, err
+		}
+		if task == nil {
+			return nil, fmt.Errorf("task %q not found", shortID)
+		}
 	}
 
 	if since != nil {
@@ -110,13 +115,17 @@ func RunTailUntilClose(
 	if pollInterval <= 0 {
 		pollInterval = DefaultTailUntilClosePollInterval
 	}
-	// Validate the positional id.
-	posTask, err := GetTaskByShortID(db, shortID)
-	if err != nil {
-		return err
-	}
-	if posTask == nil {
-		return fmt.Errorf("task %q not found", shortID)
+	// Validate the positional id when provided. Empty shortID means global
+	// scope (stream from all top-level trees); the watch set still names
+	// tasks explicitly and those are validated below in the pre-flight loop.
+	if shortID != "" {
+		posTask, err := GetTaskByShortID(db, shortID)
+		if err != nil {
+			return err
+		}
+		if posTask == nil {
+			return fmt.Errorf("task %q not found", shortID)
+		}
 	}
 
 	watchSet := make(map[string]bool)
@@ -147,7 +156,11 @@ func RunTailUntilClose(
 
 	// Suppress the streaming preamble in quiet or json mode.
 	if format != "json" && !quiet {
-		fmt.Fprintf(w, "Tailing events for %s (Ctrl+C to stop)...\n", shortID)
+		scopeLabel := shortID
+		if scopeLabel == "" {
+			scopeLabel = "all"
+		}
+		fmt.Fprintf(w, "Tailing events for %s (Ctrl+C to stop)...\n", scopeLabel)
 	}
 
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -166,7 +179,7 @@ func RunTailUntilClose(
 	}
 
 	var loopErr error
-	err = RunTail(ctx, db, shortID, pollInterval, func(events []EventEntry) error {
+	err := RunTail(ctx, db, shortID, pollInterval, func(events []EventEntry) error {
 		// Scan for terminal events on watched IDs before filtering for display.
 		for _, e := range events {
 			if !watchSet[e.ShortID] {
@@ -229,13 +242,19 @@ func RunTailUntilClose(
 	return nil
 }
 
+// RunTail streams events for a single task-subtree when shortID is non-empty,
+// or for every top-level tree when shortID is "". The empty form powers
+// `job tail` / `job tail all`. The positional task lookup is skipped when
+// the scope is global.
 func RunTail(ctx context.Context, db *sql.DB, shortID string, pollInterval time.Duration, callback func([]EventEntry) error) error {
-	task, err := GetTaskByShortID(db, shortID)
-	if err != nil {
-		return err
-	}
-	if task == nil {
-		return fmt.Errorf("task %q not found", shortID)
+	if shortID != "" {
+		task, err := GetTaskByShortID(db, shortID)
+		if err != nil {
+			return err
+		}
+		if task == nil {
+			return fmt.Errorf("task %q not found", shortID)
+		}
 	}
 
 	var lastID int64

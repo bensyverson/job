@@ -73,37 +73,94 @@ func TestLogSince_InvalidRFC3339_Errors(t *testing.T) {
 	}
 }
 
-func TestLogSince_WithTaskSubtree(t *testing.T) {
+// P8 red: `job log` with no arg → events from all top-level trees.
+func TestLog_NoArg_GlobalScope(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	parent := job.MustAdd(t, db, "", "Parent")
-	_ = job.MustAdd(t, db, parent, "Child")
+	a := job.MustAdd(t, db, "", "Alpha")
+	b := job.MustAdd(t, db, "", "Beta")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "log")
+	if err != nil {
+		t.Fatalf("log (no arg): %v", err)
+	}
+	if !strings.Contains(stdout, a) {
+		t.Errorf("global log missing %s:\n%s", a, stdout)
+	}
+	if !strings.Contains(stdout, b) {
+		t.Errorf("global log missing %s:\n%s", b, stdout)
+	}
+}
+
+// P8 red: `job log all` is a synonym for global scope.
+func TestLog_All_Synonym(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alpha")
+	b := job.MustAdd(t, db, "", "Beta")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "log", "all")
+	if err != nil {
+		t.Fatalf("log all: %v", err)
+	}
+	if !strings.Contains(stdout, a) || !strings.Contains(stdout, b) {
+		t.Errorf("log all should show all top-level trees:\n%s", stdout)
+	}
+}
+
+// P8 red: existing `job log <id>` unchanged — scoped to the subtree.
+func TestLog_SpecificID_Unchanged(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alpha")
+	b := job.MustAdd(t, db, "", "Beta")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "log", a)
+	if err != nil {
+		t.Fatalf("log %s: %v", a, err)
+	}
+	if !strings.Contains(stdout, a) {
+		t.Errorf("log %s should include events for it:\n%s", a, stdout)
+	}
+	if strings.Contains(stdout, b) {
+		t.Errorf("log %s should NOT include sibling tree %s:\n%s", a, b, stdout)
+	}
+}
+
+// P8 red: --since composes with global scope.
+func TestLog_GlobalScope_SinceFilter(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alpha")
+	b := job.MustAdd(t, db, "", "Beta")
 
 	t0 := time.Date(2026, 4, 20, 9, 0, 0, 0, time.UTC)
-	// All current events: pre-cutoff.
-	if _, err := db.Exec("UPDATE events SET created_at = ?", t0.Unix()); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-
-	gcID := job.MustAdd(t, db, parent, "GC")
-	// Move the GC's created event past the cutoff.
 	if _, err := db.Exec(
-		"UPDATE events SET created_at = ? WHERE event_type = 'created' AND task_id = (SELECT id FROM tasks WHERE short_id = ?)",
-		t0.Add(2*time.Hour).Unix(), gcID,
+		"UPDATE events SET created_at = ? WHERE task_id = (SELECT id FROM tasks WHERE short_id = ?)",
+		t0.Unix(), a,
 	); err != nil {
-		t.Fatalf("update: %v", err)
+		t.Fatalf("update a: %v", err)
+	}
+	if _, err := db.Exec(
+		"UPDATE events SET created_at = ? WHERE task_id = (SELECT id FROM tasks WHERE short_id = ?)",
+		t0.Add(3*time.Hour).Unix(), b,
+	); err != nil {
+		t.Fatalf("update b: %v", err)
 	}
 	db.Close()
 
 	cutoff := t0.Add(1 * time.Hour).Format(time.RFC3339)
-	stdout, _, err := runCLI(t, dbFile, "log", parent, "--since", cutoff)
+	stdout, _, err := runCLI(t, dbFile, "log", "--since", cutoff)
 	if err != nil {
-		t.Fatalf("log: %v", err)
+		t.Fatalf("log --since: %v", err)
 	}
-	if !strings.Contains(stdout, "GC") {
-		t.Errorf("post-cutoff descendant event should appear:\n%s", stdout)
+	if strings.Contains(stdout, a) {
+		t.Errorf("pre-cutoff tree %s should be filtered out:\n%s", a, stdout)
 	}
-	if strings.Contains(stdout, "\"Parent\"") {
-		t.Errorf("pre-cutoff parent created event should not appear:\n%s", stdout)
+	if !strings.Contains(stdout, b) {
+		t.Errorf("post-cutoff tree %s should appear:\n%s", b, stdout)
 	}
 }

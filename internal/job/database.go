@@ -512,77 +512,58 @@ func childShortIDs(tx dbtx, parentID int64) ([]string, error) {
 	return ids, rows.Err()
 }
 
+// GetEventsForTaskTree returns events for the task identified by shortID and
+// all of its descendants. When shortID is empty, the anchor is every
+// top-level task (parent_id IS NULL) and the query walks down every tree —
+// effectively "all events in the database". This is the global-scope form
+// powering `job log` and `job tail` with no positional arg.
 func GetEventsForTaskTree(db *sql.DB, shortID string) ([]EventEntry, error) {
-	rows, err := db.Query(`
-		WITH RECURSIVE tree AS (
-			SELECT id FROM tasks WHERE short_id = ? AND deleted_at IS NULL
-			UNION ALL
-			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
-		)
-		SELECT e.id, e.task_id, t.short_id, e.event_type, e.actor, e.detail, e.created_at
-		FROM events e
-		JOIN tasks t ON t.id = e.task_id
-		WHERE e.task_id IN (SELECT id FROM tree)
-		ORDER BY e.created_at, e.id
-	`, shortID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var events []EventEntry
-	for rows.Next() {
-		var e EventEntry
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Actor, &e.Detail, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		events = append(events, e)
-	}
-	return events, rows.Err()
+	query, args := buildTreeEventsQuery(shortID, "", nil)
+	return queryEventEntries(db, query, args)
 }
 
 func getEventsForTaskTreeSince(db *sql.DB, shortID string, since int64) ([]EventEntry, error) {
-	rows, err := db.Query(`
-		WITH RECURSIVE tree AS (
-			SELECT id FROM tasks WHERE short_id = ? AND deleted_at IS NULL
-			UNION ALL
-			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
-		)
-		SELECT e.id, e.task_id, t.short_id, e.event_type, e.actor, e.detail, e.created_at
-		FROM events e
-		JOIN tasks t ON t.id = e.task_id
-		WHERE e.task_id IN (SELECT id FROM tree) AND e.created_at >= ?
-		ORDER BY e.created_at, e.id
-	`, shortID, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var events []EventEntry
-	for rows.Next() {
-		var e EventEntry
-		if err := rows.Scan(&e.ID, &e.TaskID, &e.ShortID, &e.EventType, &e.Actor, &e.Detail, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		events = append(events, e)
-	}
-	return events, rows.Err()
+	query, args := buildTreeEventsQuery(shortID, "AND e.created_at >= ?", []any{since})
+	return queryEventEntries(db, query, args)
 }
 
 func getEventsAfterID(db *sql.DB, shortID string, afterID int64) ([]EventEntry, error) {
-	rows, err := db.Query(`
+	query, args := buildTreeEventsQuery(shortID, "AND e.id > ?", []any{afterID})
+	return queryEventEntries(db, query, args)
+}
+
+// buildTreeEventsQuery assembles the recursive-CTE query used by log/tail.
+// When shortID is empty the anchor is all top-level tasks (global scope);
+// otherwise it is that one task (single-subtree scope). extraWhere is an
+// optional trailing predicate on e.*, and extraArgs are its bind values.
+func buildTreeEventsQuery(shortID, extraWhere string, extraArgs []any) (string, []any) {
+	var anchorClause string
+	var args []any
+	if shortID == "" {
+		anchorClause = "parent_id IS NULL AND deleted_at IS NULL"
+	} else {
+		anchorClause = "short_id = ? AND deleted_at IS NULL"
+		args = append(args, shortID)
+	}
+	args = append(args, extraArgs...)
+
+	query := `
 		WITH RECURSIVE tree AS (
-			SELECT id FROM tasks WHERE short_id = ? AND deleted_at IS NULL
+			SELECT id FROM tasks WHERE ` + anchorClause + `
 			UNION ALL
 			SELECT t.id FROM tasks t JOIN tree ON t.parent_id = tree.id WHERE t.deleted_at IS NULL
 		)
 		SELECT e.id, e.task_id, t.short_id, e.event_type, e.actor, e.detail, e.created_at
 		FROM events e
 		JOIN tasks t ON t.id = e.task_id
-		WHERE e.task_id IN (SELECT id FROM tree) AND e.id > ?
+		WHERE e.task_id IN (SELECT id FROM tree) ` + extraWhere + `
 		ORDER BY e.created_at, e.id
-	`, shortID, afterID)
+	`
+	return query, args
+}
+
+func queryEventEntries(db *sql.DB, query string, args []any) ([]EventEntry, error) {
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

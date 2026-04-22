@@ -85,6 +85,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newHeartbeatCmd())
 	cmd.AddCommand(newReleaseCmd())
 	cmd.AddCommand(newLabelCmd())
+	cmd.AddCommand(newIdentityCmd())
 	cmd.AddCommand(newNextCmd())
 	cmd.AddCommand(newClaimNextCmd())
 	cmd.AddCommand(newLogCmd())
@@ -174,17 +175,26 @@ func openDBFromCmd() (*sql.DB, error) {
 	return job.OpenDB(path)
 }
 
-// requireAs resolves the writer identity from the --as flag. Lives in the
-// CLI layer because it depends on the cobra-bound global; the domain
-// package should not know about flag state.
+// requireAs resolves the writer identity for this call. Precedence:
+//  1. --as flag
+//  2. DB-level default identity (config.default_identity), unless strict mode
+//  3. error: "identity required. Pass --as <name> ..."
+//
+// Lives in the CLI layer because it depends on the cobra-bound --as flag
+// global; the domain layer supplies the underlying resolver via
+// job.ResolveIdentity.
 func requireAs(db *sql.DB) (string, error) {
-	if asFlag == "" {
-		return "", fmt.Errorf("identity required. Pass --as <name> before the verb.")
-	}
-	if _, err := job.EnsureUser(db, asFlag); err != nil {
+	name, err := job.ResolveIdentity(db, asFlag)
+	if err != nil {
 		return "", err
 	}
-	return asFlag, nil
+	if name == "" {
+		return "", fmt.Errorf("identity required. Pass --as <name> before the verb.")
+	}
+	if _, err := job.EnsureUser(db, name); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 func humanJoin(items []string) string {

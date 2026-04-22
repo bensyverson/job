@@ -625,6 +625,14 @@ func RenderCancelAck(w io.Writer, canceled []*CanceledResult, alreadyCanceled []
 	if len(canceled) > 0 && reason != "" {
 		fmt.Fprintf(w, "  reason: %s\n", reason)
 	}
+	// Surface auto-closed ancestors from the cancel cascade, one line each.
+	// Status is stamped because cancel-triggered cascades can land on either
+	// "done" (any sibling was done) or "canceled" (all siblings canceled).
+	for _, c := range canceled {
+		for _, a := range c.AutoClosedAncestors {
+			fmt.Fprintf(w, "  Auto-closed (%s): %s %q\n", a.Status, a.ShortID, a.Title)
+		}
+	}
 	if len(alreadyCanceled) > 0 {
 		fmt.Fprintf(w, "  already canceled: %s\n", strings.Join(alreadyCanceled, ", "))
 	}
@@ -641,11 +649,18 @@ func RenderPurgeAck(w io.Writer, purged []*PurgedResult, reason string) {
 	}
 }
 
+type cancelJSONAutoClosed struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
 type cancelJSONCanceled struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	CascadeClosed []string `json:"cascade_closed"`
-	WasStatus     string   `json:"was_status"`
+	ID                  string                 `json:"id"`
+	Title               string                 `json:"title"`
+	CascadeClosed       []string               `json:"cascade_closed"`
+	WasStatus           string                 `json:"was_status"`
+	AutoClosedAncestors []cancelJSONAutoClosed `json:"auto_closed_ancestors,omitempty"`
 }
 
 type cancelJSONPurged struct {
@@ -693,11 +708,20 @@ func RenderCancelJSON(w io.Writer, canceled []*CanceledResult, alreadyCanceled [
 			if cc == nil {
 				cc = []string{}
 			}
+			var ancestors []cancelJSONAutoClosed
+			for _, a := range c.AutoClosedAncestors {
+				ancestors = append(ancestors, cancelJSONAutoClosed{
+					ID:     a.ShortID,
+					Title:  a.Title,
+					Status: a.Status,
+				})
+			}
 			out.Canceled = append(out.Canceled, cancelJSONCanceled{
-				ID:            c.ShortID,
-				Title:         c.Title,
-				CascadeClosed: cc,
-				WasStatus:     c.WasStatus,
+				ID:                  c.ShortID,
+				Title:               c.Title,
+				CascadeClosed:       cc,
+				WasStatus:           c.WasStatus,
+				AutoClosedAncestors: ancestors,
 			})
 		}
 		if out.Canceled == nil {

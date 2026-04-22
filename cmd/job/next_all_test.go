@@ -255,30 +255,12 @@ func TestNextAll_DescendsIntoNestedLeaves(t *testing.T) {
 	}
 }
 
-// A task with only canceled children has no OPEN children, so it is a
-// leaf for frontier purposes.
-func TestNextAll_ParentWithOnlyCanceledChildrenIsLeaf(t *testing.T) {
-	dbFile := setupCLI(t)
-	db := openTestDB(t, dbFile)
-	grand := job.MustAdd(t, db, "", "Grandparent")
-	parent := job.MustAdd(t, db, grand, "Parent")
-	child := job.MustAdd(t, db, parent, "Child")
-	if _, _, _, err := job.RunCancel(db, []string{child}, "obsolete", false, false, false, job.TestActor); err != nil {
-		t.Fatalf("cancel: %v", err)
-	}
-	db.Close()
-
-	stdout, _, err := runCLI(t, dbFile, "next", "all")
-	if err != nil {
-		t.Fatalf("next all: %v", err)
-	}
-	if !strings.Contains(stdout, "- "+parent+" ") {
-		t.Errorf("parent with only canceled child should be in frontier:\n%s", stdout)
-	}
-	if strings.Contains(stdout, "- "+grand+" ") {
-		t.Errorf("grandparent (has open child `parent`) should not appear:\n%s", stdout)
-	}
-}
+// Obsolete under P4 (cancel cascade). Previously tested that a parent
+// with only canceled children was still reachable as a frontier leaf.
+// Under the symmetric cancel cascade, canceling the last open child of
+// a parent auto-cancels the parent too — so the state this test set up
+// (canceled child, open parent) is no longer possible. P4's new
+// TestCancel_Cascade_MultiLevel exercises the replacement behaviour.
 
 // `--include-parents` restores the pre-leaf-frontier behavior: tasks with
 // open children are surfaced as they were before.
@@ -371,22 +353,11 @@ func TestClaim_LeafStillWorks(t *testing.T) {
 	}
 }
 
-// A task whose children are all closed (done or canceled) has no OPEN
-// children and is therefore claimable.
-func TestClaim_ParentWithOnlyClosedChildrenWorks(t *testing.T) {
-	db := job.SetupTestDB(t)
-	parent := job.MustAdd(t, db, "", "Parent")
-	doneChild := job.MustAdd(t, db, parent, "Done")
-	canceledChild := job.MustAdd(t, db, parent, "Canceled")
-	job.MustDone(t, db, doneChild)
-	if _, _, _, err := job.RunCancel(db, []string{canceledChild}, "obsolete", false, false, false, job.TestActor); err != nil {
-		t.Fatalf("cancel: %v", err)
-	}
-
-	if err := job.RunClaim(db, parent, "1h", "alice", false); err != nil {
-		t.Fatalf("claim parent-with-only-closed-children: %v", err)
-	}
-}
+// Obsolete under P4 (cancel cascade). Previously tested that a parent
+// with only closed children (done or canceled) was still claimable.
+// Under the symmetric cancel cascade, closing the last open child of a
+// parent auto-closes the parent as well — so a parent whose last child
+// just closed is never in the "still open" state this test relied on.
 
 // --force on a non-claim conflict (i.e., parent-with-open-children) should
 // NOT override the structural refusal — --force is for stealing another

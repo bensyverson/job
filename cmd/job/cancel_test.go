@@ -520,3 +520,210 @@ func TestRemove_Unknown(t *testing.T) {
 		t.Errorf("err: %v", err)
 	}
 }
+
+// --- P4: Cancel cascade with status-aware destination ---
+
+func TestCancel_CascadeLastChild_SiblingsAllDone_ParentGoesDone(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	a := job.MustAdd(t, db, parent, "A")
+	b := job.MustAdd(t, db, parent, "B")
+	c := job.MustAdd(t, db, parent, "C")
+	job.MustDone(t, db, a)
+	job.MustDone(t, db, b)
+	db.Close()
+
+	// Cancel the last open child; parent should auto-close to "done" since a
+	// sibling closed as done.
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", c, "--reason", "dropped")
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	p := job.MustGet(t, db, parent)
+	if p.Status != "done" {
+		t.Errorf("parent status = %q, want done (any-done sibling rule)", p.Status)
+	}
+}
+
+func TestCancel_CascadeLastChild_SiblingsAllCanceled_ParentGoesCanceled(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	a := job.MustAdd(t, db, parent, "A")
+	b := job.MustAdd(t, db, parent, "B")
+	db.Close()
+
+	// Cancel a first, then b — when b is canceled there are no done siblings,
+	// so parent cascade-cancels.
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", a, "--reason", "x"); err != nil {
+		t.Fatalf("cancel a: %v", err)
+	}
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", b, "--reason", "y"); err != nil {
+		t.Fatalf("cancel b: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	p := job.MustGet(t, db, parent)
+	if p.Status != "canceled" {
+		t.Errorf("parent status = %q, want canceled (no done siblings)", p.Status)
+	}
+}
+
+func TestCancel_CascadeMixedSiblings_AnyDoneWins(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	a := job.MustAdd(t, db, parent, "A")
+	b := job.MustAdd(t, db, parent, "B")
+	c := job.MustAdd(t, db, parent, "C")
+	db.Close()
+
+	// One sibling done, one canceled — cancel the last open; any-done rule
+	// wins.
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", b, "--reason", "x"); err != nil {
+		t.Fatalf("cancel b: %v", err)
+	}
+	db2 := openTestDB(t, dbFile)
+	job.MustDone(t, db2, a)
+	db2.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", c, "--reason", "y"); err != nil {
+		t.Fatalf("cancel c: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	p := job.MustGet(t, db, parent)
+	if p.Status != "done" {
+		t.Errorf("parent status = %q, want done (any-done rule wins over canceled)", p.Status)
+	}
+}
+
+func TestCancel_Cascade_MultiLevel(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	gp := job.MustAdd(t, db, "", "Grandparent")
+	p := job.MustAdd(t, db, gp, "Parent")
+	child := job.MustAdd(t, db, p, "Child")
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", child, "--reason", "x"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	parentTask := job.MustGet(t, db, p)
+	gpTask := job.MustGet(t, db, gp)
+	if parentTask.Status != "canceled" {
+		t.Errorf("parent status = %q, want canceled (all-canceled subtree)", parentTask.Status)
+	}
+	if gpTask.Status != "canceled" {
+		t.Errorf("grandparent status = %q, want canceled (all-canceled subtree)", gpTask.Status)
+	}
+}
+
+func TestCancel_CascadeEvent_RecordsCascadeStatus(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	a := job.MustAdd(t, db, parent, "A")
+	b := job.MustAdd(t, db, parent, "B")
+	job.MustDone(t, db, a)
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", b, "--reason", "dropped")
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	parentTask := job.MustGet(t, db, parent)
+	// The auto-close event is recorded against the parent task. In this case
+	// the parent cascaded to done, so the event type is "done" with
+	// detail.cascade_status = "done" and detail.trigger_kind = "cancel".
+	detail, err := job.GetLatestEventDetail(db, parentTask.ID, "done")
+	if err != nil {
+		t.Fatalf("get event detail: %v", err)
+	}
+	if detail == nil {
+		t.Fatalf("no 'done' event on parent")
+	}
+	if detail["auto_closed"] != true {
+		t.Errorf("auto_closed missing/false in event detail: %+v", detail)
+	}
+	if detail["cascade_status"] != "done" {
+		t.Errorf("cascade_status = %v, want 'done'", detail["cascade_status"])
+	}
+	if detail["trigger_kind"] != "cancel" {
+		t.Errorf("trigger_kind = %v, want 'cancel'", detail["trigger_kind"])
+	}
+	if detail["triggered_by"] != b {
+		t.Errorf("triggered_by = %v, want %q", detail["triggered_by"], b)
+	}
+}
+
+// Regression: existing done-cascade still works (trigger_kind = "done" and
+// destination always "done"). Uses the simplest one-child scenario from
+// existing done tests.
+func TestDone_Cascade_TriggerKindStillDone(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	child := job.MustAdd(t, db, parent, "Child")
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "done", child)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	p := job.MustGet(t, db, parent)
+	if p.Status != "done" {
+		t.Fatalf("parent status = %q, want done", p.Status)
+	}
+	detail, _ := job.GetLatestEventDetail(db, p.ID, "done")
+	if detail["auto_closed"] != true {
+		t.Errorf("auto_closed: %+v", detail)
+	}
+	// trigger_kind should be "done" for done-triggered cascades (will require
+	// the helper to stamp both cases).
+	if detail["trigger_kind"] != "done" {
+		t.Errorf("trigger_kind = %v, want 'done'", detail["trigger_kind"])
+	}
+}
+
+// JSON shape check: parsing a CanceledResult JSON shows auto_closed entries
+// with their status. Placeholder — exact JSON shape is up to the implementer
+// to add; this test accepts any JSON containing both the canceled parent
+// short_id and the auto_closed parent.
+func TestCancel_CascadeJSON_MentionsAutoClosedAncestor(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	child := job.MustAdd(t, db, parent, "Child")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", child, "--reason", "x", "--format=json")
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("parse json: %v\n%s", err, stdout)
+	}
+	canceled, ok := payload["canceled"].([]any)
+	if !ok || len(canceled) == 0 {
+		t.Fatalf("json has no 'canceled' list:\n%s", stdout)
+	}
+	first, ok := canceled[0].(map[string]any)
+	if !ok {
+		t.Fatalf("canceled[0] not an object:\n%s", stdout)
+	}
+	ancestors, ok := first["auto_closed_ancestors"].([]any)
+	if !ok || len(ancestors) == 0 {
+		t.Errorf("expected auto_closed_ancestors on the canceled entry:\n%s", stdout)
+	}
+}

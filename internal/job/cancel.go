@@ -7,10 +7,11 @@ import (
 )
 
 type CanceledResult struct {
-	ShortID         string
-	Title           string
-	WasStatus       string
-	CascadeCanceled []string
+	ShortID             string
+	Title               string
+	WasStatus           string
+	CascadeCanceled     []string
+	AutoClosedAncestors []AutoClosedAncestor
 }
 
 type PurgedResult struct {
@@ -182,11 +183,21 @@ func executeCancel(
 			return nil, nil, err
 		}
 
+		// Leaf-frontier cascade (symmetric to done): if this cancel closed
+		// the last open child of an ancestor, the ancestor auto-closes too.
+		// Destination per ancestor is status-aware — see
+		// cascadeAutoCloseAncestors.
+		autoClosed, err := cascadeAutoCloseAncestors(tx, p.target.task.ID, p.target.shortID, "cancel", actor, now)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		canceled = append(canceled, &CanceledResult{
-			ShortID:         p.target.shortID,
-			Title:           p.target.task.Title,
-			WasStatus:       wasStatus,
-			CascadeCanceled: p.cascadeShorts,
+			ShortID:             p.target.shortID,
+			Title:               p.target.task.Title,
+			WasStatus:           wasStatus,
+			CascadeCanceled:     p.cascadeShorts,
+			AutoClosedAncestors: autoClosed,
 		})
 	}
 

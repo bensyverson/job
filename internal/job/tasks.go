@@ -17,10 +17,13 @@ type ClosedResult struct {
 
 // AutoClosedAncestor names an ancestor that was auto-closed by the
 // leaf-frontier cascade (when its last open child closed). Walking from
-// the closer upward; the first entry is the direct parent.
+// the closer upward; the first entry is the direct parent. Status is
+// "done" or "canceled" — the destination the cascade chose for this
+// ancestor based on its sibling mix.
 type AutoClosedAncestor struct {
 	ShortID string
 	Title   string
+	Status  string
 }
 
 // AddResult carries the outcome of RunAdd. ShortID is always set on
@@ -227,11 +230,13 @@ func filterByLabel(nodes []*TaskNode, labeledIDs map[int64]bool) []*TaskNode {
 
 // cascadeAutoCloseAncestors walks the ancestor chain from taskID upward,
 // auto-closing each ancestor whose open children have all been closed
-// (status is now "done" or "canceled"). Emits a "done" event on each
-// auto-closed ancestor with detail.auto_closed=true, attributing the close
-// to actor (the agent who closed the last open descendant). Returns the
-// ordered list of auto-closed ancestors, nearest-parent first.
-func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, actor string, now int64) ([]AutoClosedAncestor, error) {
+// (status is now "done" or "canceled"). Destination per ancestor is
+// status-aware: if any sibling closed as "done", the ancestor cascades
+// to "done"; if every sibling is "canceled", the ancestor cascades to
+// "canceled". triggerKind labels the event ("done" or "cancel") so the
+// log can distinguish the two cascade flavours. Returns the ordered
+// list of auto-closed ancestors, nearest-parent first.
+func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, triggerKind, actor string, now int64) ([]AutoClosedAncestor, error) {
 	var result []AutoClosedAncestor
 	cursorID := taskID
 	for {
@@ -267,23 +272,49 @@ func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, actor stri
 			return result, nil
 		}
 
+		// Destination: any done sibling → "done"; otherwise "canceled".
+		destination := "canceled"
+		var doneSiblings int
+		if err := tx.QueryRow(
+			"SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status = 'done' AND deleted_at IS NULL",
+			p.ID,
+		).Scan(&doneSiblings); err != nil {
+			return nil, err
+		}
+		if doneSiblings > 0 {
+			destination = "done"
+		}
+
 		if _, err := tx.Exec(
-			"UPDATE tasks SET status = 'done', updated_at = ? WHERE id = ?",
-			now, p.ID,
+			"UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
+			destination, now, p.ID,
 		); err != nil {
 			return nil, err
 		}
-		if err := recordEvent(tx, p.ID, "done", actor, map[string]any{
-			"auto_closed":  true,
-			"triggered_by": triggerShortID,
-		}); err != nil {
+		// Event type mirrors destination so audit logs show the same verb
+		// the status landed on. detail carries both trigger_kind and
+		// cascade_status so consumers can tell apart done-triggered vs
+		// cancel-triggered cascades without inspecting sibling history.
+		eventDetail := map[string]any{
+			"auto_closed":    true,
+			"trigger_kind":   triggerKind,
+			"triggered_by":   triggerShortID,
+			"cascade_status": destination,
+		}
+		if err := recordEvent(tx, p.ID, destination, actor, eventDetail); err != nil {
 			return nil, err
 		}
-		if err := recordBlocksUnblockedOn(tx, p.ID, p.ShortID, actor); err != nil {
-			return nil, err
+		if destination == "done" {
+			if err := recordBlocksUnblockedOn(tx, p.ID, p.ShortID, actor); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := recordBlocksUnblockedOnCancel(tx, p.ID, p.ShortID, actor); err != nil {
+				return nil, err
+			}
 		}
 
-		result = append(result, AutoClosedAncestor{ShortID: p.ShortID, Title: p.Title})
+		result = append(result, AutoClosedAncestor{ShortID: p.ShortID, Title: p.Title, Status: destination})
 		cursorID = p.ID
 	}
 }
@@ -432,7 +463,7 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 
 		// Leaf-frontier cascade: after closing this target, auto-close any
 		// ancestors whose last open child has just been closed.
-		autoClosed, err := cascadeAutoCloseAncestors(tx, p.target.task.ID, p.target.shortID, actor, now)
+		autoClosed, err := cascadeAutoCloseAncestors(tx, p.target.task.ID, p.target.shortID, "done", actor, now)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -47,7 +47,7 @@ func TestStatus_LastActivity(t *testing.T) {
 	}
 }
 
-func TestStatus_ClaimedByYou(t *testing.T) {
+func TestStatus_CallerHoldsOneClaim_ShowsCount(t *testing.T) {
 	db := job.SetupTestDB(t)
 	id := job.MustAdd(t, db, "", "A")
 	if err := job.RunClaim(db, id, "1h", "alice", false); err != nil {
@@ -64,16 +64,68 @@ func TestStatus_ClaimedByYou(t *testing.T) {
 
 	var buf bytes.Buffer
 	job.RenderStatus(&buf, s)
-	if !strings.Contains(buf.String(), "1 claimed by you") {
-		t.Errorf("render missing 'claimed by you':\n%s", buf.String())
+	got := buf.String()
+	if !strings.Contains(got, "1 claimed") {
+		t.Errorf("render missing '1 claimed':\n%s", got)
+	}
+	// The older "claimed by you" phrasing was replaced in P5 — reject
+	// any regression.
+	if strings.Contains(got, "claimed by you") {
+		t.Errorf("render should not include the old 'claimed by you' phrasing:\n%s", got)
 	}
 }
 
-func TestStatus_ClaimedByYou_OmittedWithoutAs(t *testing.T) {
+func TestStatus_CallerHoldsTwoClaims_ShowsCount(t *testing.T) {
 	db := job.SetupTestDB(t)
-	id := job.MustAdd(t, db, "", "A")
-	if err := job.RunClaim(db, id, "1h", "alice", false); err != nil {
-		t.Fatalf("claim: %v", err)
+	a := job.MustAdd(t, db, "", "A")
+	b := job.MustAdd(t, db, "", "B")
+	c := job.MustAdd(t, db, "", "C")
+	job.MustDone(t, db, a)
+	if err := job.RunClaim(db, b, "1h", "alice", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	if err := job.RunClaim(db, c, "1h", "alice", false); err != nil {
+		t.Fatalf("claim c: %v", err)
+	}
+
+	s, err := job.RunStatus(db, "alice")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	got := buf.String()
+	if !strings.Contains(got, "2 claimed, 0 open, 1 done") {
+		t.Errorf("status missing '2 claimed, 0 open, 1 done':\n%s", got)
+	}
+}
+
+func TestStatus_CallerHoldsZero_NoClaimedTerm(t *testing.T) {
+	db := job.SetupTestDB(t)
+	job.MustAdd(t, db, "", "A")
+
+	s, err := job.RunStatus(db, "alice")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	got := buf.String()
+	if strings.Contains(got, "claimed") {
+		t.Errorf("expected no 'claimed' term when caller holds zero:\n%s", got)
+	}
+}
+
+func TestStatus_NoCaller_ShowsGlobalClaimed(t *testing.T) {
+	db := job.SetupTestDB(t)
+	a := job.MustAdd(t, db, "", "A")
+	b := job.MustAdd(t, db, "", "B")
+	job.MustAdd(t, db, "", "C")
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := job.RunClaim(db, b, "1h", "bob", false); err != nil {
+		t.Fatalf("claim b: %v", err)
 	}
 
 	s, err := job.RunStatus(db, "")
@@ -82,8 +134,9 @@ func TestStatus_ClaimedByYou_OmittedWithoutAs(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	job.RenderStatus(&buf, s)
-	if strings.Contains(buf.String(), "claimed by you") {
-		t.Errorf("should not mention 'claimed by you' when no --as:\n%s", buf.String())
+	got := buf.String()
+	if !strings.Contains(got, "2 claimed") {
+		t.Errorf("expected '2 claimed' from global count:\n%s", got)
 	}
 }
 
@@ -133,8 +186,47 @@ func TestStatus_CLI_WithAs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if !strings.Contains(stdout, "1 claimed by you") {
-		t.Errorf("want '1 claimed by you':\n%s", stdout)
+	if !strings.Contains(stdout, "1 claimed") {
+		t.Errorf("want '1 claimed':\n%s", stdout)
+	}
+	if strings.Contains(stdout, "claimed by you") {
+		t.Errorf("output should not include old 'claimed by you' phrasing:\n%s", stdout)
+	}
+}
+
+func TestStatus_ExpiredClaims_NotCounted(t *testing.T) {
+	origNow := job.CurrentNowFunc
+	defer func() { job.CurrentNowFunc = origNow }()
+	base := time.Unix(1_700_000_000, 0)
+	job.CurrentNowFunc = func() time.Time { return base }
+
+	db := job.SetupTestDB(t)
+	a := job.MustAdd(t, db, "", "A")
+	b := job.MustAdd(t, db, "", "B")
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := job.RunClaim(db, b, "1h", "alice", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+
+	// Jump past both expirations.
+	job.CurrentNowFunc = func() time.Time { return base.Add(2 * time.Hour) }
+
+	s, err := job.RunStatus(db, "alice")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	if s.ClaimedByYou != 0 {
+		t.Errorf("ClaimedByYou after expiry: got %d, want 0", s.ClaimedByYou)
+	}
+	if s.Claimed != 0 {
+		t.Errorf("Claimed after expiry: got %d, want 0", s.Claimed)
+	}
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	if strings.Contains(buf.String(), "claimed") {
+		t.Errorf("expired claims must not appear in status:\n%s", buf.String())
 	}
 }
 

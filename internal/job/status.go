@@ -74,10 +74,17 @@ func RunStatus(db *sql.DB, actor string) (*StatusSummary, error) {
 
 func RenderStatus(w io.Writer, s *StatusSummary) {
 	var parts []string
-	parts = append(parts, fmt.Sprintf("%d open", s.Open))
-	if s.HasActor && s.ClaimedByYou > 0 {
-		parts = append(parts, fmt.Sprintf("%d claimed by you", s.ClaimedByYou))
+	// Claimed term is scoped to the caller when HasActor, else the global
+	// live-claim count. Suppressed entirely when zero to avoid noise for
+	// non-claiming callers.
+	claimed := s.Claimed
+	if s.HasActor {
+		claimed = s.ClaimedByYou
 	}
+	if claimed > 0 {
+		parts = append(parts, fmt.Sprintf("%d claimed", claimed))
+	}
+	parts = append(parts, fmt.Sprintf("%d open", s.Open))
 	parts = append(parts, fmt.Sprintf("%d done", s.Done))
 	if s.Canceled > 0 {
 		parts = append(parts, fmt.Sprintf("%d canceled", s.Canceled))

@@ -9,7 +9,7 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show a one-line summary of task counts and recent activity",
-		Long:  "Print a one-line summary: open / claimed by you (if --as is set) / done, plus the time since the last event. No --as required.",
+		Long:  "Print a one-line summary: claimed / open / done, plus the time since the last event. With --as, the claimed count is scoped to the caller; without --as, it counts all live claims. The claimed term is suppressed entirely when zero. No --as required.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()

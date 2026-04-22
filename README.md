@@ -99,7 +99,7 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 | `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. |
 | `job info <id>` | Show full details for one task. |
 | `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. |
-| `job status` | One-line summary: open / claimed by you / done, plus time since the last event. |
+| `job status` | One-line summary: claimed / open / done, plus time since the last event. With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. Suppressed when zero. |
 
 All four support `--format=json` (except `status`, which is always plain text).
 

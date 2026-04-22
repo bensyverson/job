@@ -2033,6 +2033,152 @@ func TestRunTail_TaskNotFound(t *testing.T) {
 	}
 }
 
+func TestRunList_ClaimedByFilter_ShowsOnlyActorsClaims(t *testing.T) {
+	db := SetupTestDB(t)
+	a := MustAdd(t, db, "", "Alice task")
+	b := MustAdd(t, db, "", "Bob task")
+	if err := RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := RunClaim(db, b, "1h", "bob", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0].Task.ShortID != a {
+		t.Errorf("got %s, want %s", nodes[0].Task.ShortID, a)
+	}
+}
+
+func TestRunList_ClaimedByFilter_NoMatch(t *testing.T) {
+	db := SetupTestDB(t)
+	MustAdd(t, db, "", "Unclaimed")
+
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "nobody")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Errorf("expected 0 nodes, got %d", len(nodes))
+	}
+}
+
+func TestRunList_ClaimedByFilter_PreservesParentContext(t *testing.T) {
+	db := SetupTestDB(t)
+	pid := MustAdd(t, db, "", "Parent")
+	cid := MustAdd(t, db, pid, "Claimed child")
+	MustAdd(t, db, pid, "Unclaimed child")
+	if err := RunClaim(db, cid, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("roots: got %d, want 1", len(nodes))
+	}
+	if nodes[0].Task.ShortID != pid {
+		t.Errorf("root: got %s, want %s (parent of claimed child)", nodes[0].Task.ShortID, pid)
+	}
+	if len(nodes[0].Children) != 1 {
+		t.Fatalf("children: got %d, want 1 (only claimed child)", len(nodes[0].Children))
+	}
+	if nodes[0].Children[0].Task.ShortID != cid {
+		t.Errorf("child: got %s, want %s", nodes[0].Children[0].Task.ShortID, cid)
+	}
+}
+
+func TestRunList_ClaimedByFilter_WithLabelFilter(t *testing.T) {
+	db := SetupTestDB(t)
+	a := MustAdd(t, db, "", "Labeled and claimed")
+	b := MustAdd(t, db, "", "Unlabeled but claimed")
+	if _, err := RunLabelAdd(db, a, []string{"p0"}, TestActor); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := RunClaim(db, b, "1h", "alice", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+
+	nodes, err := RunListFiltered(db, "", TestActor, false, "p0", "alice")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Task.ShortID != a {
+		t.Errorf("expected only labeled+claimed task %s, got %+v", a, nodes)
+	}
+}
+
+func TestRunList_ClaimedByFilter_ExcludesExpiredClaims(t *testing.T) {
+	origNow := CurrentNowFunc
+	defer func() { CurrentNowFunc = origNow }()
+
+	db := SetupTestDB(t)
+	id := MustAdd(t, db, "", "Expiring")
+
+	baseTime := time.Now()
+	CurrentNowFunc = func() time.Time { return baseTime }
+	if err := RunClaim(db, id, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	CurrentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Errorf("expected 0 nodes after claim expiry, got %d", len(nodes))
+	}
+}
+
+func TestRunList_ClaimedByFilter_ExcludesDoneTasks(t *testing.T) {
+	db := SetupTestDB(t)
+	id := MustAdd(t, db, "", "Done by alice")
+	if err := RunClaim(db, id, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, _, err := RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+
+	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Errorf("expected 0 nodes (done task should not match), got %d", len(nodes))
+	}
+}
+
+func TestRunList_ClaimedByFilter_ComposesWithAll(t *testing.T) {
+	db := SetupTestDB(t)
+	a := MustAdd(t, db, "", "Claimed")
+	b := MustAdd(t, db, "", "Available")
+	if err := RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+
+	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice")
+	if err != nil {
+		t.Fatalf("RunListFiltered: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Task.ShortID != a {
+		t.Errorf("expected only claimed task %s, got %+v", a, nodes)
+	}
+	_ = b
+}
+
 func TestRunList_ExpiredClaimShowsAsAvailable(t *testing.T) {
 	origNow := CurrentNowFunc
 	defer func() { CurrentNowFunc = origNow }()

@@ -957,3 +957,161 @@ func TestReadSideEffectsUseEmptyActor(t *testing.T) {
 		t.Errorf("actor: got %q, want empty", actor)
 	}
 }
+
+func TestList_Mine_ShowsClaimedTasks(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alice task")
+	b := job.MustAdd(t, db, "", "Bob task")
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := job.RunClaim(db, b, "1h", "bob", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--mine")
+	if err != nil {
+		t.Fatalf("list --mine: %v", err)
+	}
+	if !strings.Contains(stdout, a) {
+		t.Errorf("expected to see alice's task %s:\n%s", a, stdout)
+	}
+	if strings.Contains(stdout, b) {
+		t.Errorf("should not show bob's task %s:\n%s", b, stdout)
+	}
+}
+
+func TestList_Mine_NoAs_NoStrict_NoDefault_Errors(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if err := job.RunClaim(db, id, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "list", "--mine")
+	if err == nil {
+		t.Fatal("expected error when --mine has no identity")
+	}
+	if !strings.Contains(err.Error(), "no identity to scope to") {
+		t.Errorf("got %q, want identity error", err.Error())
+	}
+}
+
+func TestList_ClaimedBy_ShowsClaimedTasks(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alice task")
+	b := job.MustAdd(t, db, "", "Bob task")
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := job.RunClaim(db, b, "1h", "bob", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "list", "--claimed-by", "bob")
+	if err != nil {
+		t.Fatalf("list --claimed-by bob: %v", err)
+	}
+	if !strings.Contains(stdout, b) {
+		t.Errorf("expected to see bob's task %s:\n%s", b, stdout)
+	}
+	if strings.Contains(stdout, a) {
+		t.Errorf("should not show alice's task %s:\n%s", a, stdout)
+	}
+}
+
+func TestList_ClaimedBy_ComposesWithAll(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Alice task")
+	_ = job.MustAdd(t, db, "", "Other")
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "list", "--claimed-by", "alice", "all")
+	if err != nil {
+		t.Fatalf("list --claimed-by alice all: %v", err)
+	}
+	if !strings.Contains(stdout, a) {
+		t.Errorf("expected to see alice's task %s:\n%s", a, stdout)
+	}
+}
+
+func TestList_ClaimedBy_NoClaims_EmptyMessage(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "Available")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "list", "--claimed-by", "nobody")
+	if err != nil {
+		t.Fatalf("list --claimed-by nobody: %v", err)
+	}
+	if !strings.Contains(stdout, "No tasks claimed by nobody") {
+		t.Errorf("expected friendly empty message:\n%s", stdout)
+	}
+}
+
+func TestList_ClaimedBy_ComposesWithLabel(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Labeled claim")
+	b := job.MustAdd(t, db, "", "Unlabeled claim")
+	if _, err := job.RunLabelAdd(db, a, []string{"p0"}, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := job.RunClaim(db, b, "1h", "alice", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "list", "--claimed-by", "alice", "--label", "p0")
+	if err != nil {
+		t.Fatalf("list --claimed-by alice --label p0: %v", err)
+	}
+	if !strings.Contains(stdout, a) {
+		t.Errorf("expected to see labeled task %s:\n%s", a, stdout)
+	}
+	if strings.Contains(stdout, b) {
+		t.Errorf("should not show unlabeled task %s:\n%s", b, stdout)
+	}
+}
+
+func TestList_Mine_ComposesWithLabel(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "Labeled claim")
+	b := job.MustAdd(t, db, "", "Unlabeled claim")
+	if _, err := job.RunLabelAdd(db, a, []string{"p0"}, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := job.RunClaim(db, a, "1h", "alice", false); err != nil {
+		t.Fatalf("claim a: %v", err)
+	}
+	if err := job.RunClaim(db, b, "1h", "alice", false); err != nil {
+		t.Fatalf("claim b: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--mine", "--label", "p0")
+	if err != nil {
+		t.Fatalf("list --mine --label p0: %v", err)
+	}
+	if !strings.Contains(stdout, a) {
+		t.Errorf("expected to see labeled task %s:\n%s", a, stdout)
+	}
+	if strings.Contains(stdout, b) {
+		t.Errorf("should not show unlabeled task %s:\n%s", b, stdout)
+	}
+}

@@ -9,11 +9,20 @@ import (
 func newListCmd() *cobra.Command {
 	var format string
 	var labelFilter string
+	var mine bool
+	var claimedBy string
 	cmd := &cobra.Command{
 		Use:   "list [parent] [all]",
 		Short: "List tasks",
-		Long:  "List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks. Use 'all' to include done, claimed, and blocked tasks. Use --label <name> to filter to tasks carrying that label. Use --format=json for machine-readable output.",
-		Args:  cobra.MaximumNArgs(2),
+		Long: `List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks.
+
+Use 'all' to include done, claimed, and blocked tasks.
+Use --label <name> to filter to tasks carrying that label.
+Use --mine to show only tasks claimed by the caller (via --as or default identity).
+Use --claimed-by <name> to show tasks claimed by a specific agent.
+Composes: 'list --mine --label p0', 'list --claimed-by alice all'.
+Use --format=json for machine-readable output.`,
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -31,7 +40,25 @@ func newListCmd() *cobra.Command {
 				}
 			}
 
-			nodes, err := job.RunListFiltered(db, parentShortID, "", showAll, labelFilter)
+			if mine && claimedBy != "" {
+				return fmt.Errorf("cannot use both --mine and --claimed-by")
+			}
+
+			var claimedByFilter string
+			if mine {
+				name, err := job.ResolveIdentity(db, asFlag)
+				if err != nil {
+					return err
+				}
+				if name == "" {
+					return fmt.Errorf("no identity to scope to. Use --as <name> or set a default identity.")
+				}
+				claimedByFilter = name
+			} else if claimedBy != "" {
+				claimedByFilter = claimedBy
+			}
+
+			nodes, err := job.RunListFiltered(db, parentShortID, "", showAll, labelFilter, claimedByFilter)
 			if err != nil {
 				return err
 			}
@@ -50,6 +77,10 @@ func newListCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout())
 			} else {
 				if len(nodes) == 0 {
+					if claimedByFilter != "" {
+						fmt.Fprintf(cmd.OutOrStdout(), "No tasks claimed by %s.\n", claimedByFilter)
+						return nil
+					}
 					total, done, cerr := countTasks(db)
 					if cerr != nil {
 						return cerr
@@ -72,5 +103,7 @@ func newListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	cmd.Flags().StringVar(&labelFilter, "label", "", "filter to tasks carrying this label")
+	cmd.Flags().BoolVar(&mine, "mine", false, "show only tasks claimed by the caller")
+	cmd.Flags().StringVar(&claimedBy, "claimed-by", "", "show only tasks claimed by this agent")
 	return cmd
 }

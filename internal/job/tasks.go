@@ -156,10 +156,10 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 }
 
 func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
-	return RunListFiltered(db, parentShortID, actor, showAll, "")
+	return RunListFiltered(db, parentShortID, actor, showAll, "", "")
 }
 
-func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labelName string) ([]*TaskNode, error) {
+func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labelName string, claimedByFilter string) ([]*TaskNode, error) {
 	if err := expireStaleClaims(db, actor); err != nil {
 		return nil, err
 	}
@@ -184,7 +184,11 @@ func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labe
 		return nil, err
 	}
 
-	filtered := filterTree(tree, showAll, blockedIDs)
+	effectiveShowAll := showAll || claimedByFilter != ""
+	filtered := filterTree(tree, effectiveShowAll, blockedIDs)
+	if claimedByFilter != "" {
+		filtered = filterByClaimedActor(filtered, claimedByFilter)
+	}
 	if labelName != "" {
 		labeledIDs, err := taskIDsWithLabel(db, labelName)
 		if err != nil {
@@ -222,6 +226,18 @@ func filterByLabel(nodes []*TaskNode, labeledIDs map[int64]bool) []*TaskNode {
 	for _, node := range nodes {
 		filteredChildren := filterByLabel(node.Children, labeledIDs)
 		if labeledIDs[node.Task.ID] || len(filteredChildren) > 0 {
+			out = append(out, &TaskNode{Task: node.Task, Children: filteredChildren})
+		}
+	}
+	return out
+}
+
+func filterByClaimedActor(nodes []*TaskNode, actor string) []*TaskNode {
+	var out []*TaskNode
+	for _, node := range nodes {
+		filteredChildren := filterByClaimedActor(node.Children, actor)
+		matched := node.Task.Status == "claimed" && node.Task.ClaimedBy != nil && *node.Task.ClaimedBy == actor
+		if matched || len(filteredChildren) > 0 {
 			out = append(out, &TaskNode{Task: node.Task, Children: filteredChildren})
 		}
 	}

@@ -333,7 +333,7 @@ func TestList_LabelFilter_MatchesOnly(t *testing.T) {
 	if _, err := job.RunLabelAdd(db, a, []string{"foo"}, job.TestActor); err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "foo")
+	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "foo", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestList_LabelFilter_MatchesOnly(t *testing.T) {
 func TestList_LabelFilter_NoMatch_Empty(t *testing.T) {
 	db := job.SetupTestDB(t)
 	job.MustAdd(t, db, "", "A")
-	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "nope")
+	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "nope", "")
 	if err != nil {
 		t.Fatal(err)
 	}

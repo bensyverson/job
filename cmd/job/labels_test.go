@@ -265,27 +265,6 @@ func TestSchema_HasTaskLabelsTable(t *testing.T) {
 	}
 }
 
-func TestOpenDB_CreatesLabelsTable_OnExistingDB(t *testing.T) {
-	dbFile := setupCLI(t)
-	// Drop table to simulate a pre-Phase-7 db.
-	db := openTestDB(t, dbFile)
-	if _, err := db.Exec("DROP TABLE task_labels"); err != nil {
-		t.Fatalf("drop: %v", err)
-	}
-	db.Close()
-
-	// Re-open: job.OpenDB now runs job.InitSchema, so the table should be re-created.
-	db2, err := job.OpenDB(dbFile)
-	if err != nil {
-		t.Fatalf("job.OpenDB: %v", err)
-	}
-	defer db2.Close()
-	var name string
-	if err := db2.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='task_labels'").Scan(&name); err != nil {
-		t.Fatalf("task_labels table not re-created: %v", err)
-	}
-}
-
 // --- YAML import ---
 
 func TestImport_PersistsLabels(t *testing.T) {

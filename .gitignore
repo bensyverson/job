@@ -4,6 +4,8 @@
 
 # Database
 .jobs.db
+.jobs.db-wal
+.jobs.db-shm
 
 # Go
 vendor/
@@ -12,3 +14,6 @@ vendor/
 
 # OS
 .DS_Store
+
+# local files
+Local/

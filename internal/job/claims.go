@@ -157,6 +157,22 @@ func expireStaleClaimsInTx(tx dbtx, actor string) error {
 	return nil
 }
 
+// openChildFilter returns the SQL fragment that selects rows counting as
+// "open children" under leaf-frontier semantics: not yet done, not
+// canceled, not soft-deleted. Shared by countOpenChildren,
+// queryAvailableLeafFrontier, cascadeAutoCloseAncestors, and
+// findOpenDescendants so the four sites can't drift.
+//
+// alias is the table alias the caller uses (e.g. "c" in a subtree join,
+// or "" when querying the bare tasks table). The helper returns the
+// fragment pre-prefixed so callers can concatenate it into a WHERE.
+func openChildFilter(alias string) string {
+	if alias == "" {
+		return "status NOT IN ('done', 'canceled') AND deleted_at IS NULL"
+	}
+	return alias + ".status NOT IN ('done', 'canceled') AND " + alias + ".deleted_at IS NULL"
+}
+
 // countOpenChildren returns the number of direct children of taskID whose
 // status is neither "done" nor "canceled". Used to enforce leaf-frontier
 // claim semantics: a task with open children has no executable work of its
@@ -164,8 +180,7 @@ func expireStaleClaimsInTx(tx dbtx, actor string) error {
 func countOpenChildren(tx dbtx, taskID int64) (int, error) {
 	var n int
 	err := tx.QueryRow(
-		`SELECT COUNT(*) FROM tasks
-		 WHERE parent_id = ? AND status NOT IN ('done', 'canceled') AND deleted_at IS NULL`,
+		`SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND `+openChildFilter(""),
 		taskID,
 	).Scan(&n)
 	return n, err
@@ -429,11 +444,10 @@ func queryAvailableLeafFrontier(db *sql.DB, parentID *int64, limit int, labelNam
 		  AND NOT EXISTS (
 		    SELECT 1 FROM tasks c
 		    WHERE c.parent_id = t.id
-		      AND c.status NOT IN ('done', 'canceled')
-		      AND c.deleted_at IS NULL
+		      AND %s
 		  )
 		ORDER BY s.sort_path%s
-	`, anchorFilter, labelFilter, limitClause)
+	`, anchorFilter, labelFilter, openChildFilter("c"), limitClause)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {

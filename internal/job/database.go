@@ -351,8 +351,7 @@ func findOpenDescendants(tx dbtx, taskID int64) ([]*Task, error) {
 	rows, err := tx.Query(`
 		SELECT id, short_id, parent_id, title, description, status, sort_order,
 		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
-		FROM tasks WHERE parent_id = ? AND status != 'done' AND status != 'canceled' AND deleted_at IS NULL
-	`, taskID)
+		FROM tasks WHERE parent_id = ? AND `+openChildFilter(""), taskID)
 	if err != nil {
 		return nil, err
 	}

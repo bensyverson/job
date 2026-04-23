@@ -132,8 +132,7 @@ func TestEvents_SSE_StreamsLiveEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	req = req.WithContext(ctx)
 
 	resp, err := http.DefaultClient.Do(req)

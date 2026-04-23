@@ -91,7 +91,7 @@ func TestBroadcaster_SubscribeReceivesNewEvents(t *testing.T) {
 func TestBroadcaster_SeedsLastIDAtStartup(t *testing.T) {
 	db := setupBroadcasterDB(t)
 	// Seed a pile of events BEFORE the broadcaster starts.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if _, err := job.RunAdd(db, "", "pre-boot", "", "", nil, "seeder"); err != nil {
 			t.Fatalf("RunAdd: %v", err)
 		}
@@ -122,7 +122,7 @@ func TestBroadcaster_MultipleSubscribersAllReceive(t *testing.T) {
 
 	const n = 3
 	chs := make([]<-chan job.EventEntry, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sub := b.Subscribe()
 		t.Cleanup(sub.Cancel)
 		chs[i] = sub.Events
@@ -189,7 +189,7 @@ func TestBroadcaster_SlowSubscriberDoesNotBlockOthers(t *testing.T) {
 	}()
 
 	// Generate many events fast so the slow subscriber's buffer fills.
-	for i := 0; i < 128; i++ {
+	for range 128 {
 		if _, err := job.RunAdd(db, "", "event", "", "", nil, "carla"); err != nil {
 			t.Fatalf("RunAdd: %v", err)
 		}
@@ -215,7 +215,7 @@ func TestBroadcaster_Fanout_ManySubscribersManyEvents(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(subs)
 
-	for i := 0; i < subs; i++ {
+	for i := range subs {
 		i := i
 		sub := b.Subscribe()
 		go func() {
@@ -241,7 +241,7 @@ func TestBroadcaster_Fanout_ManySubscribersManyEvents(t *testing.T) {
 
 	// Give subscribers a moment to all register.
 	time.Sleep(2 * testPoll)
-	for i := 0; i < events; i++ {
+	for range events {
 		if _, err := job.RunAdd(db, "", "burst", "", "", nil, "bursty"); err != nil {
 			t.Fatalf("RunAdd: %v", err)
 		}

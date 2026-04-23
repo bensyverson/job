@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,13 +37,7 @@ func (f EventsFilter) Matches(e job.EventEntry, taskLabels map[int64][]string) b
 		return false
 	}
 	if f.Label != "" {
-		found := false
-		for _, l := range taskLabels[e.TaskID] {
-			if l == f.Label {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(taskLabels[e.TaskID], f.Label)
 		if !found {
 			return false
 		}

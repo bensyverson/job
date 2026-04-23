@@ -15,7 +15,6 @@
 </div>
 <section class="c-filter-bar" aria-label="Plan filters">
   <div class="c-filter-bar__group" role="group" aria-label="Labels">
-    <span class="c-filter-bar__label">Labels</span>
     <a href="{{.AllURL}}" class="c-label-pill c-label-pill--all{{if .AllActive}} c-label-pill--active{{end}}">All</a>
     {{range .Labels}}<a href="{{.URL}}" class="c-label-pill{{if .Active}} c-label-pill--active{{end}}" data-label="{{.Name}}">{{.Name}}</a>{{end}}
   </div>

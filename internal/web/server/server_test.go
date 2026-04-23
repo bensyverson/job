@@ -16,7 +16,7 @@ import (
 )
 
 func TestListen_BindsToRequestedAddr(t *testing.T) {
-	srv, ln, err := server.Listen(server.Config{Addr: "127.0.0.1:0"})
+	srv, ln, err := server.Listen(context.Background(), server.Config{Addr: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
@@ -37,14 +37,14 @@ func TestListen_BindsToRequestedAddr(t *testing.T) {
 }
 
 func TestListen_BindError(t *testing.T) {
-	_, _, err := server.Listen(server.Config{Addr: "127.0.0.1:not-a-port"})
+	_, _, err := server.Listen(context.Background(), server.Config{Addr: "127.0.0.1:not-a-port"})
 	if err == nil {
 		t.Fatal("Listen: expected error for malformed addr, got nil")
 	}
 }
 
 func TestServe_RespondsToRequests(t *testing.T) {
-	srv, ln, err := server.Listen(server.Config{Addr: "127.0.0.1:0"})
+	srv, ln, err := server.Listen(context.Background(), server.Config{Addr: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestServe_RespondsToRequests(t *testing.T) {
 }
 
 func TestServe_ShutsDownOnContextCancel(t *testing.T) {
-	srv, ln, err := server.Listen(server.Config{Addr: "127.0.0.1:0"})
+	srv, ln, err := server.Listen(context.Background(), server.Config{Addr: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestMux_FullRoutingMatrix(t *testing.T) {
 	}
 	defer db.Close()
 
-	mux := server.NewMux(server.Config{DB: db})
+	mux := server.NewMux(context.Background(), server.Config{DB: db})
 
 	type check struct {
 		name        string
@@ -209,7 +209,7 @@ func TestMux_StaticAssetsServedWithImmutableCache(t *testing.T) {
 		t.Fatal("manifest missing tokens.css")
 	}
 
-	mux := server.NewMux(server.Config{DB: db})
+	mux := server.NewMux(context.Background(), server.Config{DB: db})
 
 	req := httptest.NewRequest("GET", tokensURL, nil)
 	w := httptest.NewRecorder()

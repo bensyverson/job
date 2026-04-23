@@ -467,6 +467,26 @@ func getEventsAfterID(db *sql.DB, shortID string, afterID int64) ([]EventEntry, 
 	return queryEventEntries(db, query, args)
 }
 
+// GetEventsAfterID returns events with id > afterID for the subtree
+// rooted at shortID (or the entire DB when shortID is empty). Used
+// by the web broadcaster's poll loop and by the /events SSE backfill.
+func GetEventsAfterID(db *sql.DB, shortID string, afterID int64) ([]EventEntry, error) {
+	return getEventsAfterID(db, shortID, afterID)
+}
+
+// GetMaxEventID returns the largest event id currently in the table,
+// or 0 if empty. Used as a cutoff for "stream from now" clients.
+func GetMaxEventID(db *sql.DB) (int64, error) {
+	var max sql.NullInt64
+	if err := db.QueryRow(`SELECT MAX(id) FROM events`).Scan(&max); err != nil {
+		return 0, err
+	}
+	if !max.Valid {
+		return 0, nil
+	}
+	return max.Int64, nil
+}
+
 // buildTreeEventsQuery assembles the recursive-CTE query used by log/tail.
 // When shortID is empty the anchor is all top-level tasks (global scope);
 // otherwise it is that one task (single-subtree scope). extraWhere is an

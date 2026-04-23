@@ -8,15 +8,17 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/bensyverson/jobs/internal/web/broadcast"
 	"github.com/bensyverson/jobs/internal/web/templates"
 )
 
 // Deps is the shared bundle every handler constructor accepts. Add new
-// fields here (clock, event bus, …) as they arrive; handlers should
-// depend on this struct rather than package globals.
+// fields here (clock, …) as they arrive; handlers should depend on
+// this struct rather than package globals.
 type Deps struct {
-	DB        *sql.DB
-	Templates *templates.Engine
+	DB          *sql.DB
+	Templates   *templates.Engine
+	Broadcaster *broadcast.Broadcaster
 }
 
 // renderPage is the common path for a view that renders its page

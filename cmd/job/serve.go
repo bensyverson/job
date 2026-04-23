@@ -38,8 +38,11 @@ func newServeCmd() *cobra.Command {
 			}
 			defer db.Close()
 
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
 			cfg := server.Config{Addr: resolveServeAddr(bindFlag), DB: db}
-			srv, ln, err := server.Listen(cfg)
+			srv, ln, err := server.Listen(ctx, cfg)
 			if err != nil {
 				return fmt.Errorf("bind %s: %w", cfg.Addr, err)
 			}
@@ -47,8 +50,6 @@ func newServeCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Jobs dashboard: http://%s/\n", ln.Addr())
 			fmt.Fprintln(cmd.OutOrStdout(), "Press Ctrl-C to stop.")
 
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
 			return server.Serve(ctx, srv, ln)
 		},
 	}

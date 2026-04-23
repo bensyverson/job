@@ -107,6 +107,28 @@ func TestEngine_Render_UsesFingerprintedCSSURL(t *testing.T) {
 	}
 }
 
+func TestEngine_Render_MountsLiveRegionAndScript(t *testing.T) {
+	m, err := assets.BuildManifest()
+	if err != nil {
+		t.Fatalf("BuildManifest: %v", err)
+	}
+	liveURL := m.URL("js/live.js")
+	if liveURL == "" {
+		t.Fatal("manifest missing js/live.js entry")
+	}
+	out := renderHome(t, newEngine(t))
+
+	// Element is present so the live-region WebComponent attaches
+	// once live.js registers it.
+	if !strings.Contains(out, `<live-region src="/events">`) {
+		t.Errorf("layout missing <live-region>\n---\n%s", out)
+	}
+	// Script is loaded with a fingerprinted URL (immutable cache).
+	if !strings.Contains(out, liveURL) {
+		t.Errorf("layout missing fingerprinted live.js script tag (%s)", liveURL)
+	}
+}
+
 func TestEngine_Render_UnknownPageErrors(t *testing.T) {
 	e := newEngine(t)
 	err := e.Render(&bytes.Buffer{}, "no-such-page", templates.Chrome{})

@@ -1,17 +1,22 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/bensyverson/jobs/internal/web/assets"
+	"github.com/bensyverson/jobs/internal/web/broadcast"
 	"github.com/bensyverson/jobs/internal/web/handlers"
 	"github.com/bensyverson/jobs/internal/web/templates"
 )
 
 // NewMux builds the dashboard's route table. The URL map mirrors the
-// "URL map" section of project/2026-04-21-web-dashboard-vision.md.
-func NewMux(cfg Config) http.Handler {
+// "URL map" section of project/2026-04-21-web-dashboard-vision.md. The
+// ctx governs the broadcaster's poll loop — canceling it stops the
+// background DB tail that powers /events.
+func NewMux(ctx context.Context, cfg Config) http.Handler {
 	manifest, err := assets.BuildManifest()
 	if err != nil {
 		// The asset tree is embedded; a failure here is a build-time
@@ -23,7 +28,17 @@ func NewMux(cfg Config) http.Handler {
 		panic(fmt.Errorf("web: build template engine: %w", err))
 	}
 
-	deps := handlers.Deps{DB: cfg.DB, Templates: engine}
+	var bc *broadcast.Broadcaster
+	if cfg.DB != nil {
+		bc = broadcast.New(cfg.DB, 0)
+		go func() {
+			if err := bc.Start(ctx); err != nil {
+				log.Printf("broadcaster: %v", err)
+			}
+		}()
+	}
+
+	deps := handlers.Deps{DB: cfg.DB, Templates: engine, Broadcaster: bc}
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", handlers.Home(deps))

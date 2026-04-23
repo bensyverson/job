@@ -106,6 +106,21 @@ func TestLog_EmptyDatabase_RendersPlaceholder(t *testing.T) {
 	mustContain(t, body, `No events match`)
 }
 
+func TestLog_LiveRegionSrc_ReflectsFilters(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "A task", nil, nil)
+
+	deps := newLogDeps(t, db)
+
+	// No filters → live-region points at /events.
+	body := fetchLog(t, deps, "")
+	mustContain(t, body, `<live-region src="/events">`)
+
+	// actor=alice → live-region scoped to the same actor.
+	body = fetchLog(t, deps, "actor=alice")
+	mustContain(t, body, `<live-region src="/events?actor=alice">`)
+}
+
 func TestLog_ChipsPreserveOtherFilters(t *testing.T) {
 	db := setupLogTestDB(t)
 	mustAdd(t, db, "alice", "A task", nil, nil)

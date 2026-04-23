@@ -1,6 +1,7 @@
 {{- /* Log view. Markup ports prototype/log.html with data bindings.
      No live tail yet — this is the SSR initial render only (task dARuR). */ -}}
 {{define "title"}}Log · Jobs{{end}}
+{{define "live-region-src"}}{{.EventsURL}}{{end}}
 {{define "content"}}
 <section class="c-filter-bar" aria-label="Log filters">
   <div class="c-filter-bar__group" role="group" aria-label="Event type">
@@ -38,7 +39,7 @@
 
 <div class="c-log" role="list">
   {{range .Events}}
-  <div class="c-log-row c-log-row--{{.EventType}}" role="listitem">
+  <div class="c-log-row c-log-row--{{.EventType}}" role="listitem" data-event-id="{{.EventID}}">
     <time class="c-log-row__time" datetime="{{.ISOTime}}">{{.RelTime}}</time>
     <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
       <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>

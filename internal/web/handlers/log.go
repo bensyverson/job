@@ -40,6 +40,11 @@ type LogChip struct {
 // this once on the server side keeps the template simple and pushes
 // id-formatting / time-formatting into Go where it belongs.
 type LogEventRow struct {
+	// EventID is the event's numeric id. Rendered on the row as
+	// data-event-id so the live-tail script can dedup incoming SSE
+	// frames against the server-rendered set (prevents double-render
+	// when the backfill window overlaps SSR output).
+	EventID   int64
 	ShortID   string
 	Actor     string
 	EventType string
@@ -61,6 +66,10 @@ type LogPageData struct {
 	Labels      []LogChip
 	TotalShown  int
 	TotalEvents int
+	// EventsURL is the SSE subscription URL — /events plus the same
+	// filter query params as the page itself, so the live tail only
+	// delivers events that match the current filter state.
+	EventsURL string
 }
 
 // knownEventTypes is the canonical ordered set of event types surfaced
@@ -103,6 +112,7 @@ func Log(deps Deps) http.Handler {
 			Labels:      buildLabelChips(filters, labels),
 			TotalShown:  len(events),
 			TotalEvents: totalEvents,
+			EventsURL:   eventsURL(filters),
 		}
 		renderPage(deps, w, "log", data)
 	})
@@ -197,6 +207,7 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, err
 	for i, e := range filtered {
 		ts := time.Unix(e.CreatedAt, 0)
 		rows[i] = LogEventRow{
+			EventID:   e.ID,
 			ShortID:   e.ShortID,
 			Actor:     e.Actor,
 			EventType: e.EventType,
@@ -302,6 +313,31 @@ func buildLabelChips(f LogFilters, labels []string) []LogChip {
 		})
 	}
 	return chips
+}
+
+// eventsURL builds /events?… reflecting the same filter state as the
+// page, so the SSE live-tail only emits events that match.
+func eventsURL(f LogFilters) string {
+	q := url.Values{}
+	if f.Actor != "" {
+		q.Set("actor", f.Actor)
+	}
+	if f.Task != "" {
+		q.Set("task", f.Task)
+	}
+	if f.Label != "" {
+		q.Set("label", f.Label)
+	}
+	if f.Type != "" {
+		q.Set("type", f.Type)
+	}
+	if !f.Since.IsZero() {
+		q.Set("since", f.Since.UTC().Format(time.RFC3339))
+	}
+	if len(q) == 0 {
+		return "/events"
+	}
+	return "/events?" + q.Encode()
 }
 
 // logURL rebuilds /log?… with one key set (or cleared if value=="")

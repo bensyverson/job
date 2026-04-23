@@ -22,26 +22,29 @@ type Config struct {
 }
 
 // New constructs an *http.Server with the dashboard routes mounted but
-// no listener attached. Use [Listen] to bind a port and [Serve] to run.
-func New(cfg Config) *http.Server {
+// no listener attached. The ctx governs background goroutines started
+// inside the mux (notably the broadcaster's poll loop); canceling it
+// stops them. Use [Listen] to bind a port and [Serve] to run.
+func New(ctx context.Context, cfg Config) *http.Server {
 	return &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           NewMux(cfg),
+		Handler:           NewMux(ctx, cfg),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }
 
-// Listen builds the server and binds a listener to cfg.Addr. Splitting
+// Listen builds the server and binds a listener to cfg.Addr. The ctx
+// governs background goroutines started inside the mux. Splitting
 // this out from [Serve] lets callers (notably `job serve`) report the
 // bound address — including the OS-assigned port when Addr ends in ":0"
 // — before entering the blocking serve loop, and surfaces bind errors
 // before any "server is up" messaging.
-func Listen(cfg Config) (*http.Server, net.Listener, error) {
+func Listen(ctx context.Context, cfg Config) (*http.Server, net.Listener, error) {
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return nil, nil, err
 	}
-	return New(cfg), ln, nil
+	return New(ctx, cfg), ln, nil
 }
 
 // Serve runs srv on ln until ctx is canceled, then performs a graceful
@@ -67,7 +70,7 @@ func Serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
 // Run is the [Listen] + [Serve] convenience for callers that don't
 // need the bound address.
 func Run(ctx context.Context, cfg Config) error {
-	srv, ln, err := Listen(cfg)
+	srv, ln, err := Listen(ctx, cfg)
 	if err != nil {
 		return err
 	}

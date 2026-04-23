@@ -332,6 +332,68 @@ job tail phaseRoot --until-close --timeout 5m --quiet
 job tail root --until-close=aM8eT --until-close=9aedB --timeout 10m
 ```
 
+## Web dashboard
+
+`job serve` runs a read-only HTTP dashboard for humans to watch what agents are doing. Local-first: binds `127.0.0.1:7823` by default, no auth, single `.jobs.db`, single user. Foreground process; Ctrl-C to stop. Use `--bind <host:port>` to change the address (binding all interfaces requires passing `--bind 0.0.0.0:N` explicitly).
+
+```sh
+job serve                                # loopback, default port
+job serve --bind 127.0.0.1:9090          # loopback, custom port
+job serve --db /path/to/.jobs.db         # custom database
+```
+
+Views:
+
+- `/` — Home (placeholder; signal cards land in a future task)
+- `/log` — event stream with filter chips (actor / event type / label)
+- `/tasks/<id>` — task detail: status, labels, parent, blocked-by, blocks, description, completion note, history
+
+### `/events` JSON + SSE API
+
+`/events` is a stable HTTP API for consumers outside the dashboard (terminal TUIs, Slack bots, editor integrations). It has two modes on the same URL:
+
+- **SSE stream** when the request includes `Accept: text/event-stream`. Replays a backfill since `?since=<id>`, then live-tails via the broadcaster. Each frame has `id:`, `event:`, and `data:` lines; `data:` is a JSON event object.
+- **JSON replay** otherwise. Returns a JSON array of events matching the query. No streaming.
+
+Query parameters (all optional, AND-composed):
+
+| Param   | Semantics                                                                 |
+|---------|---------------------------------------------------------------------------|
+| `since` | Only events with `id > since`. Integer (event id).                        |
+| `limit` | JSON mode only; caps the returned array. Default 500, no upper clamp.     |
+| `actor` | Match on `actor` field exactly.                                           |
+| `task`  | Match on the task's 5-char short id. Matches events on that task only.    |
+| `label` | Match if the event's task carries this label.                             |
+| `type`  | Match on `event_type` exactly (e.g. `created`, `claimed`, `done`).        |
+
+Response event shape (same in both modes):
+
+```json
+{
+  "id": 1234,
+  "task_id": "aM8eT",
+  "task_title": "Ship the migration",
+  "event_type": "claimed",
+  "actor": "alice",
+  "detail": "{...}",
+  "created_at": "2026-04-23T19:20:00Z"
+}
+```
+
+`task_title` is omitted when the event's task has been deleted.
+
+`detail` is an opaque JSON string whose schema varies per `event_type`; current keys include `note` (done/canceled), `text` (noted), and structural metadata for blocker/move events. Treat unknown keys as forward-compatible.
+
+Examples:
+
+```sh
+# Backfill and live-tail everything since event 500
+curl -N -H 'Accept: text/event-stream' 'http://127.0.0.1:7823/events?since=500'
+
+# One-shot JSON of the 50 most recent `done` events by alice
+curl 'http://127.0.0.1:7823/events?actor=alice&type=done&limit=50'
+```
+
 ## Task IDs
 
 IDs are 5-character, case-sensitive, alphanumeric strings (e.g. `aM8eT`). A mismatch is an error, not a fuzzy match.
@@ -343,6 +405,6 @@ Package layout:
 - `cmd/job/` — cobra CLI. `package main`, one file per verb (`add.go`, `done.go`, `claim.go`, …) plus `commands.go` for `newRootCmd` and shared CLI helpers.
 - `internal/job/` — domain. Runs (`RunAdd`, `RunDone`, `RunClaim`, …), queries, renderers, event logic. The CLI imports this as `job "github.com/bensyverson/jobs/internal/job"` and calls through `job.X`.
 - `internal/migrations/` — forward-only SQL migration files (`NNNN_*.sql`). Exposed as an `embed.FS` via `migrations.FS()`. The runner (`internal/job/migrations.go`) applies unapplied migrations inside their own transactions on every `OpenDB` — fresh databases get the baseline; existing databases catch up to head automatically. Idempotent. To add a schema change, drop a new file with the next numeric prefix (e.g. `0003_add_column.sql`) and restart the server; never edit an applied migration.
-- `internal/server/` — stubbed package reserved for the upcoming `job serve` HTTP view. See [DESIGN.md](DESIGN.md) and [project/2026-04-21-web-dashboard-vision.md](project/2026-04-21-web-dashboard-vision.md).
+- `internal/web/` — the read-only web dashboard. Subpackages: `server/` (http.Server lifecycle + mux), `handlers/` (one file per view; `Deps` bundle for DB, templates, broadcaster), `templates/` (embedded html/template engine — layout + partials + pages), `assets/` (embedded CSS/JS/fonts with a content-fingerprint manifest served under `/static/`), `render/` (shared helpers: actor/label color, relative time), `broadcast/` (1-Hz event poll + per-subscriber fanout). See [DESIGN.md](DESIGN.md) and [project/2026-04-21-web-dashboard-vision.md](project/2026-04-21-web-dashboard-vision.md).
 
 Test helpers `job.SetupTestDB`, `job.MustAdd`, `job.MustAddDesc`, `job.MustDone`, `job.MustClaim`, `job.MustGet`, and `job.TestActor` live in `internal/job/testhelpers.go` (non-test file) so both this package's own tests and the CLI integration tests in `cmd/job/` can share them.

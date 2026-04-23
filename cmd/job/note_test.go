@@ -1,7 +1,7 @@
 package main
 
 import (
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 	"strings"
 	"testing"
 )

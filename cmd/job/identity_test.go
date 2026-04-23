@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 )
 
 // initCLI drives a fresh `init` through the cobra layer in a temp dir.

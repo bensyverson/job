@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 )
 
 // `job identity` — group for managing the DB-level default writer identity

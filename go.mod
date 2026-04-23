@@ -1,4 +1,4 @@
-module github.com/bensyverson/job
+module github.com/bensyverson/jobs
 
 go 1.26.2
 

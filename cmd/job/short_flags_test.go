@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 )
 
 // 7MFho — Short-flag conventions audit. -m = free-text body across

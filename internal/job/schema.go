@@ -10,7 +10,7 @@ import (
 // "reserved; not yet persisted" note on labels) don't drift with Go-struct quirks.
 const schemaJSON = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/bensyverson/job/schema/import.json",
+  "$id": "https://github.com/bensyverson/jobs/schema/import.json",
   "title": "job import grammar",
   "description": "Root document for ` + "`" + `job import` + "`" + `. Parses the first fenced YAML block in a Markdown file whose top-level key is ` + "`" + `tasks` + "`" + `.",
   "type": "object",

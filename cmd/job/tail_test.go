@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 	"strings"
 	"sync"
 	"testing"

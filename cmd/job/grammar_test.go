@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 )
 
 // R3 — Consistent verb grammar + typo aliases with helper warnings.

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 	"github.com/spf13/cobra"
 )
 

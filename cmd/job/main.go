@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 	"os"
 )
 

@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 	"io"
 	"os"
 	"strings"
@@ -96,7 +96,7 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
-const rootLongHelp = `job — a hierarchical task tracker for the CLI, backed by an event store in SQLite.
+const rootLongHelp = `job — the CLI for Jobs, a hierarchical task tracker backed by an event store in SQLite.
 
 Tasks form a tree. Every write is attributed to a named identity and
 recorded as an event, so history is replayable and multiple agents can

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 )
 
 func TestClaim_Md_Shape_EchoesTitleAndDefaultTTL(t *testing.T) {

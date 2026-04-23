@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 	"os"
 	"strings"
 	"testing"

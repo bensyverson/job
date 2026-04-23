@@ -1,13 +1,13 @@
-# Job
+# Jobs
 
-Job is a command-line tool that keeps track of your tasks in a single file so you can organize work from the terminal.
+Jobs is a command-line tool that keeps track of your tasks in a single file so you can organize work from the terminal. The project is **Jobs**; the binary you invoke is `job` (singular, since each invocation acts on a job).
 
 [MIT License](LICENSE)
 
 ## Install
 
 ```sh
-go install github.com/bensyverson/job/cmd/job@latest
+go install github.com/bensyverson/jobs/cmd/job@latest
 ```
 
 This drops the `job` binary into `$HOME/go/bin` (or `$GOBIN` if set). Make sure that directory is on your `PATH`.
@@ -339,7 +339,7 @@ IDs are 5-character, case-sensitive, alphanumeric strings (e.g. `aM8eT`). A mism
 Package layout:
 
 - `cmd/job/` — cobra CLI. `package main`, one file per verb (`add.go`, `done.go`, `claim.go`, …) plus `commands.go` for `newRootCmd` and shared CLI helpers.
-- `internal/job/` — domain. Runs (`RunAdd`, `RunDone`, `RunClaim`, …), queries, renderers, event logic. The CLI imports this as `job "github.com/bensyverson/job/internal/job"` and calls through `job.X`.
+- `internal/job/` — domain. Runs (`RunAdd`, `RunDone`, `RunClaim`, …), queries, renderers, event logic. The CLI imports this as `job "github.com/bensyverson/jobs/internal/job"` and calls through `job.X`.
 - `internal/migrations/` — forward-only SQL migration files (`NNNN_*.sql`). Exposed as an `embed.FS` via `migrations.FS()`. The runner (`internal/job/migrations.go`) applies unapplied migrations inside their own transactions on every `OpenDB` — fresh databases get the baseline; existing databases catch up to head automatically. Idempotent. To add a schema change, drop a new file with the next numeric prefix (e.g. `0003_add_column.sql`) and restart the server; never edit an applied migration.
 - `internal/server/` — stubbed package reserved for the upcoming `job serve` HTTP view. See [DESIGN.md](DESIGN.md) and [project/2026-04-21-web-dashboard-vision.md](project/2026-04-21-web-dashboard-vision.md).
 

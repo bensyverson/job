@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	job "github.com/bensyverson/job/internal/job"
+	job "github.com/bensyverson/jobs/internal/job"
 )
 
 // R2 — `job summary <id>` reads the target and prints rollup. No --as

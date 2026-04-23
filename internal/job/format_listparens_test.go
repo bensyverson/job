@@ -77,7 +77,7 @@ func TestRenderMarkdownList_DoneTask_NoLabelsNoLabels_EmptyParens(t *testing.T) 
 	if strings.Contains(got, "()") {
 		t.Errorf("empty parens left on done task line:\n%s", got)
 	}
-	for _, line := range strings.Split(strings.TrimRight(got, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(got, "\n"), "\n") {
 		if strings.Contains(line, id) {
 			if strings.Contains(line, "(") {
 				t.Errorf("done task with no decorations should have no parens: %q", line)

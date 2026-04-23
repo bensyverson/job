@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bensyverson/job/internal/migrations"
+	"github.com/bensyverson/jobs/internal/migrations"
 	_ "modernc.org/sqlite"
 )
 

@@ -37,11 +37,17 @@ type PlanNode struct {
 	// Depth is 0 for root tasks, 1 for their direct children, etc. The
 	// template uses it to pick heading weight (root → lg, depth 1 → md).
 	Depth int
-	// HasChildren is a template convenience so the disclosure button and
-	// subtree wrapper render only where they have a purpose.
+	// HasChildren controls whether the following .c-plan-subtree wrapper
+	// renders — a template convenience, not a collapsibility signal.
 	HasChildren bool
+	// Collapsible is true when the row has anything to hide: children,
+	// a description, or (future) a rollup metric. Drives the disclosure
+	// button's presence and the data-collapsed attribute. A bare leaf
+	// row carries neither and stays chevron-free.
+	Collapsible bool
 	// Collapsed is true when the node's subtree is fully done/canceled;
-	// CSS hides the following subtree. Later phases attach a JS toggle.
+	// CSS hides the description, blocked-by, notes, and subtree on
+	// collapsed rows. Later phases attach a JS toggle.
 	Collapsed bool
 }
 
@@ -164,6 +170,8 @@ func buildPlanNodes(
 		}
 
 		ts := time.Unix(n.Task.UpdatedAt, 0)
+		hasChildren := len(children) > 0
+		hasDesc := strings.TrimSpace(n.Task.Description) != ""
 		out = append(out, &PlanNode{
 			ShortID:       n.Task.ShortID,
 			URL:           "/tasks/" + n.Task.ShortID,
@@ -178,7 +186,8 @@ func buildPlanNodes(
 			Notes:         markNotesStatus(notes[n.Task.ID], displayStatus),
 			Children:      children,
 			Depth:         depth,
-			HasChildren:   len(children) > 0,
+			HasChildren:   hasChildren,
+			Collapsible:   hasChildren || hasDesc,
 			Collapsed:     !subtreeHasOpen,
 		})
 	}

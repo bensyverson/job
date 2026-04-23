@@ -37,6 +37,22 @@ func newPlanDeps(t *testing.T, db *sql.DB) handlers.Deps {
 	return handlers.Deps{DB: db, Templates: e}
 }
 
+// mustAddWithDesc mirrors mustAdd but lets the test set a description.
+// Separate helper so the existing log-test mustAdd signature stays
+// narrow — most tests don't care about descriptions.
+func mustAddWithDesc(t *testing.T, db *sql.DB, actor, title, desc string, parent *string, labels []string) string {
+	t.Helper()
+	parentID := ""
+	if parent != nil {
+		parentID = *parent
+	}
+	res, err := job.RunAdd(db, parentID, title, desc, "", labels, actor)
+	if err != nil {
+		t.Fatalf("RunAdd(%q, %q): %v", actor, title, err)
+	}
+	return res.ShortID
+}
+
 func fetchPlan(t *testing.T, deps handlers.Deps, query string) string {
 	t.Helper()
 	url := "/plan"
@@ -202,6 +218,52 @@ func TestPlan_NotesRenderInCollapsibleDetails(t *testing.T) {
 	}
 	mustContain(t, body, `progress check-in text`)
 	mustContain(t, body, `c-plan-note`)
+}
+
+func TestPlan_LeafWithDescriptionIsCollapsible(t *testing.T) {
+	db := setupPlanTestDB(t)
+	// A leaf task with a description is "technically still collapsible"
+	// because the description is part of what collapses. A done leaf
+	// should start collapsed so the page stays skimmable.
+	active := mustAddWithDesc(t, db, "claude", "Active leaf", "An open description.", nil, nil)
+	done := mustAddWithDesc(t, db, "claude", "Done leaf", "A closed description.", nil, nil)
+	if _, _, err := job.RunDone(db, []string{done}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	// Active leaf with a description: collapsible but expanded.
+	mustContain(t, body, `data-plan-task="`+active+`" data-collapsed="false"`)
+	// Done leaf with a description: collapsible and collapsed.
+	mustContain(t, body, `data-plan-task="`+done+`" data-collapsed="true"`)
+	// Description still rendered in the DOM — CSS hides it when collapsed.
+	mustContain(t, body, `A closed description.`)
+}
+
+func TestPlan_RowWithoutDescriptionOrChildrenHasNoDisclosure(t *testing.T) {
+	db := setupPlanTestDB(t)
+	id := mustAdd(t, db, "claude", "Bare leaf", nil, nil)
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	// A row with nothing to hide has no data-collapsed attribute and
+	// no disclosure button.
+	if strings.Contains(body, `data-plan-task="`+id+`" data-collapsed=`) {
+		t.Errorf("bare leaf %q should not carry data-collapsed (nothing to hide)", id)
+	}
+	// Isolate the single row's markup and confirm no disclosure button.
+	idx := strings.Index(body, `data-plan-task="`+id+`"`)
+	if idx == -1 {
+		t.Fatalf("row %q not rendered", id)
+	}
+	rowEnd := strings.Index(body[idx:], "</div>")
+	fragment := body[idx : idx+rowEnd]
+	if strings.Contains(fragment, `c-plan-row__disclosure`) {
+		t.Errorf("bare leaf %q should not render a disclosure button, got:\n%s", id, fragment)
+	}
 }
 
 func TestPlan_EmptyDatabaseRendersQuietPlaceholder(t *testing.T) {

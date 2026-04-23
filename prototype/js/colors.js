@@ -111,6 +111,14 @@
     disclosures.forEach(function (btn) {
       const row = btn.closest(".c-plan-row");
       if (!row) return;
+      // A done or canceled branch already communicates completion via
+      // its status pill; a "100% of 100% done" bar would be redundant
+      // chrome at best and misleading at worst on a canceled subtree.
+      if (
+        row.classList.contains("c-plan-row--status-done") ||
+        row.classList.contains("c-plan-row--status-canceled")
+      )
+        return;
       // Skip if a progress bar is already present.
       if (row.querySelector(":scope > .c-plan-row__progress")) return;
 
@@ -125,6 +133,13 @@
 
       const result = countLeaves(subtree);
       if (result.total === 0) return;
+      // Hide the bar when the row has no momentum to show: nothing done
+      // yet and no active work underneath (rollup already bubbles up
+      // claimed descendants into c-plan-row--status-active). "0 of 15"
+      // on a dormant todo is noise; once one task completes, or the
+      // subtree picks up a claim, the bar returns.
+      const isActive = row.classList.contains("c-plan-row--status-active");
+      if (result.done === 0 && !isActive) return;
       const pct = (result.done / result.total) * 100;
 
       // Readable summary under the description, in the title column.

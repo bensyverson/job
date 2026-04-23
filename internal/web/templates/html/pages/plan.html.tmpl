@@ -33,8 +33,8 @@
      are children — leaf rows keep a placeholder <span> so the CSS
      grid's disclosure column stays aligned with sibling branches. */ -}}
 {{define "plan-node"}}
-<div class="c-plan-row c-plan-row--status-{{.DisplayStatus}}{{if .Collapsed}} c-plan-row--collapsed{{end}}" data-plan-task="{{.ShortID}}"{{if .HasChildren}} data-collapsed="{{if .Collapsed}}true{{else}}false{{end}}"{{end}}>
-  {{if .HasChildren -}}
+<div class="c-plan-row c-plan-row--status-{{.DisplayStatus}}{{if .Collapsed}} c-plan-row--collapsed{{end}}" data-plan-task="{{.ShortID}}"{{if .Collapsible}} data-collapsed="{{if .Collapsed}}true{{else}}false{{end}}"{{end}}>
+  {{if .Collapsible -}}
   <button class="c-plan-row__disclosure" aria-expanded="{{if .Collapsed}}false{{else}}true{{end}}" aria-label="{{if .Collapsed}}Expand{{else}}Collapse{{end}}">
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>

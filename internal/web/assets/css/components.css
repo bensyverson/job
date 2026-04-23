@@ -1899,9 +1899,15 @@ a.c-graph-node__bug:focus-visible {
 .c-plan-notes-group > summary::marker { content: ""; }
 .c-plan-notes-group > summary:hover { color: var(--color-on-surface); }
 
-/* A fully-done subtree is collapsed by default: the immediately-
-   following .c-plan-subtree is hidden so the page stays focused on
-   what's still open. Future p4-collapse JS toggles data-collapsed. */
+/* A collapsed row folds away everything "below the title line" —
+   description, blocked-by sub-row, any rollup progress bar, notes
+   group, and the child subtree. A bare leaf with nothing to hide
+   never renders data-collapsed in the first place. Future p4-
+   collapse JS toggles the attribute. */
+.c-plan-row[data-collapsed="true"] .c-plan-row__title > :not(.c-plan-row__title-line),
+.c-plan-row[data-collapsed="true"] .c-plan-row__blocked-by,
+.c-plan-row[data-collapsed="true"] .c-plan-row__progress,
+.c-plan-row[data-collapsed="true"] + .c-plan-notes-group,
 .c-plan-row[data-collapsed="true"] + .c-plan-subtree,
 .c-plan-row[data-collapsed="true"] + .c-plan-notes-group + .c-plan-subtree {
   display: none;

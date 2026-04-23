@@ -1908,12 +1908,17 @@ a.c-graph-node__bug:focus-visible {
    collapse JS toggles the attribute. */
 .c-plan-row[data-collapsed="true"] .c-plan-row__title > :not(.c-plan-row__title-line),
 .c-plan-row[data-collapsed="true"] .c-plan-row__blocked-by,
-.c-plan-row[data-collapsed="true"] .c-plan-row__progress,
 .c-plan-row[data-collapsed="true"] + .c-plan-notes-group,
 .c-plan-row[data-collapsed="true"] + .c-plan-subtree,
 .c-plan-row[data-collapsed="true"] + .c-plan-notes-group + .c-plan-subtree {
   display: none;
 }
+
+/* .c-plan-row__progress — the ambient bar at the top edge of a branch
+   row — is intentionally NOT hidden on collapse. The bar is most
+   useful when the subtree is folded: "this branch is 50% done"
+   summarizes what you just hid. The companion .c-plan-row__progress-
+   text still collapses, since it would break the one-line summary. */
 
 /* Quiet empty state shown when the task table is completely empty.
    One muted line — no card, no illustration, per DESIGN.md tone. */

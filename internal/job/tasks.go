@@ -37,7 +37,7 @@ type AddResult struct {
 	AutoReleasedByActor string
 }
 
-func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string) (*AddResult, error) {
+func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string, labels []string, actor string) (*AddResult, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return nil, err
@@ -126,6 +126,22 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 		return nil, err
 	}
 
+	if len(labels) > 0 {
+		normalized, err := normalizeLabelNames(labels)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, err := insertLabels(tx, taskID, normalized); err != nil {
+			return nil, err
+		}
+		if err := recordEvent(tx, taskID, "labeled", actor, map[string]any{
+			"names":    normalized,
+			"existing": []string{},
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	result := &AddResult{ShortID: shortID}
 
 	// Leaf-frontier auto-release: adding an open child to a claimed parent
@@ -157,10 +173,10 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID, actor string)
 }
 
 func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
-	return RunListFiltered(db, parentShortID, actor, showAll, "", "")
+	return RunListFiltered(db, parentShortID, actor, showAll, "", "", "")
 }
 
-func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labelName string, claimedByFilter string) ([]*TaskNode, error) {
+func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labelName, claimedByFilter, grepPattern string) ([]*TaskNode, error) {
 	if err := expireStaleClaims(db, actor); err != nil {
 		return nil, err
 	}
@@ -197,7 +213,24 @@ func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labe
 		}
 		filtered = filterByLabel(filtered, labeledIDs)
 	}
+	if grepPattern != "" {
+		filtered = filterByGrep(filtered, grepPattern)
+	}
 	return filtered, nil
+}
+
+// filterByGrep retains only nodes whose title contains pattern (case-insensitive).
+// Children are also checked: a node is kept if it or any descendant matches.
+func filterByGrep(nodes []*TaskNode, pattern string) []*TaskNode {
+	lower := strings.ToLower(pattern)
+	var out []*TaskNode
+	for _, n := range nodes {
+		filteredChildren := filterByGrep(n.Children, pattern)
+		if strings.Contains(strings.ToLower(n.Task.Title), lower) || len(filteredChildren) > 0 {
+			out = append(out, &TaskNode{Task: n.Task, Children: filteredChildren})
+		}
+	}
+	return out
 }
 
 // taskIDsWithLabel returns the set of task ids carrying the given label.

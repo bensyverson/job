@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	job "github.com/bensyverson/jobs/internal/job"
 	"os"
 	"path/filepath"
@@ -74,12 +75,12 @@ func TestWriteRequiresAs(t *testing.T) {
 
 	// Seed: create a task using direct API, so we have a target id
 	db := openTestDB(t, dbFile)
-	idRes, err := job.RunAdd(db, "", "Seed", "", "", "seeder")
+	idRes, err := job.RunAdd(db, "", "Seed", "", "", nil, "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	id := idRes.ShortID
-	otherRes, err := job.RunAdd(db, "", "Other", "", "", "seeder")
+	otherRes, err := job.RunAdd(db, "", "Other", "", "", nil, "seeder")
 	if err != nil {
 		t.Fatalf("seed 2: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestWriteRequiresAs(t *testing.T) {
 func TestReadDoesNotRequireAs(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	res, err := job.RunAdd(db, "", "Seed", "", "", "seeder")
+	res, err := job.RunAdd(db, "", "Seed", "", "", nil, "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestReadDoesNotRequireAs(t *testing.T) {
 func TestClaimNextRequiresAsEvenWhenReadPartSucceeds(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	if _, err := job.RunAdd(db, "", "Seed", "", "", "seeder"); err != nil {
+	if _, err := job.RunAdd(db, "", "Seed", "", "", nil, "seeder"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	db.Close()
@@ -296,7 +297,7 @@ func TestReleaseWrongHolder(t *testing.T) {
 func TestNoEnvFallback(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	res, err := job.RunAdd(db, "", "Seed", "", "", "seeder")
+	res, err := job.RunAdd(db, "", "Seed", "", "", nil, "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -423,6 +424,195 @@ func TestImport_CLI_DryRunJSON(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("dry-run wrote %d tasks", n)
+	}
+}
+
+func TestImport_DryRun_ShowsBlockedByEdges_MD(t *testing.T) {
+	dbFile := setupCLI(t)
+	planPath := filepath.Join(filepath.Dir(dbFile), "plan.md")
+	body := "```yaml\ntasks:\n  - title: A\n  - title: B\n    blockedBy: [A]\n  - title: C\n    blockedBy: [B]\n```\n"
+	if err := os.WriteFile(planPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "import", planPath, "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if !strings.Contains(stdout, "blocked on <new-1>") {
+		t.Errorf("expected B row to mention 'blocked on <new-1>':\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "blocked on <new-2>") {
+		t.Errorf("expected C row to mention 'blocked on <new-2>':\n%s", stdout)
+	}
+}
+
+func TestImport_DryRun_ExistingDBTask_BlockedByRealID(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	existingID := job.MustAdd(t, db, "", "Existing")
+	db.Close()
+
+	planPath := filepath.Join(filepath.Dir(dbFile), "plan.md")
+	body := fmt.Sprintf("```yaml\ntasks:\n  - title: New task\n    blockedBy: [%s]\n```\n", existingID)
+	if err := os.WriteFile(planPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "import", planPath, "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if !strings.Contains(stdout, "blocked on "+existingID) {
+		t.Errorf("expected real ID %q in output:\n%s", existingID, stdout)
+	}
+}
+
+func TestImport_DryRun_BlockedByEdges_JSON(t *testing.T) {
+	dbFile := setupCLI(t)
+	planPath := filepath.Join(filepath.Dir(dbFile), "plan.md")
+	body := "```yaml\ntasks:\n  - title: A\n  - title: B\n    blockedBy: [A]\n```\n"
+	if err := os.WriteFile(planPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "import", planPath, "--dry-run", "--format=json")
+	if err != nil {
+		t.Fatalf("dry-run json: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	tasks, _ := got["tasks"].([]any)
+	if len(tasks) != 2 {
+		t.Fatalf("tasks len: %d", len(tasks))
+	}
+	bTask := tasks[1].(map[string]any)
+	blockedBy, _ := bTask["blocked_by"].([]any)
+	if len(blockedBy) != 1 || blockedBy[0].(string) != "<new-1>" {
+		t.Errorf("B.blocked_by: got %v, want [<new-1>]", blockedBy)
+	}
+}
+
+func TestList_Grep_SubstringMatch(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "Fix the login bug")
+	job.MustAdd(t, db, "", "Add user settings page")
+	job.MustAdd(t, db, "", "login redirect issue")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--grep", "login")
+	if err != nil {
+		t.Fatalf("list --grep: %v", err)
+	}
+	if !strings.Contains(stdout, "Fix the login bug") {
+		t.Errorf("expected 'Fix the login bug' in output:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "login redirect issue") {
+		t.Errorf("expected 'login redirect issue' in output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Add user settings page") {
+		t.Errorf("'Add user settings page' should not appear:\n%s", stdout)
+	}
+}
+
+func TestList_Grep_CaseInsensitive(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "Fix the LOGIN bug")
+	job.MustAdd(t, db, "", "Unrelated task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--grep", "login")
+	if err != nil {
+		t.Fatalf("list --grep: %v", err)
+	}
+	if !strings.Contains(stdout, "Fix the LOGIN bug") {
+		t.Errorf("expected case-insensitive match:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Unrelated task") {
+		t.Errorf("'Unrelated task' should not appear:\n%s", stdout)
+	}
+}
+
+func TestList_Grep_NoMatch_Empty(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "Some task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--grep", "zzznomatch")
+	if err != nil {
+		t.Fatalf("list --grep: %v", err)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("expected empty output, got:\n%s", stdout)
+	}
+}
+
+func TestList_Grep_ComposesWithLabel(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "login bug fix")
+	b := job.MustAdd(t, db, "", "login unrelated")
+	job.MustAdd(t, db, "", "other bug")
+	if _, err := job.RunLabelAdd(db, a, []string{"bug"}, job.TestActor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := job.RunLabelAdd(db, b, []string{"unrelated"}, job.TestActor); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--grep", "login", "--label", "bug")
+	if err != nil {
+		t.Fatalf("list --grep --label: %v", err)
+	}
+	if !strings.Contains(stdout, "login bug fix") {
+		t.Errorf("expected 'login bug fix' in output:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "login unrelated") {
+		t.Errorf("'login unrelated' should not appear:\n%s", stdout)
+	}
+}
+
+func TestList_Grep_JSON(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "Find me task")
+	job.MustAdd(t, db, "", "Other task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--grep", "find me", "--format=json")
+	if err != nil {
+		t.Fatalf("list --grep --format=json: %v", err)
+	}
+	var rows []any
+	if err := json.Unmarshal([]byte(stdout), &rows); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	if len(rows) != 1 {
+		t.Errorf("expected 1 result, got %d:\n%s", len(rows), stdout)
+	}
+}
+
+func TestImport_YAMLParseError_Surfaced(t *testing.T) {
+	dbFile := setupCLI(t)
+	planPath := filepath.Join(filepath.Dir(dbFile), "plan.md")
+	// Unquoted colon-in-value causes yaml.v3 "mapping values not allowed" error.
+	body := "```yaml\ntasks:\n  - title: Surface Next: in status output\n```\n"
+	if err := os.WriteFile(planPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "import", planPath)
+	if err == nil {
+		t.Fatal("expected YAML parse error")
+	}
+	if !strings.Contains(err.Error(), "mapping values are not allowed") {
+		t.Errorf("error should name the YAML parse failure, got: %v", err)
 	}
 }
 
@@ -923,7 +1113,7 @@ func TestReadSideEffectsUseEmptyActor(t *testing.T) {
 
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	res, err := job.RunAdd(db, "", "Seed", "", "", "seeder")
+	res, err := job.RunAdd(db, "", "Seed", "", "", nil, "seeder")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1115,5 +1305,57 @@ func TestList_Mine_ComposesWithLabel(t *testing.T) {
 	}
 	if strings.Contains(stdout, b) {
 		t.Errorf("should not show unlabeled task %s:\n%s", b, stdout)
+	}
+}
+
+func TestList_AllFlag_ShowsDone(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Finished task")
+	job.MustClaim(t, db, id, "1h")
+	job.MustDone(t, db, id)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "--all")
+	if err != nil {
+		t.Fatalf("list --all: %v", err)
+	}
+	if !strings.Contains(stdout, "Finished task") {
+		t.Errorf("expected done task in --all output:\n%s", stdout)
+	}
+}
+
+func TestList_AllFlag_ComposesWithParent(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	child := job.MustAdd(t, db, parent, "Done child")
+	job.MustClaim(t, db, child, "1h")
+	job.MustDone(t, db, child)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", parent, "--all")
+	if err != nil {
+		t.Fatalf("list <parent> --all: %v", err)
+	}
+	if !strings.Contains(stdout, "Done child") {
+		t.Errorf("expected done child in scoped --all output:\n%s", stdout)
+	}
+}
+
+func TestList_AllPositional_StillWorks(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Done task")
+	job.MustClaim(t, db, id, "1h")
+	job.MustDone(t, db, id)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "list", "all")
+	if err != nil {
+		t.Fatalf("list all (positional): %v", err)
+	}
+	if !strings.Contains(stdout, "Done task") {
+		t.Errorf("positional 'all' should still work:\n%s", stdout)
 	}
 }

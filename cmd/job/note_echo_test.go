@@ -9,7 +9,11 @@ import (
 
 // R4 — Echo note body on success.
 //
-// Format: `Noted: <id> · <N chars> · "<preview>"`
+// Format (two-line, aligned with done/cancel):
+//
+//	Noted: <id> "<Title>"
+//	  note: <N chars> · "<preview>"
+//
 //   - <N chars> is the raw character count of the stored body.
 //   - <preview> is the first 60 chars (word-boundary-snapped), with
 //     newlines/tabs collapsed to spaces. Elided with `…` only when the
@@ -18,14 +22,16 @@ import (
 func TestNote_EchoesShortBody(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
-	id := job.MustAdd(t, db, "", "Task")
+	id := job.MustAdd(t, db, "", "My Task")
 	db.Close()
 
 	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "note", id, "-m", "hello world")
 	if err != nil {
 		t.Fatalf("note: %v", err)
 	}
-	want := "Noted: " + id + " · 11 chars · \"hello world\"\n"
+	wantLine1 := "Noted: " + id + " \"My Task\"\n"
+	wantLine2 := "  note: 11 chars · \"hello world\"\n"
+	want := wantLine1 + wantLine2
 	if stdout != want {
 		t.Errorf("stdout:\n  got:  %q\n  want: %q", stdout, want)
 	}
@@ -42,14 +48,26 @@ func TestNote_EchoesAtSixtyCharsExactly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("note: %v", err)
 	}
-	if !strings.Contains(stdout, "60 chars") {
-		t.Errorf("expected '60 chars':\n%s", stdout)
+	if !strings.HasPrefix(stdout, "Noted: "+id) {
+		t.Errorf("expected 'Noted: <id>' header:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "…") {
-		t.Errorf("60-char body should not be elided:\n%s", stdout)
+	noteLine := ""
+	for l := range strings.SplitSeq(stdout, "\n") {
+		if strings.HasPrefix(l, "  note:") {
+			noteLine = l
+		}
 	}
-	if !strings.Contains(stdout, "\""+body+"\"") {
-		t.Errorf("expected full body in quotes:\n%s", stdout)
+	if noteLine == "" {
+		t.Fatalf("missing '  note:' sub-line:\n%s", stdout)
+	}
+	if !strings.Contains(noteLine, "60 chars") {
+		t.Errorf("expected '60 chars' in note sub-line:\n%s", noteLine)
+	}
+	if strings.Contains(noteLine, "…") {
+		t.Errorf("60-char body should not be elided:\n%s", noteLine)
+	}
+	if !strings.Contains(noteLine, "\""+body+"\"") {
+		t.Errorf("expected full body in quotes in note sub-line:\n%s", noteLine)
 	}
 }
 
@@ -164,15 +182,18 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// extractQuotedPreview pulls the substring between the first `"` and the
-// last `"` on the Noted: line. Centralized so tests don't all reinvent
-// quote-parsing.
-func extractQuotedPreview(t *testing.T, line string) string {
+// extractQuotedPreview pulls the quoted preview from the "  note: N chars · "…"" sub-line.
+func extractQuotedPreview(t *testing.T, output string) string {
 	t.Helper()
-	start := strings.IndexByte(line, '"')
-	end := strings.LastIndexByte(line, '"')
-	if start < 0 || end <= start {
-		t.Fatalf("could not find quoted preview in: %q", line)
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(line, "  note:") {
+			start := strings.IndexByte(line, '"')
+			end := strings.LastIndexByte(line, '"')
+			if start >= 0 && end > start {
+				return line[start+1 : end]
+			}
+		}
 	}
-	return line[start+1 : end]
+	t.Fatalf("could not find '  note:' sub-line in: %q", output)
+	return ""
 }

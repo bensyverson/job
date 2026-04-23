@@ -13,9 +13,10 @@ import (
 )
 
 type ImportedTask struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Parent string `json:"parent"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Parent    string   `json:"parent"`
+	BlockedBy []string `json:"blocked_by,omitempty"`
 }
 
 type ImportResult struct {
@@ -102,15 +103,19 @@ var fenceOpenRe = regexp.MustCompile(`^(` + "```" + `|~~~)([a-zA-Z0-9_+-]*)\s*$`
 
 // extractTasksYAML scans raw Markdown text for fenced code blocks and returns the
 // body of the first block whose YAML decode yields a top-level map with a `tasks` key.
-func extractTasksYAML(content string) (string, bool) {
+// If no block matches and at least one candidate fence produced a YAML parse error,
+// that error is returned so callers can surface it instead of a generic message.
+func extractTasksYAML(content string) (string, bool, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	scanner.Buffer(make([]byte, 64*1024), 1<<20)
 
 	var (
-		inFence  bool
-		fence    string
-		curBody  strings.Builder
-		curLang  string
+		inFence bool
+		fence   string
+		curBody strings.Builder
+		curLang string
+		lastErr error
+
 		tryBlock = func(lang, body string) (string, bool) {
 			// Only consider yaml/yml/unlabeled fences as candidates.
 			if lang != "" && lang != "yaml" && lang != "yml" {
@@ -118,6 +123,7 @@ func extractTasksYAML(content string) (string, bool) {
 			}
 			var probe map[string]any
 			if err := yaml.Unmarshal([]byte(body), &probe); err != nil {
+				lastErr = err
 				return "", false
 			}
 			if _, ok := probe["tasks"]; !ok {
@@ -143,7 +149,7 @@ func extractTasksYAML(content string) (string, bool) {
 		if trimmed == fence {
 			body := curBody.String()
 			if got, ok := tryBlock(curLang, body); ok {
-				return got, true
+				return got, true, nil
 			}
 			inFence = false
 			fence = ""
@@ -154,7 +160,7 @@ func extractTasksYAML(content string) (string, bool) {
 		curBody.WriteString(line)
 		curBody.WriteByte('\n')
 	}
-	return "", false
+	return "", false, lastErr
 }
 
 func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor string) (*ImportResult, error) {
@@ -163,8 +169,11 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 		return nil, err
 	}
 
-	yamlBody, ok := extractTasksYAML(string(data))
+	yamlBody, ok, parseErr := extractTasksYAML(string(data))
 	if !ok {
+		if parseErr != nil {
+			return nil, fmt.Errorf("YAML parse error in %s: %w", filePath, parseErr)
+		}
 		return nil, fmt.Errorf("no YAML `tasks:` block found in %s", filePath)
 	}
 
@@ -267,10 +276,19 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 			} else if pp := findParsedParent(tree, p); pp != nil {
 				parent = fmt.Sprintf("<new-%d>", pp.flatIndex+1)
 			}
+			var blockedBy []string
+			for _, r := range blockedByResolved[p] {
+				if r.local != nil {
+					blockedBy = append(blockedBy, fmt.Sprintf("<new-%d>", r.local.flatIndex+1))
+				} else if r.dbTask != nil {
+					blockedBy = append(blockedBy, r.dbTask.ShortID)
+				}
+			}
 			result.Tasks = append(result.Tasks, ImportedTask{
-				ID:     fmt.Sprintf("<new-%d>", i+1),
-				Title:  p.Title,
-				Parent: parent,
+				ID:        fmt.Sprintf("<new-%d>", i+1),
+				Title:     p.Title,
+				Parent:    parent,
+				BlockedBy: blockedBy,
 			})
 		}
 		return result, nil

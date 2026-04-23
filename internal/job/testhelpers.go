@@ -25,7 +25,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 
 func MustAdd(t *testing.T, db *sql.DB, parentShortID, title string) string {
 	t.Helper()
-	res, err := RunAdd(db, parentShortID, title, "", "", TestActor)
+	res, err := RunAdd(db, parentShortID, title, "", "", nil, TestActor)
 	if err != nil {
 		t.Fatalf("add task %q: %v", title, err)
 	}
@@ -34,7 +34,7 @@ func MustAdd(t *testing.T, db *sql.DB, parentShortID, title string) string {
 
 func MustAddDesc(t *testing.T, db *sql.DB, parentShortID, title, desc string) string {
 	t.Helper()
-	res, err := RunAdd(db, parentShortID, title, desc, "", TestActor)
+	res, err := RunAdd(db, parentShortID, title, desc, "", nil, TestActor)
 	if err != nil {
 		t.Fatalf("add task %q: %v", title, err)
 	}

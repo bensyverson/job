@@ -64,7 +64,7 @@ func TestUnwrapProse_TrailingNewlinesTrimmed(t *testing.T) {
 func TestRenderInfoMarkdown_UnwrapsDescription(t *testing.T) {
 	db := SetupTestDB(t)
 	id, err := RunAdd(db, "", "Task",
-		"line one of description\nline two\nline three with words", "", TestActor)
+		"line one of description\nline two\nline three with words", "", nil, TestActor)
 	if err != nil {
 		t.Fatalf("RunAdd: %v", err)
 	}

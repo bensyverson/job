@@ -11,17 +11,20 @@ func newListCmd() *cobra.Command {
 	var labelFilter string
 	var mine bool
 	var claimedBy string
+	var grepPattern string
+	var allFlag bool
 	cmd := &cobra.Command{
-		Use:     "list [parent] [all]",
+		Use:     "list [parent]",
 		Aliases: []string{"ls"},
 		Short:   "List tasks",
 		Long: `List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks.
 
-Use 'all' to include done, claimed, and blocked tasks.
+Use --all to include done, claimed, and blocked tasks.
 Use --label <name> to filter to tasks carrying that label.
 Use --mine to show only tasks claimed by the caller (via --as or default identity).
 Use --claimed-by <name> to show tasks claimed by a specific agent.
-Composes: 'list --mine --label p0', 'list --claimed-by alice all'.
+Use --grep <pattern> for case-insensitive title search.
+Composes: 'list --mine --label p0', 'list --claimed-by alice --all'.
 Use --format=json for machine-readable output.`,
 		Args: cobra.MaximumNArgs(2),
 		PreRun: func(cmd *cobra.Command, args []string) {
@@ -37,7 +40,7 @@ Use --format=json for machine-readable output.`,
 			defer db.Close()
 
 			var parentShortID string
-			showAll := false
+			showAll := allFlag
 			for _, arg := range args {
 				if arg == "all" {
 					showAll = true
@@ -64,7 +67,7 @@ Use --format=json for machine-readable output.`,
 				claimedByFilter = claimedBy
 			}
 
-			nodes, err := job.RunListFiltered(db, parentShortID, "", showAll, labelFilter, claimedByFilter)
+			nodes, err := job.RunListFiltered(db, parentShortID, "", showAll, labelFilter, claimedByFilter, grepPattern)
 			if err != nil {
 				return err
 			}
@@ -83,6 +86,9 @@ Use --format=json for machine-readable output.`,
 				fmt.Fprintln(cmd.OutOrStdout())
 			} else {
 				if len(nodes) == 0 {
+					if grepPattern != "" {
+						return nil
+					}
 					if claimedByFilter != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "No tasks claimed by %s.\n", claimedByFilter)
 						return nil
@@ -111,5 +117,7 @@ Use --format=json for machine-readable output.`,
 	cmd.Flags().StringVarP(&labelFilter, "label", "l", "", "filter to tasks carrying this label")
 	cmd.Flags().BoolVar(&mine, "mine", false, "show only tasks claimed by the caller")
 	cmd.Flags().StringVar(&claimedBy, "claimed-by", "", "show only tasks claimed by this agent")
+	cmd.Flags().StringVar(&grepPattern, "grep", "", "case-insensitive substring filter on title")
+	cmd.Flags().BoolVar(&allFlag, "all", false, "include done, claimed, and blocked tasks")
 	return cmd
 }

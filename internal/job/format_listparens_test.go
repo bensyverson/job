@@ -16,7 +16,7 @@ func TestRenderMarkdownList_DoneTask_NoNoteBody(t *testing.T) {
 		t.Fatalf("done: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", "", true, "", "")
+	nodes, err := RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestRenderMarkdownList_DoneTask_PreservesLabels(t *testing.T) {
 		t.Fatalf("label add: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", "", true, "", "")
+	nodes, err := RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestRenderMarkdownList_DoneTask_NoLabelsNoLabels_EmptyParens(t *testing.T) 
 		t.Fatalf("done: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", "", true, "", "")
+	nodes, err := RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestRenderMarkdownList_CanceledTask_PreservesMarker(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", "", true, "", "")
+	nodes, err := RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestRenderMarkdownList_ClaimedTask_PreservesClaimedBy(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", "", true, "", "")
+	nodes, err := RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

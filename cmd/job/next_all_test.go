@@ -486,7 +486,7 @@ func TestAdd_ChildToClaimedParent_AutoReleasesClaim(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	if _, err := job.RunAdd(db, parent, "Child", "", "", "alice"); err != nil {
+	if _, err := job.RunAdd(db, parent, "Child", "", "", nil, "alice"); err != nil {
 		t.Fatalf("add child: %v", err)
 	}
 
@@ -529,7 +529,7 @@ func TestAdd_ChildToUnclaimedParent_NoRelease(t *testing.T) {
 	db := job.SetupTestDB(t)
 	parent := job.MustAdd(t, db, "", "Parent")
 
-	if _, err := job.RunAdd(db, parent, "Child", "", "", "alice"); err != nil {
+	if _, err := job.RunAdd(db, parent, "Child", "", "", nil, "alice"); err != nil {
 		t.Fatalf("add child: %v", err)
 	}
 
@@ -552,12 +552,12 @@ func TestAdd_SecondChild_IsIdempotent(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	if _, err := job.RunAdd(db, parent, "First", "", "", "alice"); err != nil {
+	if _, err := job.RunAdd(db, parent, "First", "", "", nil, "alice"); err != nil {
 		t.Fatalf("add first: %v", err)
 	}
 	// Parent now auto-released. Adding a second child should not error or
 	// try to re-release.
-	if _, err := job.RunAdd(db, parent, "Second", "", "", "alice"); err != nil {
+	if _, err := job.RunAdd(db, parent, "Second", "", "", nil, "alice"); err != nil {
 		t.Fatalf("add second: %v", err)
 	}
 
@@ -583,7 +583,7 @@ func TestAdd_EventLog_RecordsAutoReleaseDetail(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	if _, err := job.RunAdd(db, parent, "Child", "", "", "alice"); err != nil {
+	if _, err := job.RunAdd(db, parent, "Child", "", "", nil, "alice"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 

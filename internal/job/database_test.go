@@ -70,7 +70,7 @@ func TestResolveDBPath_NoAncestor_FallsBackToCwd(t *testing.T) {
 
 func TestRunAdd_RootTask(t *testing.T) {
 	db := SetupTestDB(t)
-	res, err := RunAdd(db, "", "Root task", "", "", TestActor)
+	res, err := RunAdd(db, "", "Root task", "", "", nil, TestActor)
 	if err != nil {
 		t.Fatalf("RunAdd: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestRunAdd_RootTask(t *testing.T) {
 func TestRunAdd_Subtask(t *testing.T) {
 	db := SetupTestDB(t)
 	pid := MustAdd(t, db, "", "Parent")
-	cres, err := RunAdd(db, pid, "Child", "", "", TestActor)
+	cres, err := RunAdd(db, pid, "Child", "", "", nil, TestActor)
 	if err != nil {
 		t.Fatalf("RunAdd: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestRunAdd_Before(t *testing.T) {
 	db := SetupTestDB(t)
 	id1 := MustAdd(t, db, "", "First")
 	id2 := MustAdd(t, db, "", "Last")
-	id3res, err := RunAdd(db, "", "Middle", "", id2, TestActor)
+	id3res, err := RunAdd(db, "", "Middle", "", id2, nil, TestActor)
 	if err != nil {
 		t.Fatalf("RunAdd before: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestRunAdd_Before(t *testing.T) {
 
 func TestRunAdd_ParentNotFound(t *testing.T) {
 	db := SetupTestDB(t)
-	_, err := RunAdd(db, "noExs", "Task", "", "", TestActor)
+	_, err := RunAdd(db, "noExs", "Task", "", "", nil, TestActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent parent")
 	}
@@ -172,7 +172,7 @@ func TestRunAdd_ParentNotFound(t *testing.T) {
 
 func TestRunAdd_BeforeNotFound(t *testing.T) {
 	db := SetupTestDB(t)
-	_, err := RunAdd(db, "", "Task", "", "noExs", TestActor)
+	_, err := RunAdd(db, "", "Task", "", "noExs", nil, TestActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent before target")
 	}
@@ -182,9 +182,72 @@ func TestRunAdd_BeforeNotSibling(t *testing.T) {
 	db := SetupTestDB(t)
 	pid := MustAdd(t, db, "", "Parent")
 	otherID := MustAdd(t, db, "", "Other root")
-	_, err := RunAdd(db, pid, "Child", "", otherID, TestActor)
+	_, err := RunAdd(db, pid, "Child", "", otherID, nil, TestActor)
 	if err == nil {
 		t.Fatal("expected error when before target is not a sibling")
+	}
+}
+
+func TestRunAdd_WithSingleLabel(t *testing.T) {
+	db := SetupTestDB(t)
+	res, err := RunAdd(db, "", "Labeled Task", "", "", []string{"foo"}, TestActor)
+	if err != nil {
+		t.Fatalf("RunAdd: %v", err)
+	}
+	task := MustGet(t, db, res.ShortID)
+	labels, err := GetLabels(db, task.ID)
+	if err != nil {
+		t.Fatalf("GetLabels: %v", err)
+	}
+	if len(labels) != 1 || labels[0] != "foo" {
+		t.Errorf("labels: got %v, want [foo]", labels)
+	}
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE task_id = ? AND event_type = 'labeled'", task.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("labeled events: got %d, want 1", n)
+	}
+}
+
+func TestRunAdd_WithMultipleLabels(t *testing.T) {
+	db := SetupTestDB(t)
+	res, err := RunAdd(db, "", "Multi-labeled", "", "", []string{"a", "b", "c"}, TestActor)
+	if err != nil {
+		t.Fatalf("RunAdd: %v", err)
+	}
+	task := MustGet(t, db, res.ShortID)
+	labels, _ := GetLabels(db, task.ID)
+	if len(labels) != 3 {
+		t.Errorf("labels: got %v, want 3", labels)
+	}
+}
+
+func TestRunAdd_LabelWithComma_Errors(t *testing.T) {
+	db := SetupTestDB(t)
+	_, err := RunAdd(db, "", "Task", "", "", []string{"foo,bar"}, TestActor)
+	if err == nil {
+		t.Fatal("expected error for label with comma")
+	}
+	if !strings.Contains(err.Error(), "may not contain ','") {
+		t.Errorf("err: %v", err)
+	}
+}
+
+func TestRunAdd_WithoutLabels_NoLabeledEvent(t *testing.T) {
+	db := SetupTestDB(t)
+	res, err := RunAdd(db, "", "Unlabeled", "", "", nil, TestActor)
+	if err != nil {
+		t.Fatalf("RunAdd: %v", err)
+	}
+	task := MustGet(t, db, res.ShortID)
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE task_id = ? AND event_type = 'labeled'", task.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("labeled events: got %d, want 0", n)
 	}
 }
 
@@ -2044,7 +2107,7 @@ func TestRunList_ClaimedByFilter_ShowsOnlyActorsClaims(t *testing.T) {
 		t.Fatalf("claim b: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice")
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2060,7 +2123,7 @@ func TestRunList_ClaimedByFilter_NoMatch(t *testing.T) {
 	db := SetupTestDB(t)
 	MustAdd(t, db, "", "Unclaimed")
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "nobody")
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "nobody", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2078,7 +2141,7 @@ func TestRunList_ClaimedByFilter_PreservesParentContext(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice")
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2110,7 +2173,7 @@ func TestRunList_ClaimedByFilter_WithLabelFilter(t *testing.T) {
 		t.Fatalf("claim b: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "p0", "alice")
+	nodes, err := RunListFiltered(db, "", TestActor, false, "p0", "alice", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2133,7 +2196,7 @@ func TestRunList_ClaimedByFilter_ExcludesExpiredClaims(t *testing.T) {
 	}
 
 	CurrentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice")
+	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2152,7 +2215,7 @@ func TestRunList_ClaimedByFilter_ExcludesDoneTasks(t *testing.T) {
 		t.Fatalf("done: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice")
+	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2169,7 +2232,7 @@ func TestRunList_ClaimedByFilter_ComposesWithAll(t *testing.T) {
 		t.Fatalf("claim a: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice")
+	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice", "")
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}

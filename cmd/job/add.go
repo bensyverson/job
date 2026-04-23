@@ -9,6 +9,7 @@ import (
 func newAddCmd() *cobra.Command {
 	var desc string
 	var before string
+	var labels []string
 	cmd := &cobra.Command{
 		Use:   "add [parent] <title>",
 		Short: "Add a new task",
@@ -34,7 +35,7 @@ func newAddCmd() *cobra.Command {
 				title = args[0]
 			}
 
-			res, err := job.RunAdd(db, parentShortID, title, desc, before, actor)
+			res, err := job.RunAdd(db, parentShortID, title, desc, before, labels, actor)
 			if err != nil {
 				return err
 			}
@@ -48,5 +49,6 @@ func newAddCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&desc, "desc", "d", "", "task description")
 	cmd.Flags().StringVarP(&before, "before", "b", "", "insert before this sibling task ID")
+	cmd.Flags().StringArrayVarP(&labels, "label", "l", nil, "label to attach (repeatable)")
 	return cmd
 }

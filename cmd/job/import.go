@@ -5,6 +5,7 @@ import (
 	"fmt"
 	job "github.com/bensyverson/jobs/internal/job"
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 func newImportCmd() *cobra.Command {
@@ -44,7 +45,12 @@ func newImportCmd() *cobra.Command {
 			}
 
 			for _, t := range res.Tasks {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", t.ID, t.Title)
+				if len(t.BlockedBy) > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s  %s (blocked on %s)\n",
+						t.ID, t.Title, strings.Join(t.BlockedBy, ", "))
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", t.ID, t.Title)
+				}
 			}
 			return nil
 		},

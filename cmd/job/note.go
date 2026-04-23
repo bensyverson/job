@@ -70,11 +70,19 @@ func newNoteCmd() *cobra.Command {
 				resultRaw = json.RawMessage(resultStr)
 			}
 
+			task, err := job.GetTaskByShortID(db, shortID)
+			if err != nil {
+				return err
+			}
+			if task == nil {
+				return fmt.Errorf("task %q not found", shortID)
+			}
+			title := task.Title
 			if err := job.RunNote(db, shortID, text, resultRaw, actor); err != nil {
 				return err
 			}
 			count, preview := job.NotePreview(text)
-			fmt.Fprintf(cmd.OutOrStdout(), "Noted: %s · %d chars · %q\n", shortID, count, preview)
+			fmt.Fprintf(cmd.OutOrStdout(), "Noted: %s %q\n  note: %d chars · %q\n", shortID, title, count, preview)
 			return nil
 		},
 	}

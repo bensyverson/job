@@ -52,7 +52,7 @@ func TestAdd_DashD_RoutesToDesc(t *testing.T) {
 		t.Fatalf("add -d: %v", err)
 	}
 	// fetch the only task and check description
-	tasks, err := job.RunListFiltered(db, "", "", true, "", "")
+	tasks, err := job.RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestImport_DashN_RoutesToDryRun(t *testing.T) {
 	}
 	db := openTestDB(t, dbFile)
 	defer db.Close()
-	tasks, err := job.RunListFiltered(db, "", "", true, "", "")
+	tasks, err := job.RunListFiltered(db, "", "", true, "", "", "")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

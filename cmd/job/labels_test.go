@@ -8,6 +8,77 @@ import (
 	"testing"
 )
 
+// --- job add -l/--label ---
+
+func TestAddCLI_WithOneLabel(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "add", "-l", "foo", "My Task")
+	if err != nil {
+		t.Fatalf("add with label: %v", err)
+	}
+	id := strings.TrimSpace(stdout)
+	if len(id) != 5 {
+		t.Fatalf("expected 5-char ID in output, got %q", stdout)
+	}
+
+	db2 := openTestDB(t, dbFile)
+	defer db2.Close()
+	task := job.MustGet(t, db2, id)
+	labels, err := job.GetLabels(db2, task.ID)
+	if err != nil {
+		t.Fatalf("GetLabels: %v", err)
+	}
+	if len(labels) != 1 || labels[0] != "foo" {
+		t.Errorf("labels: got %v, want [foo]", labels)
+	}
+}
+
+func TestAddCLI_WithMultipleLabels(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "add", "-l", "foo", "-l", "bar", "-l", "baz", "Multi")
+	if err != nil {
+		t.Fatalf("add with labels: %v", err)
+	}
+	id := strings.TrimSpace(stdout)
+
+	db2 := openTestDB(t, dbFile)
+	defer db2.Close()
+	task := job.MustGet(t, db2, id)
+	labels, _ := job.GetLabels(db2, task.ID)
+	if len(labels) != 3 {
+		t.Errorf("labels: got %v, want 3", labels)
+	}
+}
+
+func TestAddCLI_LabelWithComma_Errors(t *testing.T) {
+	dbFile := setupCLI(t)
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "add", "-l", "foo,bar", "Task")
+	if err == nil {
+		t.Fatal("expected error for label with comma")
+	}
+	if !strings.Contains(err.Error(), "may not contain ','") {
+		t.Errorf("err should mention comma rule: %v", err)
+	}
+}
+
+func TestAddCLI_NoLabel_NoRegression(t *testing.T) {
+	dbFile := setupCLI(t)
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "add", "Plain Task")
+	if err != nil {
+		t.Fatalf("add without label: %v", err)
+	}
+	id := strings.TrimSpace(stdout)
+	if len(id) != 5 {
+		t.Fatalf("expected 5-char ID, got %q", id)
+	}
+}
+
 // --- Runner tests ---
 
 func TestLabelAdd_Single_Happy(t *testing.T) {
@@ -333,7 +404,7 @@ func TestList_LabelFilter_MatchesOnly(t *testing.T) {
 	if _, err := job.RunLabelAdd(db, a, []string{"foo"}, job.TestActor); err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "foo", "")
+	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "foo", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +416,7 @@ func TestList_LabelFilter_MatchesOnly(t *testing.T) {
 func TestList_LabelFilter_NoMatch_Empty(t *testing.T) {
 	db := job.SetupTestDB(t)
 	job.MustAdd(t, db, "", "A")
-	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "nope", "")
+	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "nope", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

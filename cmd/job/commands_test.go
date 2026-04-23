@@ -844,8 +844,10 @@ func TestHelp_MentionsCurrentVerbs(t *testing.T) {
 
 	// Verbs that are registered AND should appear in help.
 	// `remove` was retired in Phase 5 in favor of `cancel`.
+	// `unblock` is a hidden deprecated alias for `block remove`; it still
+	// works but is intentionally absent from help output.
 	wantVerbs := []string{
-		"init", "schema", "add", "import", "edit", "block", "unblock",
+		"init", "schema", "add", "import", "edit", "block",
 		"move", "claim", "claim-next", "release", "note", "done", "reopen",
 		"cancel", "list", "info", "log", "status", "next", "tail",
 		"heartbeat", "label",

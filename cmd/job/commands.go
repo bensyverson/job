@@ -96,16 +96,25 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
-const rootLongHelp = `job — a lightweight task tracker for multi-phase, multi-agent work.
+const rootLongHelp = `job — a hierarchical task tracker for the CLI, backed by an event store in SQLite.
 
-Use job for any task with more than a few steps, work that benefits from
-a durable audit trail, or work that may involve multiple agents
-coordinating. For ad-hoc one-off todos, built-in session notes are fine;
-use job when persistence, attribution, or coordination matter.
+Tasks form a tree. Every write is attributed to a named identity and
+recorded as an event, so history is replayable and multiple agents can
+coordinate through durable short-TTL claims.
 
 QUICKSTART
 
-  1. Plan in a Markdown doc with a YAML code fence:
+  1. Initialize:  job init
+     Records your $USER as the default identity; subsequent writes
+     need no --as.
+
+  2. Open with status:  job status
+     Session preamble (identity + counts) and a per-root rollup of the
+     top-level forest, ending with a "Next:" hint at the first claimable
+     leaf. Run at the start of every session — it's both the identity
+     check and the landscape briefing.
+
+  3. Plan (for multi-task work):
 
        ` + "```" + `yaml
        tasks:
@@ -115,42 +124,41 @@ QUICKSTART
              - title: Second subtask
        ` + "```" + `
 
-  2. Import:  job import plan.md
-     (Use --dry-run first if you want to preview without creating.)
+     Then:  job import plan.md      (preview first with --dry-run)
 
-  3. Work:    job --as claude claim-next
-              job --as claude done <id> "notes on what was done"
+  4. Work:     job claim-next              (grab the next available leaf)
+               job note <id> -m "progress" (auto-extends the claim)
+               job done <id> -m "notes"
 
-  4. Observe: job list         (actionable tasks)
-              job status       (one-line summary)
-              job log <id>     (history of a task and its subtree)
+  5. Observe:  job list                    (actionable tasks)
+               job log <id>                (event history)
 
 IDENTITY
 
-  Writes require --as <name>. Reads (list, info, log, status, next,
-  tail, schema) work without it.
+  Every write is attributed. Resolution order, first match wins:
+    1. --as <name> on the call
+    2. A DB-level default identity (set at init — defaults to $USER)
+    3. Otherwise: error
 
-    job --as alice claim 87TNz     # explicit identity per write
+    job identity set <name>         change the default (itself requires --as)
+    job init --strict               opt out of defaults; require --as on every write
 
-  For "set once, forget" ergonomics, shell-alias it:
-    alias job='job --as alice'     # in .zshrc, .bashrc, etc.
-
-  Identity is free-form. Pick a stable name per agent or user; if two
-  agents use the same name they share attribution, so choose unique
-  names in multi-agent workflows.
+  Identity is free-form. Two agents using the same name share
+  attribution; pick a stable unique name per agent in multi-agent
+  workflows.
 
 VERBS (grouped by role)
 
-  Setup:        init, schema
+  Setup:        init, identity, schema
   Planning:     add, import, edit, block, move, label
   Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
   Observation:  list, info, log, status, next, next all, tail
 
-  Grammar — pick the shape from the verb category:
+  Grammar:
     Multi-operation verbs (label, block):  job <verb> <add|remove> <args>
     Single-operation verbs:                job <verb> <id> [--flags]
 
-  Short flags follow these conventions:
+  Short flags:
     -m  free-text body (note -m, done -m, cancel -m)
     -d  --desc       -t  --title (edit) / --timeout (tail)
     -l  --label      -p  --parent (import)
@@ -161,23 +169,31 @@ VERBS (grouped by role)
 
   For full options on any verb:  job <verb> --help
 
+CLAIMS
+
+  Claims default to 30m. Any write to a claimed task by its holder
+  (note, edit, label add/remove) auto-extends the TTL, so routine
+  progress-logging keeps the claim fresh without explicit heartbeats.
+  Reach for ` + "`heartbeat`" + ` only during a genuine pause ("thinking, not
+  writing"). Extensions never shorten a longer explicit duration.
+
+  After a successful ` + "`done`" + `, the ack ends with a "Next:" hint naming
+  the suggested next claimable leaf. The walk prefers forward siblings,
+  then earlier siblings, walking up the closed task's ancestor chain
+  before crossing root trees — follow the hint to stay inside the
+  current plan.
+
 OUTPUT
 
-  Dense Markdown by default, token-efficient for both human and LLM
-  readers. --format=json on any read verb for deterministic parsers
-  or subscriber agents on live streams.
-
-  List output uses GFM checkboxes so you can paste ` + "`job list all`" + `
-  straight into a PR or issue and have it render as a task list.
+  Markdown by default; ` + "`--format=json`" + ` on any read verb for
+  machine-parsable output.
 
 ORCHESTRATION
 
-  For multi-agent workflows, see:
+  For multi-agent workflows:
     job next all                       # full claimable frontier
     job tail <id> --format=json        # streaming JSON-lines event stream
     job tail --until-close <id>        # block until <id> closes
-    job --as <name> cancel <id>        # non-destructively stop work
-    job --as <name> heartbeat <id>     # refresh a long-running claim
 `
 
 func openDBFromCmd() (*sql.DB, error) {

@@ -7,12 +7,14 @@ import (
 )
 
 // newUnblockCmd is the legacy alias for `block remove`. It still works
-// but emits a one-line stderr deprecation notice on every invocation.
+// but emits a one-line stderr deprecation notice on every invocation,
+// and is hidden from help output so agents discover the canonical form.
 func newUnblockCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unblock <blocked> from <blocker>",
-		Short: "Remove a blocking relationship (alias for `block remove`)",
-		Long:  "Manually remove a blocking relationship. Deprecated alias for `job block remove <blocked> by <blocker>` — emits a one-line notice on every call. Blocking relationships are also auto-removed when the blocker task is marked done.",
+		Use:    "unblock <blocked> from <blocker>",
+		Short:  "Remove a blocking relationship (alias for `block remove`)",
+		Long:   "Manually remove a blocking relationship. Deprecated alias for `job block remove <blocked> by <blocker>` — emits a one-line notice on every call. Blocking relationships are also auto-removed when the blocker task is marked done.",
+		Hidden: true,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 3 || args[1] != "from" {
 				return fmt.Errorf("usage: job unblock <blocked> from <blocker>")

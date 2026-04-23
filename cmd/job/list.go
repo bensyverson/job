@@ -12,8 +12,9 @@ func newListCmd() *cobra.Command {
 	var mine bool
 	var claimedBy string
 	cmd := &cobra.Command{
-		Use:   "list [parent] [all]",
-		Short: "List tasks",
+		Use:     "list [parent] [all]",
+		Aliases: []string{"ls"},
+		Short:   "List tasks",
 		Long: `List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks.
 
 Use 'all' to include done, claimed, and blocked tasks.
@@ -23,6 +24,11 @@ Use --claimed-by <name> to show tasks claimed by a specific agent.
 Composes: 'list --mine --label p0', 'list --claimed-by alice all'.
 Use --format=json for machine-readable output.`,
 		Args: cobra.MaximumNArgs(2),
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if cmd.CalledAs() == "ls" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "note: `job ls` is an alias for `job list`; prefer the canonical form.")
+			}
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {

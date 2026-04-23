@@ -2,38 +2,26 @@ package main
 
 import (
 	"fmt"
-	job "github.com/bensyverson/job/internal/job"
+
 	"github.com/spf13/cobra"
 )
 
+// newUnblockCmd is the legacy alias for `block remove`. It still works
+// but emits a one-line stderr deprecation notice on every invocation.
 func newUnblockCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "unblock <blocked> from <blocker>",
-		Short: "Remove a blocking relationship",
-		Long:  "Manually remove a blocking relationship. Blocking relationships are also auto-removed when the blocker task is marked done.",
-		Args:  cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			db, err := openDBFromCmd()
-			if err != nil {
-				return err
-			}
-			defer db.Close()
-
-			actor, err := requireAs(db)
-			if err != nil {
-				return err
-			}
-
-			if args[1] != "from" {
+		Short: "Remove a blocking relationship (alias for `block remove`)",
+		Long:  "Manually remove a blocking relationship. Deprecated alias for `job block remove <blocked> by <blocker>` — emits a one-line notice on every call. Blocking relationships are also auto-removed when the blocker task is marked done.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 3 || args[1] != "from" {
 				return fmt.Errorf("usage: job unblock <blocked> from <blocker>")
 			}
-
-			if err := job.RunUnblock(db, args[0], args[2], actor); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Unblocked: %s (was blocked by %s)\n", args[0], args[2])
 			return nil
 		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintln(cmd.ErrOrStderr(), "note: `job unblock <blocked> from <blocker>` is an alias for `job block remove <blocked> by <blocker>`; prefer the canonical form.")
+			return runBlockRemove(cmd, args[0], []string{args[2]})
+		},
 	}
-	return cmd
 }

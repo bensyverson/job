@@ -7,6 +7,18 @@ import (
 )
 
 func RunBlock(db *sql.DB, blockedShortID, blockerShortID, actor string) error {
+	return RunBlockMany(db, blockedShortID, []string{blockerShortID}, actor)
+}
+
+// RunBlockMany applies N block edges atomically. Duplicates in the input
+// collapse to a single edge (and a single event). Cycle detection runs
+// against the combined post-state. On any failure the transaction rolls
+// back and nothing persists.
+func RunBlockMany(db *sql.DB, blockedShortID string, blockerShortIDs []string, actor string) error {
+	if len(blockerShortIDs) == 0 {
+		return fmt.Errorf("no blockers provided")
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -21,38 +33,65 @@ func RunBlock(db *sql.DB, blockedShortID, blockerShortID, actor string) error {
 		return fmt.Errorf("task %q not found", blockedShortID)
 	}
 
-	blocker, err := GetTaskByShortID(tx, blockerShortID)
-	if err != nil {
-		return err
-	}
-	if blocker == nil {
-		return fmt.Errorf("task %q not found", blockerShortID)
-	}
-
-	if blocked.ID == blocker.ID {
-		return fmt.Errorf("a task cannot block itself")
-	}
-
-	circular, err := wouldCreateCycle(tx, blocked.ID, blocker.ID)
-	if err != nil {
-		return err
-	}
-	if circular {
-		return fmt.Errorf("cannot block %s by %s: would create a circular dependency", blockedShortID, blockerShortID)
+	// Dedup while preserving caller order so events land in a predictable
+	// sequence and the per-edge ack lines match the order the user typed.
+	seen := make(map[string]bool, len(blockerShortIDs))
+	uniqueShortIDs := make([]string, 0, len(blockerShortIDs))
+	for _, id := range blockerShortIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		uniqueShortIDs = append(uniqueShortIDs, id)
 	}
 
-	if _, err := tx.Exec(
-		"INSERT OR IGNORE INTO blocks (blocker_id, blocked_id) VALUES (?, ?)",
-		blocker.ID, blocked.ID,
-	); err != nil {
-		return err
+	// Resolve all blockers up-front so a missing one fails fast before any
+	// inserts. Track them in input order alongside their short IDs for
+	// per-edge cycle reporting and event recording.
+	type blockerEntry struct {
+		shortID string
+		id      int64
+	}
+	blockers := make([]blockerEntry, 0, len(uniqueShortIDs))
+	for _, sid := range uniqueShortIDs {
+		t, err := GetTaskByShortID(tx, sid)
+		if err != nil {
+			return err
+		}
+		if t == nil {
+			return fmt.Errorf("task %q not found", sid)
+		}
+		if t.ID == blocked.ID {
+			return fmt.Errorf("a task cannot block itself")
+		}
+		blockers = append(blockers, blockerEntry{shortID: sid, id: t.ID})
 	}
 
-	if err := recordEvent(tx, blocked.ID, "blocked", actor, map[string]any{
-		"blocked_id": blockedShortID,
-		"blocker_id": blockerShortID,
-	}); err != nil {
-		return err
+	// Cycle check has to consider edges added earlier in this same call,
+	// not just the persisted graph. Each iteration adds the edge to the
+	// transaction first; a later cycle check sees it.
+	for _, b := range blockers {
+		circular, err := wouldCreateCycle(tx, blocked.ID, b.id)
+		if err != nil {
+			return err
+		}
+		if circular {
+			return fmt.Errorf("cannot block %s by %s: would create a circular dependency", blockedShortID, b.shortID)
+		}
+
+		if _, err := tx.Exec(
+			"INSERT OR IGNORE INTO blocks (blocker_id, blocked_id) VALUES (?, ?)",
+			b.id, blocked.ID,
+		); err != nil {
+			return err
+		}
+
+		if err := recordEvent(tx, blocked.ID, "blocked", actor, map[string]any{
+			"blocked_id": blockedShortID,
+			"blocker_id": b.shortID,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()
@@ -95,6 +134,16 @@ func walkBlockerChain(tx dbtx, startID, targetID int64, visited map[int64]bool) 
 }
 
 func RunUnblock(db *sql.DB, blockedShortID, blockerShortID, actor string) error {
+	return RunUnblockMany(db, blockedShortID, []string{blockerShortID}, actor)
+}
+
+// RunUnblockMany removes N block edges atomically. If any named edge does
+// not exist, the whole transaction rolls back.
+func RunUnblockMany(db *sql.DB, blockedShortID string, blockerShortIDs []string, actor string) error {
+	if len(blockerShortIDs) == 0 {
+		return fmt.Errorf("no blockers provided")
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -109,32 +158,40 @@ func RunUnblock(db *sql.DB, blockedShortID, blockerShortID, actor string) error 
 		return fmt.Errorf("task %q not found", blockedShortID)
 	}
 
-	blocker, err := GetTaskByShortID(tx, blockerShortID)
-	if err != nil {
-		return err
-	}
-	if blocker == nil {
-		return fmt.Errorf("task %q not found", blockerShortID)
-	}
+	seen := make(map[string]bool, len(blockerShortIDs))
+	for _, sid := range blockerShortIDs {
+		if seen[sid] {
+			continue
+		}
+		seen[sid] = true
 
-	result, err := tx.Exec(
-		"DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?",
-		blocker.ID, blocked.ID,
-	)
-	if err != nil {
-		return err
-	}
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		return fmt.Errorf("%s is not blocked by %s", blockedShortID, blockerShortID)
-	}
+		blocker, err := GetTaskByShortID(tx, sid)
+		if err != nil {
+			return err
+		}
+		if blocker == nil {
+			return fmt.Errorf("task %q not found", sid)
+		}
 
-	if err := recordEvent(tx, blocked.ID, "unblocked", actor, map[string]any{
-		"blocked_id": blockedShortID,
-		"blocker_id": blockerShortID,
-		"reason":     "manual",
-	}); err != nil {
-		return err
+		result, err := tx.Exec(
+			"DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?",
+			blocker.ID, blocked.ID,
+		)
+		if err != nil {
+			return err
+		}
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			return fmt.Errorf("%s is not blocked by %s", blockedShortID, sid)
+		}
+
+		if err := recordEvent(tx, blocked.ID, "unblocked", actor, map[string]any{
+			"blocked_id": blockedShortID,
+			"blocker_id": sid,
+			"reason":     "manual",
+		}); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

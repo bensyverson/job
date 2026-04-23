@@ -142,9 +142,13 @@ IDENTITY
 VERBS (grouped by role)
 
   Setup:        init, schema
-  Planning:     add, import, edit, block, unblock, move, label
+  Planning:     add, import, edit, block, move, label
   Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
   Observation:  list, info, log, status, next, next all, tail
+
+  Grammar — pick the shape from the verb category:
+    Multi-operation verbs (label, block):  job <verb> <add|remove> <args>
+    Single-operation verbs:                job <verb> <id> [--flags]
 
   For full options on any verb:  job <verb> --help
 

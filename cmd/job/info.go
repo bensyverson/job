@@ -9,10 +9,16 @@ import (
 func newInfoCmd() *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
-		Use:   "info <id>",
-		Short: "Show full details of a task",
-		Long:  "Show ID, title, description, status, claim info, blockers, children summary, and creation time. Use --format=json for machine-readable output.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "info <id>",
+		Aliases: []string{"show"},
+		Short:   "Show full details of a task",
+		Long:    "Show ID, title, description, status, claim info, blockers, children summary, and creation time. Use --format=json for machine-readable output.",
+		Args:    cobra.ExactArgs(1),
+		PreRun: func(cmd *cobra.Command, args []string) {
+			if cmd.CalledAs() == "show" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "note: `job show` is an alias for `job info`; prefer the canonical form.")
+			}
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {

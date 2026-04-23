@@ -8,14 +8,16 @@ import (
 )
 
 type StatusSummary struct {
-	Open         int
-	Claimed      int
-	Done         int
-	Canceled     int
-	ClaimedByYou int
-	HasActor     bool
-	LastActivity int64
-	Total        int
+	Open            int
+	Claimed         int
+	Done            int
+	Canceled        int
+	ClaimedByYou    int
+	HasActor        bool
+	LastActivity    int64
+	Total           int
+	IdentityDefault string
+	Strict          bool
 }
 
 func RunStatus(db *sql.DB, actor string) (*StatusSummary, error) {
@@ -69,6 +71,18 @@ func RunStatus(db *sql.DB, actor string) (*StatusSummary, error) {
 		s.LastActivity = lastActivity.Int64
 	}
 
+	defaultID, err := GetDefaultIdentity(db)
+	if err != nil {
+		return nil, err
+	}
+	s.IdentityDefault = defaultID
+
+	strict, err := IsStrict(db)
+	if err != nil {
+		return nil, err
+	}
+	s.Strict = strict
+
 	return s, nil
 }
 
@@ -96,4 +110,14 @@ func RenderStatus(w io.Writer, s *StatusSummary) {
 		line += fmt.Sprintf(" (last activity: %s ago)", FormatDuration(ago))
 	}
 	fmt.Fprintln(w, line)
+
+	if s.IdentityDefault != "" {
+		strictWord := "off"
+		if s.Strict {
+			strictWord = "on"
+		}
+		fmt.Fprintf(w, "Identity: %s (default) · strict mode %s\n", s.IdentityDefault, strictWord)
+	} else {
+		fmt.Fprintln(w, "Identity: none set · --as required on writes")
+	}
 }

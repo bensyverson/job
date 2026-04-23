@@ -149,9 +149,11 @@ func TestStatus_EmptyDB(t *testing.T) {
 	var buf bytes.Buffer
 	job.RenderStatus(&buf, s)
 	got := buf.String()
-	want := "0 open, 0 done\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
+	if !strings.Contains(got, "0 open, 0 done") {
+		t.Errorf("missing counts on empty DB:\n%s", got)
+	}
+	if !strings.Contains(got, "Identity: none set") {
+		t.Errorf("missing identity line on empty DB:\n%s", got)
 	}
 }
 
@@ -306,6 +308,119 @@ func TestList_ShowsCanceled_InListAll(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "(canceled)") {
 		t.Errorf("expected '(canceled)' marker:\n%s", stdout)
+	}
+}
+
+func TestStatus_Identity_DefaultSet(t *testing.T) {
+	db := job.SetupTestDB(t)
+	if err := job.SetDefaultIdentity(db, "claude"); err != nil {
+		t.Fatalf("SetDefaultIdentity: %v", err)
+	}
+
+	s, err := job.RunStatus(db, "")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	if s.IdentityDefault != "claude" {
+		t.Errorf("IdentityDefault: got %q, want %q", s.IdentityDefault, "claude")
+	}
+	if s.Strict {
+		t.Errorf("Strict: got true, want false")
+	}
+
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	got := buf.String()
+	if !strings.Contains(got, "Identity: claude (default) · strict mode off") {
+		t.Errorf("render missing default-set line:\n%s", got)
+	}
+}
+
+func TestStatus_Identity_NoDefault(t *testing.T) {
+	db := job.SetupTestDB(t)
+
+	s, err := job.RunStatus(db, "")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	if s.IdentityDefault != "" {
+		t.Errorf("IdentityDefault: got %q, want empty", s.IdentityDefault)
+	}
+
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	got := buf.String()
+	if !strings.Contains(got, "Identity: none set · --as required on writes") {
+		t.Errorf("render missing no-default line:\n%s", got)
+	}
+}
+
+func TestStatus_Identity_DefaultSet_StrictOn(t *testing.T) {
+	db := job.SetupTestDB(t)
+	if err := job.SetDefaultIdentity(db, "claude"); err != nil {
+		t.Fatalf("SetDefaultIdentity: %v", err)
+	}
+	if err := job.SetStrict(db, true); err != nil {
+		t.Fatalf("SetStrict: %v", err)
+	}
+
+	s, err := job.RunStatus(db, "")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	if !s.Strict {
+		t.Errorf("Strict: got false, want true")
+	}
+
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	got := buf.String()
+	if !strings.Contains(got, "Identity: claude (default) · strict mode on") {
+		t.Errorf("render missing strict-on line:\n%s", got)
+	}
+}
+
+func TestStatus_Identity_NoDefault_StrictOn(t *testing.T) {
+	db := job.SetupTestDB(t)
+	if err := job.SetStrict(db, true); err != nil {
+		t.Fatalf("SetStrict: %v", err)
+	}
+
+	s, err := job.RunStatus(db, "")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	got := buf.String()
+	if !strings.Contains(got, "Identity: none set · --as required on writes") {
+		t.Errorf("render missing no-default line:\n%s", got)
+	}
+}
+
+func TestStatus_Identity_RenderedOnSecondLine(t *testing.T) {
+	db := job.SetupTestDB(t)
+	if err := job.SetDefaultIdentity(db, "claude"); err != nil {
+		t.Fatalf("SetDefaultIdentity: %v", err)
+	}
+	job.MustAdd(t, db, "", "A")
+
+	s, err := job.RunStatus(db, "")
+	if err != nil {
+		t.Fatalf("job.RunStatus: %v", err)
+	}
+	var buf bytes.Buffer
+	job.RenderStatus(&buf, s)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d:\n%s", len(lines), buf.String())
+	}
+	if !strings.Contains(lines[0], "1 open") {
+		t.Errorf("line 1 should be the counts summary:\n%s", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "Identity: ") {
+		t.Errorf("line 2 should start with 'Identity: ':\n%s", lines[1])
 	}
 }
 

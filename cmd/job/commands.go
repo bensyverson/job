@@ -93,7 +93,6 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newImportCmd())
 	cmd.AddCommand(newSchemaCmd())
 	cmd.AddCommand(newStatusCmd())
-	cmd.AddCommand(newSummaryCmd())
 	return cmd
 }
 

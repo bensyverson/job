@@ -444,3 +444,153 @@ func TestStatus_LastActivityPhrase(t *testing.T) {
 		t.Errorf("missing last activity phrase:\n%s", buf.String())
 	}
 }
+
+// u7 — A claim that is past its TTL but hasn't yet been auto-expired
+// must surface as a Stale line in the status output, giving a recovery
+// signal for a crashed agent's abandoned work.
+func TestStatus_CLI_SurfacesStaleClaims_ForestScope(t *testing.T) {
+	origNow := job.CurrentNowFunc
+	defer func() { job.CurrentNowFunc = origNow }()
+	base := time.Unix(1_700_000_000, 0)
+	job.CurrentNowFunc = func() time.Time { return base }
+
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "CrashedAgentWork")
+	if err := job.RunClaim(db, id, "30m", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	db.Close()
+
+	// Two hours later — well past the 30m claim.
+	job.CurrentNowFunc = func() time.Time { return base.Add(2 * time.Hour) }
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	wantPrefix := "Stale: " + id + " \"CrashedAgentWork\" — claimed by alice, expired"
+	if !strings.Contains(stdout, wantPrefix) {
+		t.Errorf("stale line missing. want prefix %q\ngot:\n%s", wantPrefix, stdout)
+	}
+	if !strings.Contains(stdout, " ago") {
+		t.Errorf("stale line should end with ' ago':\n%s", stdout)
+	}
+}
+
+// u7 — Subtree scope only surfaces stale claims under the argument
+// task. Unrelated stale claims elsewhere stay out.
+func TestStatus_CLI_SurfacesStaleClaims_SubtreeScope(t *testing.T) {
+	origNow := job.CurrentNowFunc
+	defer func() { job.CurrentNowFunc = origNow }()
+	base := time.Unix(1_700_000_000, 0)
+	job.CurrentNowFunc = func() time.Time { return base }
+
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	inside := job.MustAdd(t, db, "", "InsideRoot")
+	insideLeaf := job.MustAdd(t, db, inside, "InsideLeaf")
+	_ = job.MustAdd(t, db, "", "OutsideRoot") // otherwise unused
+	outsideLeaf := job.MustAdd(t, db, "", "OutsideLeaf")
+	if err := job.RunClaim(db, insideLeaf, "30m", "alice", false); err != nil {
+		t.Fatalf("claim inside: %v", err)
+	}
+	if err := job.RunClaim(db, outsideLeaf, "30m", "bob", false); err != nil {
+		t.Fatalf("claim outside: %v", err)
+	}
+	db.Close()
+
+	job.CurrentNowFunc = func() time.Time { return base.Add(2 * time.Hour) }
+
+	stdout, _, err := runCLI(t, dbFile, "status", inside)
+	if err != nil {
+		t.Fatalf("status <id>: %v", err)
+	}
+	if !strings.Contains(stdout, "Stale: "+insideLeaf) {
+		t.Errorf("subtree stale claim must surface:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "Stale: "+outsideLeaf) {
+		t.Errorf("out-of-subtree stale claim must NOT surface:\n%s", stdout)
+	}
+}
+
+// u5 — `job status <id>` scopes the shared renderer to the subtree,
+// behaviour-identical to `summary <id>` (which becomes an alias under
+// u8). No session preamble at the node level.
+func TestStatus_CLI_WithID_RendersSubtreeRollup(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "ProjectX")
+	phase := job.MustAdd(t, db, root, "PhaseA")
+	job.MustAdd(t, db, phase, "leaf1")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status", root)
+	if err != nil {
+		t.Fatalf("status <id>: %v", err)
+	}
+	if !strings.Contains(stdout, "ProjectX") {
+		t.Errorf("subtree rollup missing title:\n%s", stdout)
+	}
+	// No session preamble on the node-level form.
+	if strings.Contains(stdout, "Identity:") {
+		t.Errorf("status <id> must not include the Identity preamble:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "last activity:") {
+		t.Errorf("status <id> must not include the last-activity preamble:\n%s", stdout)
+	}
+}
+
+// u5 — Parity: `status <id>` and `summary <id>` produce the same stdout.
+func TestStatus_CLI_WithID_MatchesSummary(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	phase := job.MustAdd(t, db, root, "Phase")
+	job.MustAdd(t, db, phase, "leaf")
+	db.Close()
+
+	statusOut, _, err := runCLI(t, dbFile, "status", root)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	summaryOut, _, err := runCLI(t, dbFile, "summary", root)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if statusOut != summaryOut {
+		t.Errorf("status <id> and summary <id> must match:\n--status--\n%s\n--summary--\n%s",
+			statusOut, summaryOut)
+	}
+}
+
+// u4 — `job status` (no id) now renders the forest-level rollup under
+// the session preamble: one row per top-level task, each with its own
+// subtree counts. Lets an agent see the landscape at session start
+// instead of just an opaque "N open" integer.
+func TestStatus_CLI_RendersForestRollup(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	r1 := job.MustAdd(t, db, "", "Alpha")
+	job.MustAdd(t, db, r1, "alpha-leaf") // makes Alpha a non-leaf so its row shows rollup
+	r2 := job.MustAdd(t, db, "", "Beta")
+	job.MustAdd(t, db, r2, "beta-leaf")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	// Preamble still there.
+	if !strings.Contains(stdout, "open") {
+		t.Errorf("preamble counts missing:\n%s", stdout)
+	}
+	// Both roots surfaced via the shared renderer, each with their own
+	// rollup tail ("0 of 1 done · next ...").
+	if !strings.Contains(stdout, "Alpha") {
+		t.Errorf("Alpha root missing from forest block:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "Beta") {
+		t.Errorf("Beta root missing from forest block:\n%s", stdout)
+	}
+}

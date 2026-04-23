@@ -5,22 +5,29 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // Summary is a two-level rollup for `job summary <parent>`. The target's
 // own rollup gives the headline numbers; one rollup per direct child
 // adds enough granularity to tell which sub-phase needs attention,
-// without redrawing the full tree.
+// without redrawing the full tree. Next names the first claimable leaf
+// in scope (nil when the scope has no claimable work).
 type Summary struct {
 	Target         *SubtreeRollup
 	DirectChildren []*SubtreeRollup
+	Next           *Task
 }
 
 type SubtreeRollup struct {
-	ShortID   string
-	Title     string
-	Status    string
-	HasKids   bool
+	ShortID string
+	Title   string
+	Status  string
+	HasKids bool
+	// IsBlocked is true when the task itself has at least one open blocker.
+	// Distinct from Blocked (which counts descendants), and from Status
+	// (which stays "available" on a blocked-but-unclaimed task).
+	IsBlocked bool
 	Done      int
 	Open      int
 	Blocked   int
@@ -28,6 +35,10 @@ type SubtreeRollup struct {
 	InFlight  int
 	Canceled  int
 	NextID    string
+	// ClosedAt is the unix timestamp of the latest done/canceled event in
+	// the subtree, but only set when the subtree is fully complete
+	// (Open == 0 with at least one closed descendant). Zero otherwise.
+	ClosedAt int64
 }
 
 func RunSummary(db *sql.DB, shortID string) (*Summary, error) {
@@ -38,13 +49,29 @@ func RunSummary(db *sql.DB, shortID string) (*Summary, error) {
 	if target == nil {
 		return nil, fmt.Errorf("task %q not found", shortID)
 	}
+	return BuildRollup(db, target)
+}
 
-	targetRollup, err := buildRollup(db, target)
-	if err != nil {
-		return nil, err
+// BuildRollup is the shared subtree-rollup engine used by both `status`
+// (forest scope, target=nil) and `summary` (subtree scope, target!=nil).
+// When target is nil the result's Target is nil and DirectChildren
+// enumerates every top-level task; when target is non-nil the result
+// mirrors the target-plus-direct-children shape `summary <id>` has
+// always produced.
+func BuildRollup(db *sql.DB, target *Task) (*Summary, error) {
+	var targetRollup *SubtreeRollup
+	var directChildren []*Task
+	var err error
+
+	if target != nil {
+		targetRollup, err = buildRollup(db, target)
+		if err != nil {
+			return nil, err
+		}
+		directChildren, err = getChildren(db, target.ID)
+	} else {
+		directChildren, err = getRootTasks(db)
 	}
-
-	directChildren, err := getChildren(db, target.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +85,22 @@ func RunSummary(db *sql.DB, shortID string) (*Summary, error) {
 		childRollups = append(childRollups, cr)
 	}
 
-	return &Summary{Target: targetRollup, DirectChildren: childRollups}, nil
+	// Next: the first claimable leaf inside scope. Forest scope scans the
+	// whole DB; subtree scope scans under target.
+	var parentID *int64
+	if target != nil {
+		parentID = &target.ID
+	}
+	leaves, err := queryAvailableLeafFrontier(db, parentID, 1, "")
+	if err != nil {
+		return nil, err
+	}
+	var next *Task
+	if len(leaves) > 0 {
+		next = leaves[0]
+	}
+
+	return &Summary{Target: targetRollup, DirectChildren: childRollups, Next: next}, nil
 }
 
 // buildRollup walks the descendants of t (excluding t itself) and
@@ -70,6 +112,12 @@ func buildRollup(db *sql.DB, t *Task) (*SubtreeRollup, error) {
 		Title:   t.Title,
 		Status:  t.Status,
 	}
+
+	selfBlockers, err := openBlockerCounts(db, []int64{t.ID})
+	if err != nil {
+		return nil, err
+	}
+	r.IsBlocked = selfBlockers[t.ID] > 0
 
 	descendants, err := collectDescendants(db, t.ID)
 	if err != nil {
@@ -116,7 +164,42 @@ func buildRollup(db *sql.DB, t *Task) (*SubtreeRollup, error) {
 		r.NextID = avail[0].ShortID
 	}
 
+	// A non-leaf subtree with zero open descendants and at least one
+	// closed descendant is "fully complete". Source the closure
+	// timestamp from the latest done/canceled event within scope.
+	if r.HasKids && r.Open == 0 && (r.Done+r.Canceled) > 0 {
+		ts, err := subtreeClosureTime(db, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		r.ClosedAt = ts
+	}
+
 	return r, nil
+}
+
+// subtreeClosureTime returns the max created_at across done/canceled
+// events in the subtree rooted at taskID. Zero if none.
+func subtreeClosureTime(db *sql.DB, taskID int64) (int64, error) {
+	var ts sql.NullInt64
+	err := db.QueryRow(`
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM tasks WHERE id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+			WHERE t.deleted_at IS NULL
+		)
+		SELECT MAX(e.created_at) FROM events e
+		JOIN subtree s ON s.id = e.task_id
+		WHERE e.event_type IN ('done', 'canceled')
+	`, taskID).Scan(&ts)
+	if err != nil {
+		return 0, err
+	}
+	if ts.Valid {
+		return ts.Int64, nil
+	}
+	return 0, nil
 }
 
 func collectDescendants(db *sql.DB, taskID int64) ([]*Task, error) {
@@ -175,38 +258,91 @@ func openBlockerCounts(db *sql.DB, taskIDs []int64) (map[int64]int, error) {
 }
 
 func RenderSummary(w io.Writer, s *Summary) {
-	t := s.Target
-	fmt.Fprintf(w, "%s · %s\n", t.Title, t.ShortID)
-	if t.HasKids {
-		fmt.Fprintf(w, "  %d of %d done · %d blocked · %d available · %d in flight",
-			t.Done, t.Done+t.Open, t.Blocked, t.Available, t.InFlight)
-		if t.Canceled > 0 {
-			fmt.Fprintf(w, " · %d canceled", t.Canceled)
+	if t := s.Target; t != nil {
+		fmt.Fprintf(w, "%s · %s\n", t.Title, t.ShortID)
+		if t.HasKids {
+			fmt.Fprintf(w, "  %s\n", rollupLine(t))
+		} else {
+			fmt.Fprintf(w, "  status: %s\n", t.Status)
 		}
-		fmt.Fprintln(w)
-	} else {
-		fmt.Fprintf(w, "  status: %s\n", t.Status)
+	}
+
+	// Leaf-only collapse: when every direct child is a leaf, the per-child
+	// block is padding — the headline already says everything worth saying
+	// at this granularity. Show only claimed children (the "who's working
+	// on what" signal); roll the rest into the headline counts.
+	leafOnly := len(s.DirectChildren) > 0
+	for _, c := range s.DirectChildren {
+		if c.HasKids {
+			leafOnly = false
+			break
+		}
 	}
 
 	for _, c := range s.DirectChildren {
-		fmt.Fprintf(w, "  %s (%s): %s\n", c.Title, c.ShortID, summarizeChild(c))
+		if leafOnly && c.Status != "claimed" {
+			continue
+		}
+		tail := summarizeChild(c)
+		if tail == "" {
+			fmt.Fprintf(w, "  %s (%s)\n", c.Title, c.ShortID)
+		} else {
+			fmt.Fprintf(w, "  %s (%s): %s\n", c.Title, c.ShortID, tail)
+		}
+	}
+
+	if s.Next != nil {
+		fmt.Fprintf(w, "Next: %s %q\n", s.Next.ShortID, s.Next.Title)
 	}
 }
 
-// summarizeChild renders the per-child rollup tail. Three cases:
-//   - leaf child or child with no live work: report its own status.
-//   - subtree fully closed: report "done" (or "canceled" mix).
-//   - subtree in progress: "X of Y done · next <id>".
+// rollupLine formats the target's scoreboard. Zero-count tokens are
+// suppressed so the eye lands on actionable numbers. If the subtree is
+// fully complete, the closure timestamp is appended.
+func rollupLine(t *SubtreeRollup) string {
+	parts := []string{fmt.Sprintf("%d of %d done", t.Done, t.Done+t.Open)}
+	if t.Blocked > 0 {
+		parts = append(parts, fmt.Sprintf("%d blocked", t.Blocked))
+	}
+	if t.Available > 0 {
+		parts = append(parts, fmt.Sprintf("%d available", t.Available))
+	}
+	if t.InFlight > 0 {
+		parts = append(parts, fmt.Sprintf("%d in flight", t.InFlight))
+	}
+	if t.Canceled > 0 {
+		parts = append(parts, fmt.Sprintf("%d canceled", t.Canceled))
+	}
+	if t.ClosedAt > 0 {
+		parts = append(parts, "closed "+time.Unix(t.ClosedAt, 0).Format("2006-01-02 15:04"))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// summarizeChild renders the per-child rollup tail. An empty return
+// signals the caller to skip the trailing ": …" entirely.
+//   - non-leaf child with open work: "X of Y done · next <id>"
+//   - any child whose status matches the scope's dominant expectation
+//     (done, available): empty tail — the headline already says it.
+//   - exceptions (claimed, canceled, blocked, anything else): show as
+//     ": <status>".
 func summarizeChild(c *SubtreeRollup) string {
-	if !c.HasKids {
-		return c.Status
+	if c.HasKids && c.Open > 0 {
+		tail := fmt.Sprintf("%d of %d done", c.Done, c.Done+c.Open)
+		if c.NextID != "" {
+			tail += " · next " + c.NextID
+		}
+		return tail
 	}
-	if c.Open == 0 {
-		return c.Status
+	// Leaf or fully-closed subtree → show only genuine exceptions.
+	// An "available" child with an open blocker is effectively blocked;
+	// surface that instead of the raw status.
+	if c.Status == "available" && c.IsBlocked {
+		return "blocked"
 	}
-	tail := fmt.Sprintf("%d of %d done", c.Done, c.Done+c.Open)
-	if c.NextID != "" {
-		tail += " · next " + c.NextID
+	switch c.Status {
+	case "done", "available":
+		return ""
 	}
-	return tail
+	return c.Status
 }

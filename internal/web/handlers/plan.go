@@ -61,9 +61,14 @@ type PlanNote struct {
 }
 
 // PlanBlockerRef is one blocker link shown in the "Blocked by" row.
+// The URL is an in-page anchor; the title is the blocker's own title,
+// rendered as the pill's hover tooltip so a reader can understand
+// "Blocked by <id>" without jumping, even if the blocker is inside a
+// currently-collapsed subtree.
 type PlanBlockerRef struct {
 	ShortID string
 	URL     string
+	Title   string
 }
 
 // Plan renders the document-mode tree view. See vision §3.2.
@@ -78,6 +83,7 @@ func Plan(deps Deps) http.Handler {
 		}
 
 		ids := collectTaskIDs(roots)
+		titlesByShortID := collectTitlesByShortID(roots)
 
 		labels, err := job.GetLabelsForTaskIDs(deps.DB, ids)
 		if err != nil {
@@ -101,7 +107,7 @@ func Plan(deps Deps) http.Handler {
 		}
 
 		now := time.Now()
-		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, now, 0)
+		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, titlesByShortID, now, 0)
 
 		data := PlanPageData{
 			Chrome:   templates.Chrome{ActiveTab: "plan"},
@@ -127,6 +133,22 @@ func collectTaskIDs(nodes []*job.TaskNode) []int64 {
 	return ids
 }
 
+// collectTitlesByShortID indexes the forest by short id so blocker
+// refs can carry the blocker's title for the hover tooltip without a
+// second DB round-trip.
+func collectTitlesByShortID(nodes []*job.TaskNode) map[string]string {
+	out := make(map[string]string)
+	var walk func([]*job.TaskNode)
+	walk = func(ns []*job.TaskNode) {
+		for _, n := range ns {
+			out[n.Task.ShortID] = n.Task.Title
+			walk(n.Children)
+		}
+	}
+	walk(nodes)
+	return out
+}
+
 // buildPlanNodes maps the domain forest into template-ready PlanNodes.
 // Post-order so children are built first; a node is collapsed only
 // when every descendant (including itself) has a closed status, which
@@ -137,12 +159,13 @@ func buildPlanNodes(
 	blockers map[int64][]string,
 	notes map[int64][]PlanNote,
 	actors map[int64]string,
+	titlesByShortID map[string]string,
 	now time.Time,
 	depth int,
 ) []*PlanNode {
 	out := make([]*PlanNode, 0, len(nodes))
 	for _, n := range nodes {
-		children := buildPlanNodes(n.Children, labels, blockers, notes, actors, now, depth+1)
+		children := buildPlanNodes(n.Children, labels, blockers, notes, actors, titlesByShortID, now, depth+1)
 
 		taskBlockers := blockers[n.Task.ID]
 		displayStatus := DisplayStatus(n.Task.Status, len(taskBlockers) > 0)
@@ -182,7 +205,7 @@ func buildPlanNodes(
 			Labels:        labels[n.Task.ID],
 			RelTime:       render.RelativeTime(now, ts),
 			ISOTime:       ts.UTC().Format(time.RFC3339),
-			BlockedBy:     buildBlockerRefs(taskBlockers),
+			BlockedBy:     buildBlockerRefs(taskBlockers, titlesByShortID),
 			Notes:         markNotesStatus(notes[n.Task.ID], displayStatus),
 			Children:      children,
 			Depth:         depth,
@@ -200,13 +223,17 @@ func isOpenStatus(displayStatus string) bool {
 	return displayStatus != "done" && displayStatus != "canceled"
 }
 
-func buildBlockerRefs(shortIDs []string) []PlanBlockerRef {
+func buildBlockerRefs(shortIDs []string, titlesByShortID map[string]string) []PlanBlockerRef {
 	if len(shortIDs) == 0 {
 		return nil
 	}
 	out := make([]PlanBlockerRef, len(shortIDs))
 	for i, s := range shortIDs {
-		out[i] = PlanBlockerRef{ShortID: s, URL: "/tasks/" + s}
+		out[i] = PlanBlockerRef{
+			ShortID: s,
+			URL:     "#task-" + s,
+			Title:   titlesByShortID[s],
+		}
 	}
 	return out
 }

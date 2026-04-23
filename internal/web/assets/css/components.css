@@ -1703,12 +1703,14 @@ a.c-graph-node__bug:focus-visible {
   color: var(--color-text-done);
 }
 
-.c-plan-row--selected {
+.c-plan-row--selected,
+.c-plan-row:target {
   background: var(--color-surface-raised);
   position: relative;
 }
 
-.c-plan-row--selected::before {
+.c-plan-row--selected::before,
+.c-plan-row:target::before {
   content: "";
   position: absolute;
   left: 0;

@@ -114,7 +114,7 @@ func TestPlan_StatusPillsReflectTaskState(t *testing.T) {
 
 func TestPlan_BlockedRowShowsBlockedByAffordance(t *testing.T) {
 	db := setupPlanTestDB(t)
-	blockerID := mustAdd(t, db, "claude", "Blocker task", nil, nil)
+	blockerID := mustAdd(t, db, "claude", "Blocker title to hover", nil, nil)
 	blockedID := mustAdd(t, db, "claude", "Blocked task", nil, nil)
 	if err := job.RunBlock(db, blockedID, blockerID, "claude"); err != nil {
 		t.Fatalf("RunBlock: %v", err)
@@ -126,7 +126,25 @@ func TestPlan_BlockedRowShowsBlockedByAffordance(t *testing.T) {
 	mustContain(t, body, `c-status-pill--blocked`)
 	mustContain(t, body, `c-plan-row__blocked-by`)
 	mustContain(t, body, `Blocked by`)
-	mustContain(t, body, `/tasks/`+blockerID)
+	// Blocker link is an in-page anchor to the blocker's row, not a
+	// navigation to /tasks/<id>. Keeps the reader on the plan document.
+	mustContain(t, body, `href="#task-`+blockerID+`"`)
+	// And the full blocker title is exposed via the hover tooltip so
+	// users can parse "Blocked by <id>" without navigation — still useful
+	// when the blocker lives inside a currently-collapsed subtree.
+	mustContain(t, body, `title="Blocker title to hover"`)
+}
+
+func TestPlan_EveryRowCarriesAnchorID(t *testing.T) {
+	db := setupPlanTestDB(t)
+	root := mustAdd(t, db, "claude", "Root", nil, nil)
+	child := mustAdd(t, db, "claude", "Child", &root, nil)
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	mustContain(t, body, `id="task-`+root+`"`)
+	mustContain(t, body, `id="task-`+child+`"`)
 }
 
 func TestPlan_AutoCollapsesFullyDoneSubtree(t *testing.T) {
@@ -165,14 +183,11 @@ func TestPlan_ParentRollsUpToActiveWhenDescendantIsClaimed(t *testing.T) {
 	deps := newPlanDeps(t, db)
 	body := fetchPlan(t, deps, "")
 
-	// Parent and child rows roll up to active.
-	mustContain(t, body, `data-plan-task="`+parent+`"`)
-	if !strings.Contains(body, `c-plan-row--status-active" data-plan-task="`+parent+`"`) {
-		t.Errorf("parent %q should render as active (rolled up from claimed grandchild)", parent)
-	}
-	if !strings.Contains(body, `c-plan-row--status-active" data-plan-task="`+child+`"`) {
-		t.Errorf("child %q should render as active (rolled up from claimed grandchild)", child)
-	}
+	// Parent and child rows roll up to active. Matched via a small
+	// helper so the assertion tolerates attribute reshuffles on the row
+	// (id, data-plan-task, data-collapsed all share the opening tag).
+	assertRowHasClass(t, body, parent, "c-plan-row--status-active")
+	assertRowHasClass(t, body, child, "c-plan-row--status-active")
 }
 
 func TestPlan_RollupDoesNotOverrideDoneParent(t *testing.T) {
@@ -196,9 +211,7 @@ func TestPlan_RollupDoesNotOverrideDoneParent(t *testing.T) {
 	deps := newPlanDeps(t, db)
 	body := fetchPlan(t, deps, "")
 
-	if !strings.Contains(body, `c-plan-row--status-done" data-plan-task="`+parent+`"`) {
-		t.Errorf("done parent %q should stay done despite reopened claimed child", parent)
-	}
+	assertRowHasClass(t, body, parent, "c-plan-row--status-done")
 }
 
 func TestPlan_NotesRenderInCollapsibleDetails(t *testing.T) {
@@ -285,4 +298,25 @@ func TestPlan_FilterTabsRenderInChrome(t *testing.T) {
 	mustContain(t, body, `Active`)
 	mustContain(t, body, `Archived`)
 	mustContain(t, body, `>All<`)
+}
+
+// assertRowHasClass finds the row tagged with data-plan-task="<shortID>"
+// and confirms its class attribute contains `wantClass`. Resilient to
+// attribute reordering inside the opening <div> tag.
+func assertRowHasClass(t *testing.T, body, shortID, wantClass string) {
+	t.Helper()
+	marker := `data-plan-task="` + shortID + `"`
+	idx := strings.Index(body, marker)
+	if idx == -1 {
+		t.Fatalf("row %q not found in body", shortID)
+	}
+	tagStart := strings.LastIndex(body[:idx], "<div ")
+	tagEnd := strings.Index(body[idx:], ">")
+	if tagStart == -1 || tagEnd == -1 {
+		t.Fatalf("could not bracket row %q opening tag", shortID)
+	}
+	opening := body[tagStart : idx+tagEnd+1]
+	if !strings.Contains(opening, wantClass) {
+		t.Errorf("row %q missing class %q in opening tag:\n%s", shortID, wantClass, opening)
+	}
 }

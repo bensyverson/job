@@ -33,7 +33,7 @@
      are children — leaf rows keep a placeholder <span> so the CSS
      grid's disclosure column stays aligned with sibling branches. */ -}}
 {{define "plan-node"}}
-<div class="c-plan-row c-plan-row--status-{{.DisplayStatus}}{{if .Collapsed}} c-plan-row--collapsed{{end}}" data-plan-task="{{.ShortID}}"{{if .Collapsible}} data-collapsed="{{if .Collapsed}}true{{else}}false{{end}}"{{end}}>
+<div class="c-plan-row c-plan-row--status-{{.DisplayStatus}}{{if .Collapsed}} c-plan-row--collapsed{{end}}" id="task-{{.ShortID}}" data-plan-task="{{.ShortID}}"{{if .Collapsible}} data-collapsed="{{if .Collapsed}}true{{else}}false{{end}}"{{end}}>
   {{if .Collapsible -}}
   <button class="c-plan-row__disclosure" aria-expanded="{{if .Collapsed}}false{{else}}true{{end}}" aria-label="{{if .Collapsed}}Expand{{else}}Collapse{{end}}">
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -58,7 +58,7 @@
   </span>
   <span class="c-plan-row__timestamp">{{if .RelTime}}<time datetime="{{.ISOTime}}">{{.RelTime}}</time>{{else}}—{{end}}</span>
   {{if .BlockedBy}}
-  <span class="c-plan-row__blocked-by">Blocked by {{range $i, $b := .BlockedBy}}{{if $i}}, {{end}}<a href="{{$b.URL}}" class="c-id-pill">{{$b.ShortID}}</a>{{end}}</span>
+  <span class="c-plan-row__blocked-by">Blocked by {{range $i, $b := .BlockedBy}}{{if $i}}, {{end}}<a href="{{$b.URL}}" class="c-id-pill"{{if $b.Title}} title="{{$b.Title}}"{{end}}>{{$b.ShortID}}</a>{{end}}</span>
   {{end}}
 </div>
 {{if .Notes}}

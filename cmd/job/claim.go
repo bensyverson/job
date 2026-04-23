@@ -10,8 +10,8 @@ func newClaimCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "claim <id> [duration]",
-		Short: "Claim a task",
-		Long:  "Claim a task, marking it as in-progress. Duration defaults to 15m. Supported units: s, m, h, d. Use --force to override an existing claim.",
+		Short: "Claim a task (duration optional, default 30m)",
+		Long:  "Claim a task, marking it as in-progress. Duration defaults to 30m. Supported units: s, m, h, d. Use --force to override an existing claim.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -31,16 +31,19 @@ func newClaimCmd() *cobra.Command {
 				duration = args[1]
 			}
 
+			pre, _ := job.GetTaskByShortID(db, shortID)
 			prevClaimedBy := ""
-			if force {
-				task, _ := job.GetTaskByShortID(db, shortID)
-				if task != nil && task.Status == "claimed" && task.ClaimedBy != nil {
-					prevClaimedBy = *task.ClaimedBy
-				}
+			if force && pre != nil && pre.Status == "claimed" && pre.ClaimedBy != nil {
+				prevClaimedBy = *pre.ClaimedBy
 			}
 
 			if err := job.RunClaim(db, shortID, duration, actor, force); err != nil {
 				return err
+			}
+
+			title := ""
+			if pre != nil {
+				title = pre.Title
 			}
 
 			durStr := job.FormatDuration(job.DefaultClaimTTLSeconds)
@@ -49,9 +52,9 @@ func newClaimCmd() *cobra.Command {
 			}
 
 			if force && prevClaimedBy != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s (overrode previous claim by %s, expires in %s)\n", shortID, prevClaimedBy, durStr)
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (overrode previous claim by %s, expires in %s)\n", shortID, title, prevClaimedBy, durStr)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s (expires in %s)\n", shortID, durStr)
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n", shortID, title, durStr)
 			}
 			return nil
 		},

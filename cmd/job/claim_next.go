@@ -13,7 +13,7 @@ func newClaimNextCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim-next [parent] [duration]",
 		Short: "Find and claim the next available task",
-		Long:  "Find the next available task and claim it in one step. By default only leaves (tasks with no open children) are claimable — the search descends through parents to find work. Pass --include-parents to permit claiming any available task. Duration defaults to 15m. Supported units: s, m, h, d. Without a parent, searches the entire tree.",
+		Long:  "Find the next available task and claim it in one step. By default only leaves (tasks with no open children) are claimable — the search descends through parents to find work. Pass --include-parents to permit claiming any available task. Duration defaults to 30m. Supported units: s, m, h, d. Without a parent, searches the entire tree.",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()

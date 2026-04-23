@@ -5,49 +5,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
 
 	job "github.com/bensyverson/job/internal/job"
 	"github.com/spf13/cobra"
 )
-
-// notePreviewMax is the maximum rune count of the preview shown on the
-// note ack line. Long enough to give the user confidence the right body
-// landed; short enough to keep the ack on one line in a normal terminal.
-const notePreviewMax = 60
-
-// notePreview builds the body preview shown on a successful `note` ack.
-// Returns the raw rune count of the stored body and a single-line
-// preview clamped to notePreviewMax runes. The preview collapses
-// newlines and tabs to spaces so the ack stays one line; on overflow it
-// snaps to the last space in the back third of the window before
-// appending an ellipsis, so words don't get chopped mid-token.
-func notePreview(body string) (count int, preview string) {
-	count = utf8.RuneCountInString(body)
-
-	collapsed := strings.Map(func(r rune) rune {
-		switch r {
-		case '\n', '\r', '\t':
-			return ' '
-		default:
-			return r
-		}
-	}, body)
-
-	runes := []rune(collapsed)
-	if len(runes) <= notePreviewMax {
-		return count, strings.TrimRight(string(runes), " ")
-	}
-
-	cut := notePreviewMax
-	for i := cut - 1; i >= notePreviewMax*2/3; i-- {
-		if runes[i] == ' ' {
-			cut = i
-			break
-		}
-	}
-	return count, strings.TrimRight(string(runes[:cut]), " ") + "…"
-}
 
 func newNoteCmd() *cobra.Command {
 	var message string
@@ -112,7 +73,7 @@ func newNoteCmd() *cobra.Command {
 			if err := job.RunNote(db, shortID, text, resultRaw, actor); err != nil {
 				return err
 			}
-			count, preview := notePreview(text)
+			count, preview := job.NotePreview(text)
 			fmt.Fprintf(cmd.OutOrStdout(), "Noted: %s · %d chars · %q\n", shortID, count, preview)
 			return nil
 		},

@@ -11,6 +11,7 @@ import (
 type ClosedResult struct {
 	ShortID             string
 	Title               string
+	Note                string
 	CascadeClosed       []string
 	AutoClosedAncestors []AutoClosedAncestor
 }
@@ -487,6 +488,7 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 		closed = append(closed, &ClosedResult{
 			ShortID:             p.target.shortID,
 			Title:               p.target.task.Title,
+			Note:                note,
 			CascadeClosed:       p.cascadeShorts,
 			AutoClosedAncestors: autoClosed,
 		})
@@ -663,6 +665,10 @@ func RunEdit(db *sql.DB, shortID string, newTitle, newDesc *string, actor string
 		return err
 	}
 
+	if err := maybeExtendClaim(tx, task.ID, actor); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 
@@ -725,6 +731,10 @@ func RunNote(db *sql.DB, shortID, text string, result json.RawMessage, actor str
 		detail["result"] = resultVal
 	}
 	if err := recordEvent(tx, task.ID, "noted", actor, detail); err != nil {
+		return err
+	}
+
+	if err := maybeExtendClaim(tx, task.ID, actor); err != nil {
 		return err
 	}
 
@@ -842,6 +852,7 @@ type DoneContext struct {
 	ParentTotalCount   int
 	ParentAutoClosed   bool
 	NextAfterParent    *Task
+	NextFallback       *Task
 	WholeTreeComplete  bool
 	WholeTreeDoneCount int
 	WholeTreeRootID    string
@@ -954,6 +965,21 @@ func ComputeDoneContext(db *sql.DB, closedShortID string, autoClosedSet map[stri
 			ctx.WholeTreeComplete = true
 			ctx.WholeTreeDoneCount = doneCount
 			ctx.WholeTreeRootID = root.ShortID
+		}
+	}
+
+	// Fallback: when neither the next-sibling nor next-after-parent paths
+	// produced a hint, surface the globally-next claimable leaf by
+	// sort_path. Covers closing the highest-sort_order sibling under a
+	// parent whose earlier siblings are still open, and closing the last
+	// leaf of the last top-level parent when earlier roots still have work.
+	if ctx.NextSibling == nil && ctx.NextAfterParent == nil {
+		leaves, lerr := queryAvailableLeafFrontier(db, nil, 1, "")
+		if lerr != nil {
+			return nil, lerr
+		}
+		if len(leaves) > 0 {
+			ctx.NextFallback = leaves[0]
 		}
 	}
 

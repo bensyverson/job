@@ -9,8 +9,8 @@ func newHeartbeatCmd() *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
 		Use:   "heartbeat <id> [<id>...]",
-		Short: "Extend your live claim(s) by 15 minutes",
-		Long:  "Refresh one or more live claims held by the caller. Extends claim_expires_at by 15 minutes and emits a heartbeat event. All targets must currently be claimed by the caller; any other state errors and rolls back the whole call.",
+		Short: "Extend your live claim(s) by 30 minutes",
+		Long:  "Refresh one or more live claims held by the caller. Extends claim_expires_at by 30 minutes and emits a heartbeat event. All targets must currently be claimed by the caller; any other state errors and rolls back the whole call.",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()

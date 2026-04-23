@@ -21,7 +21,7 @@ func TestCancel_Single_Happy(t *testing.T) {
 	if !strings.Contains(stdout, wantHead) {
 		t.Errorf("missing headline:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "  reason: no longer needed") {
+	if !strings.Contains(stdout, `  reason: 16 chars · "no longer needed"`) {
 		t.Errorf("missing reason line:\n%s", stdout)
 	}
 
@@ -292,7 +292,7 @@ func TestCancel_Md_Single_Shape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	want := "Canceled: " + id + " \"Write red tests\"\n  reason: no longer needed\n"
+	want := "Canceled: " + id + " \"Write red tests\"\n  reason: 16 chars · \"no longer needed\"\n"
 	if stdout != want {
 		t.Errorf("got %q, want %q", stdout, want)
 	}
@@ -318,8 +318,30 @@ func TestCancel_Md_Multi_Shape(t *testing.T) {
 	if !strings.Contains(stdout, "- Canceled: "+b+" \"B\"\n") {
 		t.Errorf("missing b line:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "  reason: scope cut\n") {
+	if !strings.Contains(stdout, "  reason: 9 chars · \"scope cut\"\n") {
 		t.Errorf("missing reason line:\n%s", stdout)
+	}
+}
+
+func TestCancel_Md_Reason_Long_Truncates(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "T")
+	db.Close()
+
+	// 120-rune reason — well past the 60-rune preview window; needs an ellipsis.
+	reason := strings.Repeat("abcdefghij ", 11) + "xyz" // 124 runes, spaces allow clean break
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "cancel", id, "--reason", reason)
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if !strings.Contains(stdout, "…\"") {
+		t.Errorf("expected ellipsis in preview:\n%s", stdout)
+	}
+	// Char count must reflect the full rune length, not the truncated preview.
+	wantCount := "124 chars"
+	if !strings.Contains(stdout, wantCount) {
+		t.Errorf("expected %q in:\n%s", wantCount, stdout)
 	}
 }
 

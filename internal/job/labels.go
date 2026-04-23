@@ -194,6 +194,10 @@ func RunLabelAdd(db *sql.DB, shortID string, names []string, actor string) (*Lab
 		}
 	}
 
+	if err := maybeExtendClaim(tx, task.ID, actor); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -244,6 +248,10 @@ func RunLabelRemove(db *sql.DB, shortID string, names []string, actor string) (*
 		if err := recordEvent(tx, task.ID, "unlabeled", actor, detail); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := maybeExtendClaim(tx, task.ID, actor); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {

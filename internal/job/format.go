@@ -7,7 +7,45 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+// notePreviewMax is the maximum rune count of the body preview shown on
+// `note`, `done -m`, and `cancel -m` acks. Long enough to confirm the
+// right body landed; short enough to keep the ack on one line.
+const notePreviewMax = 60
+
+// NotePreview builds the body preview shown on note/done/cancel acks.
+// Returns the rune count of the stored body and a single-line preview
+// clamped to notePreviewMax runes. Newlines and tabs collapse to spaces;
+// on overflow the cut snaps to the last space in the back third of the
+// window so words don't get chopped mid-token.
+func NotePreview(body string) (count int, preview string) {
+	count = utf8.RuneCountInString(body)
+
+	collapsed := strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t':
+			return ' '
+		default:
+			return r
+		}
+	}, body)
+
+	runes := []rune(collapsed)
+	if len(runes) <= notePreviewMax {
+		return count, strings.TrimRight(string(runes), " ")
+	}
+
+	cut := notePreviewMax
+	for i := cut - 1; i >= notePreviewMax*2/3; i-- {
+		if runes[i] == ' ' {
+			cut = i
+			break
+		}
+	}
+	return count, strings.TrimRight(string(runes[:cut]), " ") + "…"
+}
 
 // CollectBlockers walks a forest of TaskNodes and returns a map of
 // short-ID → blocker short-IDs. Used by list/tree renderers to annotate
@@ -717,7 +755,8 @@ func RenderCancelAck(w io.Writer, canceled []*CanceledResult, alreadyCanceled []
 		}
 	}
 	if len(canceled) > 0 && reason != "" {
-		fmt.Fprintf(w, "  reason: %s\n", reason)
+		count, preview := NotePreview(reason)
+		fmt.Fprintf(w, "  reason: %d chars · %q\n", count, preview)
 	}
 	// Surface auto-closed ancestors from the cancel cascade, one line each.
 	// Status is stamped because cancel-triggered cascades can land on either

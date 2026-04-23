@@ -267,13 +267,23 @@ type doneAckOptions struct {
 func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCtx *job.DoneContext, opts doneAckOptions) []AckLine {
 	var lines []AckLine
 
+	appendNoteEcho := func(note string) {
+		if note == "" {
+			return
+		}
+		count, preview := job.NotePreview(note)
+		lines = append(lines, AckLine(fmt.Sprintf("  note: %d chars · %q", count, preview)))
+	}
+
 	single := len(closed) == 1 && len(alreadyDone) == 0 && len(closed[0].CascadeClosed) == 0
 	if single {
 		c := closed[0]
 		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q", c.ShortID, c.Title)))
+		appendNoteEcho(c.Note)
 	} else if len(closed) == 1 && len(closed[0].CascadeClosed) > 0 && len(alreadyDone) == 0 {
 		c := closed[0]
 		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q (and %d subtasks)", c.ShortID, c.Title, len(c.CascadeClosed))))
+		appendNoteEcho(c.Note)
 	} else if len(closed) > 0 {
 		lines = append(lines, AckLine(fmt.Sprintf("Closed %d tasks:", len(closed))))
 		for _, c := range closed {
@@ -282,6 +292,7 @@ func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCt
 			} else {
 				lines = append(lines, AckLine(fmt.Sprintf("- Done: %s %q", c.ShortID, c.Title)))
 			}
+			appendNoteEcho(c.Note)
 		}
 	}
 	if len(alreadyDone) > 0 {
@@ -335,6 +346,8 @@ func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCt
 		} else if ctx.NextAfterParent != nil {
 			// Parent auto-closed; surface the next work past it.
 			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)))
+		} else if ctx.NextFallback != nil {
+			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextFallback.ShortID, ctx.NextFallback.Title)))
 		}
 	}
 
@@ -412,6 +425,8 @@ func renderDoneJSON(w io.Writer, closed []*job.ClosedResult, alreadyDone []strin
 			out.Next = &doneJSONNext{ID: ctx.NextSibling.ShortID, Title: ctx.NextSibling.Title}
 		} else if ctx.NextAfterParent != nil && ctx.ParentAutoClosed {
 			out.Next = &doneJSONNext{ID: ctx.NextAfterParent.ShortID, Title: ctx.NextAfterParent.Title}
+		} else if ctx.NextFallback != nil {
+			out.Next = &doneJSONNext{ID: ctx.NextFallback.ShortID, Title: ctx.NextFallback.Title}
 		}
 		if ctx.ParentID != "" {
 			out.Parent = &doneJSONParent{ID: ctx.ParentID, Done: ctx.ParentDoneCount, Total: ctx.ParentTotalCount}

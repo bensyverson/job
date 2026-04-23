@@ -212,7 +212,7 @@ func TestHeartbeat_OnCanceled_Errors(t *testing.T) {
 	}
 }
 
-func TestHeartbeat_TtlIsAlways15m(t *testing.T) {
+func TestHeartbeat_TtlIsAlways30m(t *testing.T) {
 	origNow := job.CurrentNowFunc
 	defer func() { job.CurrentNowFunc = origNow }()
 
@@ -233,13 +233,13 @@ func TestHeartbeat_TtlIsAlways15m(t *testing.T) {
 	}
 
 	task := job.MustGet(t, db, id)
-	want := base.Add(1*time.Hour).Unix() + 900
+	want := base.Add(1*time.Hour).Unix() + 1800
 	if task.ClaimExpiresAt == nil || *task.ClaimExpiresAt != want {
 		got := int64(0)
 		if task.ClaimExpiresAt != nil {
 			got = *task.ClaimExpiresAt
 		}
-		t.Errorf("claim_expires_at: got %d, want %d (always +15m)", got, want)
+		t.Errorf("claim_expires_at: got %d, want %d (always +30m)", got, want)
 	}
 }
 
@@ -256,7 +256,7 @@ func TestHeartbeat_Md_Single_Shape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
-	want := "Heartbeat: " + id + " (expires in 15m)\n"
+	want := "Heartbeat: " + id + " (expires in 30m)\n"
 	if stdout != want {
 		t.Errorf("got %q, want %q", stdout, want)
 	}
@@ -282,7 +282,7 @@ func TestHeartbeat_Md_Multi_Shape(t *testing.T) {
 		t.Errorf("multi headline:\n%s", stdout)
 	}
 	for _, id := range []string{a, b} {
-		line := "- " + id + " (expires in 15m)"
+		line := "- " + id + " (expires in 30m)"
 		if !strings.Contains(stdout, line) {
 			t.Errorf("missing %q in:\n%s", line, stdout)
 		}
@@ -314,8 +314,8 @@ func TestHeartbeat_Json_Shape(t *testing.T) {
 	if entry["id"] != id {
 		t.Errorf("id: %v", entry["id"])
 	}
-	if s, _ := entry["expires_in_seconds"].(float64); int64(s) != 900 {
-		t.Errorf("expires_in_seconds: %v, want 900", entry["expires_in_seconds"])
+	if s, _ := entry["expires_in_seconds"].(float64); int64(s) != 1800 {
+		t.Errorf("expires_in_seconds: %v, want 1800", entry["expires_in_seconds"])
 	}
 	if _, ok := entry["expires_at"].(float64); !ok {
 		t.Errorf("expires_at missing or wrong type: %v", entry["expires_at"])

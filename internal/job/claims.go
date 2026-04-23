@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-const DefaultClaimTTLSeconds int64 = 900
+const DefaultClaimTTLSeconds int64 = 1800
 
 func ParseDuration(s string) (int64, error) {
 	if s == "" {
@@ -90,6 +90,39 @@ func checkClaimOwnership(tx dbtx, shortID, caller string) error {
 	}
 	return fmt.Errorf("task %s is claimed by %s (expires in %s). Wait for expiry, or ask %s to release.",
 		shortID, *task.ClaimedBy, expires, *task.ClaimedBy)
+}
+
+// maybeExtendClaim refreshes the claim TTL on a task that actor currently
+// holds. Called as a side effect of writes (note, edit, label add/remove)
+// so an agent actively working on a claimed task doesn't need to call
+// heartbeat explicitly. Rules:
+//   - Only extend when the caller IS the current claim holder.
+//   - Only extend; never shorten. If the existing claim_expires_at is
+//     further in the future than now + DefaultClaimTTLSeconds, leave it.
+//   - No event is recorded — the write's own event (noted/edited/labeled)
+//     already signals activity; the TTL bump is a silent side effect.
+func maybeExtendClaim(tx dbtx, taskID int64, actor string) error {
+	var claimedBy sql.NullString
+	var claimExpiresAt sql.NullInt64
+	err := tx.QueryRow(
+		"SELECT claimed_by, claim_expires_at FROM tasks WHERE id = ?",
+		taskID,
+	).Scan(&claimedBy, &claimExpiresAt)
+	if err != nil {
+		return err
+	}
+	if !claimedBy.Valid || claimedBy.String != actor || !claimExpiresAt.Valid {
+		return nil
+	}
+	newExpiry := CurrentNowFunc().Unix() + DefaultClaimTTLSeconds
+	if newExpiry <= claimExpiresAt.Int64 {
+		return nil
+	}
+	_, err = tx.Exec(
+		"UPDATE tasks SET claim_expires_at = ? WHERE id = ?",
+		newExpiry, taskID,
+	)
+	return err
 }
 
 func expireStaleClaims(db *sql.DB, actor string) error {

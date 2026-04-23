@@ -29,28 +29,30 @@ See the [Makefile](Makefile) for every target, or run `make help`.
 # Create a task database in the current directory
 job init
 
-# Add tasks (writes require --as <name>)
-job --as alice add "Write documentation"
-job --as alice add "Ship v1"
+# Add tasks (uses default identity)
+job add "Ship v1"
 
 # Add subtasks
-job --as alice add "Ship v1" "Write tests"
-job --as alice add "Ship v1" "Fix CI"
+job add "Ship v1" "Write tests"
+job add 5xZie "Fix CI"
 
 # See what needs doing (reads need no identity)
 job list
 
 # Complete a task
-job --as alice done <id>
+job done <id>
 
-# Claim a task for 4 hours (default is 15m)
-job --as alice claim <id> 4h
+# Claim a task (default 30m)
+job claim <id>
+
+# ... or with an explicit duration
+job claim <id> 4h
 
 # Close a task and all of its open subtasks in one call
-job --as alice done <id> --cascade
+job done <id> --cascade
 
 # Close multiple tasks atomically
-job --as alice done <id1> <id2> <id3>
+job done <id1> <id2> <id3>
 
 # See the full history
 job log <id>
@@ -179,10 +181,10 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 
 | Command | Description |
 |---------|-------------|
-| `job claim <id> [duration]` | Claim a task. Duration defaults to `15m`. Units: `s`, `m`, `h`, `d`. |
+| `job claim <id> [duration]` | Claim a task. Duration defaults to `30m`. Units: `s`, `m`, `h`, `d`. |
 | `job release <id>` | Release a claim. |
 | `job claim-next [parent] [duration]` | Find and claim the next available leaf in one step. Pass `--include-parents` to claim any available task. |
-| `job heartbeat <id> [<id>...]` | Extend your live claim(s) by 15 minutes. Errors if the caller doesn't hold the claim. |
+| `job heartbeat <id> [<id>...]` | Extend your live claim(s) by 30 minutes. Errors if the caller doesn't hold the claim. |
 
 Claims are attributed to the `--as` name. Claims expire automatically. `--force` overrides an existing claim. For long-running work, `heartbeat` refreshes a live claim without re-acquiring it.
 

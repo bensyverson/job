@@ -1079,17 +1079,17 @@ func TestParseDuration_Default(t *testing.T) {
 		t.Fatalf("ParseDuration: %v", err)
 	}
 	if got != DefaultClaimTTLSeconds {
-		t.Errorf("got %d, want %d (15m default)", got, DefaultClaimTTLSeconds)
+		t.Errorf("got %d, want %d (30m default)", got, DefaultClaimTTLSeconds)
 	}
 }
 
-func TestParseDuration_DefaultIs15m(t *testing.T) {
+func TestParseDuration_DefaultIs30m(t *testing.T) {
 	got, err := ParseDuration("")
 	if err != nil {
 		t.Fatalf("ParseDuration: %v", err)
 	}
-	if got != 900 {
-		t.Errorf("default TTL: got %d, want 900", got)
+	if got != 1800 {
+		t.Errorf("default TTL: got %d, want 1800", got)
 	}
 }
 

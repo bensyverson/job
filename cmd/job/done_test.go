@@ -853,3 +853,108 @@ func TestDone_ClaimNext_RaceLost_NextStillFires(t *testing.T) {
 		t.Errorf("Next: fallback should still fire on race-lost claim-next:\n%s", stdout)
 	}
 }
+
+func TestDone_Md_NoteEcho_Single(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "A task")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "-m", "shipped")
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if !strings.Contains(stdout, "Done: "+id+" \"A task\"") {
+		t.Errorf("missing Done line:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, `  note: 7 chars · "shipped"`) {
+		t.Errorf("missing note echo:\n%s", stdout)
+	}
+}
+
+func TestDone_Md_NoteEcho_Long_Truncates(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "A task")
+	db.Close()
+
+	// 124-rune body with spaces — past the 60-rune window, must ellipsis.
+	body := strings.Repeat("abcdefghij ", 11) + "xyz"
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "-m", body)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if !strings.Contains(stdout, "124 chars") {
+		t.Errorf("char count: want 124:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "…\"") {
+		t.Errorf("expected ellipsis in preview:\n%s", stdout)
+	}
+}
+
+// P5 — When closing a leaf exhausts the forward sibling/parent chain but
+// work remains elsewhere in the tree, Next: should fall back to the
+// globally-next claimable leaf rather than going silent. Here P2 is the
+// later root-level parent and c2a is its only leaf; closing c2a
+// auto-closes P2, and there is no root sibling after P2 — but P1 still
+// has c1a. The ack must surface c1a as the fallback.
+func TestDone_Next_Fallback_WhenLastLeafOfLastRoot_OpenWorkRemainsEarlier(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	p1 := job.MustAdd(t, db, "", "P1")
+	p2 := job.MustAdd(t, db, "", "P2")
+	c1a := job.MustAdd(t, db, p1, "c1a")
+	c2a := job.MustAdd(t, db, p2, "c2a")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c2a)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	want := "Next: " + c1a + " \"c1a\""
+	if !strings.Contains(stdout, want) {
+		t.Errorf("Next: should fall back to globally-next claimable leaf:\n%s", stdout)
+	}
+}
+
+// P5 — Closing the last sibling (by sort_order) of a parent that does
+// NOT auto-close (because earlier siblings are still open) currently
+// leaves the ack silent on "what next." Fallback should name an earlier
+// sibling in the same parent.
+func TestDone_Next_Fallback_WhenHighestSortOrderSiblingClosesWithEarlierOpen(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	a := job.MustAdd(t, db, root, "A")
+	_ = job.MustAdd(t, db, root, "B")
+	c := job.MustAdd(t, db, root, "C")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	// A comes before B in sort_order; global frontier picks A first.
+	want := "Next: " + a + " \"A\""
+	if !strings.Contains(stdout, want) {
+		t.Errorf("Next: should fall back to an earlier unblocked sibling:\n%s", stdout)
+	}
+}
+
+func TestDone_Md_NoteEcho_Multi_PerItem(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "A")
+	b := job.MustAdd(t, db, "", "B")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", a, b, "-m", "ok")
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	// Each closed target emits its own note preview sub-line.
+	count := strings.Count(stdout, `  note: 2 chars · "ok"`)
+	if count != 2 {
+		t.Errorf("want 2 note previews, got %d:\n%s", count, stdout)
+	}
+}

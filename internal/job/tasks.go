@@ -842,7 +842,7 @@ func RunMove(db *sql.DB, shortID, direction, relativeToShortID, actor string) er
 type DoneContext struct {
 	ClosedID           string
 	ClosedTitle        string
-	NextSibling        *Task
+	Next               *Task
 	SkippedBlocked     *Task
 	SkippedBlockedBy   string
 	ParentID           string
@@ -851,8 +851,6 @@ type DoneContext struct {
 	ParentDoneCount    int
 	ParentTotalCount   int
 	ParentAutoClosed   bool
-	NextAfterParent    *Task
-	NextFallback       *Task
 	WholeTreeComplete  bool
 	WholeTreeDoneCount int
 	WholeTreeRootID    string
@@ -899,58 +897,16 @@ func ComputeDoneContext(db *sql.DB, closedShortID string, autoClosedSet map[stri
 					ctx.ParentDoneCount++
 				}
 			}
-			nextSib, skipped, skippedBy, err := findNextSibling(db, siblings, closed)
-			if err != nil {
-				return nil, err
-			}
-			// If the raw sibling is itself a parent-with-open-children, the
-			// actionable "Next" for the user is a leaf under that sibling — not
-			// the parent, which isn't claimable under leaf-frontier semantics.
-			nextSib, err = descendToClaimableLeaf(db, nextSib)
-			if err != nil {
-				return nil, err
-			}
-			ctx.NextSibling = nextSib
-			ctx.SkippedBlocked = skipped
-			ctx.SkippedBlockedBy = skippedBy
-
-			// When the parent auto-closed, walk up through any additional
-			// auto-closed ancestors to find the next work to surface.
-			if ctx.ParentAutoClosed {
-				topClosed := parent
-				for topClosed.ParentID != nil {
-					gp, err := getTaskByID(db, *topClosed.ParentID)
-					if err != nil {
-						return nil, err
-					}
-					if gp == nil || gp.Status != "done" {
-						break
-					}
-					topClosed = gp
-				}
-				var grandSiblings []*Task
-				if topClosed.ParentID != nil {
-					grandSiblings, err = getChildren(db, *topClosed.ParentID)
-				} else {
-					grandSiblings, err = getRootTasks(db)
-				}
-				if err != nil {
-					return nil, err
-				}
-				nextAfter, _, _, err := findNextSibling(db, grandSiblings, topClosed)
-				if err != nil {
-					return nil, err
-				}
-				// Same leaf-frontier fix: if the next top-level sibling is a
-				// parent-with-open-children, surface its first claimable leaf.
-				nextAfter, err = descendToClaimableLeaf(db, nextAfter)
-				if err != nil {
-					return nil, err
-				}
-				ctx.NextAfterParent = nextAfter
-			}
 		}
 	}
+
+	next, skipped, skippedBy, err := findNextClaimableLeafHierarchical(db, closed)
+	if err != nil {
+		return nil, err
+	}
+	ctx.Next = next
+	ctx.SkippedBlocked = skipped
+	ctx.SkippedBlockedBy = skippedBy
 
 	root, err := findTopAncestor(db, closed)
 	if err != nil {
@@ -968,22 +924,140 @@ func ComputeDoneContext(db *sql.DB, closedShortID string, autoClosedSet map[stri
 		}
 	}
 
-	// Fallback: when neither the next-sibling nor next-after-parent paths
-	// produced a hint, surface the globally-next claimable leaf by
-	// sort_path. Covers closing the highest-sort_order sibling under a
-	// parent whose earlier siblings are still open, and closing the last
-	// leaf of the last top-level parent when earlier roots still have work.
-	if ctx.NextSibling == nil && ctx.NextAfterParent == nil {
-		leaves, lerr := queryAvailableLeafFrontier(db, nil, 1, "")
-		if lerr != nil {
-			return nil, lerr
-		}
-		if len(leaves) > 0 {
-			ctx.NextFallback = leaves[0]
-		}
+	return ctx, nil
+}
+
+// findNextClaimableLeafHierarchical implements the Next: walk used by
+// the done ack. Starting at closed's parent, at each ancestor level it
+// checks forward siblings (sort_order strictly greater than the
+// came-from child) and then earlier siblings (strictly less), descending
+// into any parent-with-open-children to surface the first claimable
+// leaf. It walks up until claimable work is found or until it has
+// exhausted closed's root tree, then makes one final pass over the
+// root-level forest as virtual siblings. Returns (nil, nil, "", nil)
+// when the entire database has no claimable work.
+//
+// The `skipped` / `skippedBy` return slots only fire at the immediate
+// parent level: if the first forward sibling of closed was blocked and
+// we skipped past it to find Next, we surface that to the user via the
+// "Next sibling X is blocked on Y. Skipping to Z." hint.
+func findNextClaimableLeafHierarchical(db *sql.DB, closed *Task) (*Task, *Task, string, error) {
+	var skipped *Task
+	var skippedBy string
+
+	// cameFromID / cameFromSortOrder describe the child of the current
+	// ancestor that is on the path from the closed task. At the first
+	// iteration this is `closed` itself; each subsequent iteration
+	// steps cameFrom up one level.
+	cameFromID := closed.ID
+	cameFromSortOrder := closed.SortOrder
+
+	var anchorParentID *int64
+	if closed.ParentID != nil {
+		pid := *closed.ParentID
+		anchorParentID = &pid
 	}
 
-	return ctx, nil
+	firstLevel := true
+
+	// Helper: given a list of candidate siblings, pick the first
+	// unblocked one with a claimable descendant and return its leaf.
+	// blockedSkippedSinkFirstLevel records the first blocked candidate
+	// encountered at the first level so the caller can emit the
+	// "skipping to" hint.
+	pickFromCandidates := func(cands []*Task, recordSkip bool) (*Task, error) {
+		for _, c := range cands {
+			if c.Status == "done" || c.Status == "canceled" {
+				continue
+			}
+			blockers, err := GetBlockers(db, c.ShortID)
+			if err != nil {
+				return nil, err
+			}
+			if len(blockers) > 0 {
+				if recordSkip && skipped == nil {
+					skipped = c
+					skippedBy = blockers[0].ShortID
+				}
+				continue
+			}
+			leaf, err := descendToClaimableLeaf(db, c)
+			if err != nil {
+				return nil, err
+			}
+			if leaf != nil {
+				return leaf, nil
+			}
+		}
+		return nil, nil
+	}
+
+	for {
+		var children []*Task
+		var err error
+		if anchorParentID == nil {
+			children, err = getRootTasks(db)
+		} else {
+			children, err = getChildren(db, *anchorParentID)
+		}
+		if err != nil {
+			return nil, nil, "", err
+		}
+
+		// Forward candidates: sort_order strictly greater than came-from's.
+		var forward, earlier []*Task
+		for _, c := range children {
+			if c.ID == cameFromID {
+				continue
+			}
+			if c.SortOrder > cameFromSortOrder {
+				forward = append(forward, c)
+			} else if c.SortOrder < cameFromSortOrder {
+				earlier = append(earlier, c)
+			}
+		}
+
+		// Forward first; record the first blocked forward-sibling at the
+		// immediate parent level for the "skipping to" hint.
+		if leaf, err := pickFromCandidates(forward, firstLevel); err != nil {
+			return nil, nil, "", err
+		} else if leaf != nil {
+			return leaf, skipped, skippedBy, nil
+		}
+
+		// Then earlier siblings at this level. Blocked-sibling reporting
+		// only makes sense forward, so suppress it here.
+		if leaf, err := pickFromCandidates(earlier, false); err != nil {
+			return nil, nil, "", err
+		} else if leaf != nil {
+			return leaf, skipped, skippedBy, nil
+		}
+
+		// We just checked the virtual-root forest; there is nothing
+		// further up.
+		if anchorParentID == nil {
+			return nil, skipped, skippedBy, nil
+		}
+
+		// Walk up one level: the current anchor becomes "came from" at
+		// the grandparent scope.
+		parent, err := getTaskByID(db, *anchorParentID)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if parent == nil {
+			return nil, skipped, skippedBy, nil
+		}
+		cameFromID = parent.ID
+		cameFromSortOrder = parent.SortOrder
+		if parent.ParentID != nil {
+			pid := *parent.ParentID
+			anchorParentID = &pid
+		} else {
+			anchorParentID = nil
+		}
+		firstLevel = false
+	}
 }
 
 func getTaskByID(db *sql.DB, id int64) (*Task, error) {

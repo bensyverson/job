@@ -892,6 +892,64 @@ func TestDone_Md_NoteEcho_Long_Truncates(t *testing.T) {
 	}
 }
 
+// Hierarchical Next: walk — when the closed task's own root tree still
+// has claimable work, we must stay in that tree even if another root
+// tree has EARLIER sort_path. Current sort_path-based global fallback
+// gets this wrong.
+func TestDone_Next_HierarchicalWalk_StaysInRootTreeOverEarlierSortPath(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	// Other root is earlier (lower sort_order) and has its own leaf.
+	otherRoot := job.MustAdd(t, db, "", "Other")
+	_ = job.MustAdd(t, db, otherRoot, "OtherLeaf")
+	// The tree we are working in.
+	root := job.MustAdd(t, db, "", "Root")
+	a := job.MustAdd(t, db, root, "A")
+	_ = job.MustAdd(t, db, root, "B")
+	c := job.MustAdd(t, db, root, "C")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", c)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	want := "Next: " + a + " \"A\""
+	if !strings.Contains(stdout, want) {
+		t.Errorf("Next must stay in the closed task's root tree:\n%s", stdout)
+	}
+}
+
+// Walk up past an auto-closed parent and pick up an EARLIER sibling at
+// the grandparent level before escaping to a different root tree. The
+// current NextAfterParent path only looks forward; this exercises the
+// backward branch on an ancestor level.
+func TestDone_Next_HierarchicalWalk_EarlierSiblingAtGrandparent(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	// Decoy: earlier root with its own leaf; sort_path will undercut the
+	// correct answer under the current global fallback.
+	decoy := job.MustAdd(t, db, "", "Decoy")
+	_ = job.MustAdd(t, db, decoy, "DecoyLeaf")
+	// Working root.
+	working := job.MustAdd(t, db, "", "Working")
+	workLeft := job.MustAdd(t, db, working, "WorkLeft")
+	workSub := job.MustAdd(t, db, working, "WorkSub")
+	closing := job.MustAdd(t, db, workSub, "Closing")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", closing)
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	// Closing is the only child of WorkSub → WorkSub auto-closes.
+	// Walk up to Working. Forward siblings of WorkSub: none. Earlier:
+	// WorkLeft. Descend (it is a leaf) → WorkLeft.
+	want := "Next: " + workLeft + " \"WorkLeft\""
+	if !strings.Contains(stdout, want) {
+		t.Errorf("Next should pick WorkLeft via the walk-up's earlier-sibling branch:\n%s", stdout)
+	}
+}
+
 // P5 — When closing a leaf exhausts the forward sibling/parent chain but
 // work remains elsewhere in the tree, Next: should fall back to the
 // globally-next claimable leaf rather than going silent. Here P2 is the

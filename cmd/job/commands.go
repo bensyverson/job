@@ -337,18 +337,11 @@ func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCt
 	// next work in the same call. The Claimed line names the same target,
 	// so a Next line would be a stale duplicate. Skip-blocked info is kept
 	// even when suppressing Next — it's context on a different sibling.
-	if ctx.SkippedBlocked != nil && ctx.NextSibling != nil {
+	if ctx.SkippedBlocked != nil && ctx.Next != nil {
 		lines = append(lines, AckLine(fmt.Sprintf("  Next sibling %s is blocked on %s. Skipping to %s.",
-			ctx.SkippedBlocked.ShortID, ctx.SkippedBlockedBy, ctx.NextSibling.ShortID)))
-	} else if !opts.suppressNext {
-		if ctx.NextSibling != nil {
-			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextSibling.ShortID, ctx.NextSibling.Title)))
-		} else if ctx.NextAfterParent != nil {
-			// Parent auto-closed; surface the next work past it.
-			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextAfterParent.ShortID, ctx.NextAfterParent.Title)))
-		} else if ctx.NextFallback != nil {
-			lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.NextFallback.ShortID, ctx.NextFallback.Title)))
-		}
+			ctx.SkippedBlocked.ShortID, ctx.SkippedBlockedBy, ctx.Next.ShortID)))
+	} else if !opts.suppressNext && ctx.Next != nil {
+		lines = append(lines, AckLine(fmt.Sprintf("  Next: %s %q", ctx.Next.ShortID, ctx.Next.Title)))
 	}
 
 	// Only show "Parent X: N of M complete" when the parent is still open.
@@ -421,12 +414,8 @@ func renderDoneJSON(w io.Writer, closed []*job.ClosedResult, alreadyDone []strin
 		out.Closed = []doneJSONClosed{}
 	}
 	if ctx != nil && len(closed) > 0 {
-		if ctx.NextSibling != nil {
-			out.Next = &doneJSONNext{ID: ctx.NextSibling.ShortID, Title: ctx.NextSibling.Title}
-		} else if ctx.NextAfterParent != nil && ctx.ParentAutoClosed {
-			out.Next = &doneJSONNext{ID: ctx.NextAfterParent.ShortID, Title: ctx.NextAfterParent.Title}
-		} else if ctx.NextFallback != nil {
-			out.Next = &doneJSONNext{ID: ctx.NextFallback.ShortID, Title: ctx.NextFallback.Title}
+		if ctx.Next != nil {
+			out.Next = &doneJSONNext{ID: ctx.Next.ShortID, Title: ctx.Next.Title}
 		}
 		if ctx.ParentID != "" {
 			out.Parent = &doneJSONParent{ID: ctx.ParentID, Done: ctx.ParentDoneCount, Total: ctx.ParentTotalCount}

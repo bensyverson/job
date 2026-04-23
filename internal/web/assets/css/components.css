@@ -142,6 +142,14 @@ a.c-id-pill:hover {
   text-decoration: none;
 }
 
+/* Re-asserts the label-color border on hover. Without this, the
+   global a:hover rule (border-bottom-color: outline-strong) wins
+   specificity-wise on the label-pill anchors and only the bottom
+   border darkens, which reads as a stray underline. */
+.c-label-pill:hover {
+  border-color: var(--label-color, var(--color-outline));
+}
+
 /* Selected state — flips from ringed to filled, label-color background
    with white text. Used in the plan filter strip and on inline label
    pills that sit on a task row when the label is in the selection. */

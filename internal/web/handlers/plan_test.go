@@ -300,6 +300,78 @@ func TestPlan_FilterTabsRenderInChrome(t *testing.T) {
 	mustContain(t, body, `>All<`)
 }
 
+func TestPlan_LabelFilter_KeepsMatchingTasksAndAncestors(t *testing.T) {
+	db := setupPlanTestDB(t)
+	// Tree:
+	//   rootA (no label) → childA1 (label=web) → leafA1a (no label)
+	//   rootB (no label) → childB1 (label=other)
+	// ?label=web keeps rootA (ancestor of a match), childA1 (match);
+	// drops leafA1a (unlabeled descendant of a match is filtered too,
+	// per the spec's "scopes the tree to tasks matching the label,
+	// keeping ancestor chain visible for context"), rootB, childB1.
+	rootA := mustAdd(t, db, "claude", "Root A", nil, nil)
+	childA1 := mustAdd(t, db, "claude", "Child A1 web", &rootA, []string{"web"})
+	leafA1a := mustAdd(t, db, "claude", "Leaf A1a", &childA1, nil)
+
+	rootB := mustAdd(t, db, "claude", "Root B", nil, nil)
+	childB1 := mustAdd(t, db, "claude", "Child B1 other", &rootB, []string{"other"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "label=web")
+
+	mustContain(t, body, `id="task-`+rootA+`"`)
+	mustContain(t, body, `id="task-`+childA1+`"`)
+	if strings.Contains(body, `id="task-`+leafA1a+`"`) {
+		t.Errorf("leafA1a %q (unlabeled descendant of a match) should be filtered out by ?label=web", leafA1a)
+	}
+	if strings.Contains(body, `id="task-`+rootB+`"`) {
+		t.Errorf("rootB %q should be filtered out by ?label=web", rootB)
+	}
+	if strings.Contains(body, `id="task-`+childB1+`"`) {
+		t.Errorf("childB1 %q should be filtered out by ?label=web", childB1)
+	}
+}
+
+func TestPlan_LabelFilter_RendersActivePillAndClearLink(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+	_ = mustAdd(t, db, "claude", "B", nil, []string{"other"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "label=web")
+
+	// Each distinct label is a clickable pill; the active one carries
+	// the --active modifier.
+	mustContain(t, body, `c-label-pill--active" data-label="web"`)
+	mustContain(t, body, `href="/plan?label=other"`)
+	// A clear link appears only when a filter is active.
+	mustContain(t, body, `href="/plan"`)
+}
+
+func TestPlan_LabelFilter_UnknownLabelShowsEmptyState(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "label=nonesuch")
+
+	mustContain(t, body, `c-plan-empty`)
+}
+
+func TestPlan_NoLabelFilter_OmitsClearLinkAndNoActivePill(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	// Pill exists, but without --active.
+	mustContain(t, body, `data-label="web"`)
+	if strings.Contains(body, `c-label-pill--active`) {
+		t.Errorf("no ?label= → no active pill should render")
+	}
+}
+
 // assertRowHasClass finds the row tagged with data-plan-task="<shortID>"
 // and confirms its class attribute contains `wantClass`. Resilient to
 // attribute reordering inside the opening <div> tag.

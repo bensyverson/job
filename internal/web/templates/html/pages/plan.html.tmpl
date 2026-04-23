@@ -12,6 +12,11 @@
     <a href="/plan" class="c-tab" aria-disabled="true">Archived</a>
     <a href="/plan" class="c-tab" aria-disabled="true">All</a>
   </nav>
+  {{if .Labels}}
+  <span class="c-panel__title" style="margin-left: var(--space-xl)">Labels</span>
+  {{range .Labels}}<a href="{{.URL}}" class="c-label-pill{{if .Active}} c-label-pill--active{{end}}" data-label="{{.Name}}">{{.Name}}</a>{{end}}
+  {{if .ActiveLabel}}<a href="{{.ClearURL}}" class="t-muted t-body-sm" style="margin-left: var(--space-xs)">clear</a>{{end}}
+  {{end}}
 </div>
 
 <section class="c-section" aria-label="Plan">

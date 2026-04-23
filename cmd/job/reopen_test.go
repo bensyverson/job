@@ -26,8 +26,9 @@ func TestReopen_Plain_DoesNotTouchDescendants(t *testing.T) {
 
 	db = openTestDB(t, dbFile)
 	parent := job.MustGet(t, db, p)
-	if parent.Status != "available" {
-		t.Errorf("parent: status=%q", parent.Status)
+	// Auto-claim fires by default, so parent ends up "claimed" not "available".
+	if parent.Status != "claimed" {
+		t.Errorf("parent: status=%q, want claimed (auto-claim fires on reopen)", parent.Status)
 	}
 	child := job.MustGet(t, db, c)
 	if child.Status != "done" {
@@ -74,8 +75,9 @@ func TestReopen_FromCanceled(t *testing.T) {
 
 	db = openTestDB(t, dbFile)
 	task := job.MustGet(t, db, id)
-	if task.Status != "available" {
-		t.Errorf("status: got %q, want available", task.Status)
+	// Auto-claim fires by default after reopen, so status is "claimed".
+	if task.Status != "claimed" {
+		t.Errorf("status: got %q, want claimed (auto-claim fires on reopen)", task.Status)
 	}
 	detail, _ := job.GetLatestEventDetail(db, task.ID, "reopened")
 	if detail["from_status"] != "canceled" {
@@ -132,5 +134,68 @@ func TestReopen_EventShape_Cascade(t *testing.T) {
 	}
 	if children[0] != c {
 		t.Errorf("child: got %v, want %s", children[0], c)
+	}
+}
+
+// R2 — reopen auto-claims the task by default.
+func TestReopen_AutoClaims_ByDefault(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "LeafTask")
+	job.MustDone(t, db, id)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "reopen", id)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if !strings.Contains(stdout, "claimed by alice") {
+		t.Errorf("expected auto-claim line:\n%s", stdout)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	if task.Status != "claimed" {
+		t.Errorf("status: got %q, want claimed", task.Status)
+	}
+}
+
+// R2 — --no-claim skips the claim step and omits the claim line.
+func TestReopen_NoClaim_Flag_SkipsClaim(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "LeafTask")
+	job.MustDone(t, db, id)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "reopen", id, "--no-claim")
+	if err != nil {
+		t.Fatalf("reopen --no-claim: %v", err)
+	}
+	if strings.Contains(stdout, "claimed") {
+		t.Errorf("--no-claim must not include claim line:\n%s", stdout)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	if task.Status != "available" {
+		t.Errorf("status: got %q, want available", task.Status)
+	}
+}
+
+// R2 — output includes the task title.
+func TestReopen_Output_IncludesTitle(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "MySpecialTask")
+	job.MustDone(t, db, id)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "reopen", id)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if !strings.Contains(stdout, "MySpecialTask") {
+		t.Errorf("output must include task title:\n%s", stdout)
 	}
 }

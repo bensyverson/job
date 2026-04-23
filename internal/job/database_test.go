@@ -2107,7 +2107,7 @@ func TestRunList_ClaimedByFilter_ShowsOnlyActorsClaims(t *testing.T) {
 		t.Fatalf("claim b: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, ClaimedByActor: "alice"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2123,7 +2123,7 @@ func TestRunList_ClaimedByFilter_NoMatch(t *testing.T) {
 	db := SetupTestDB(t)
 	MustAdd(t, db, "", "Unclaimed")
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "nobody", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, ClaimedByActor: "nobody"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2141,7 +2141,7 @@ func TestRunList_ClaimedByFilter_PreservesParentContext(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, ClaimedByActor: "alice"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2173,7 +2173,7 @@ func TestRunList_ClaimedByFilter_WithLabelFilter(t *testing.T) {
 		t.Fatalf("claim b: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, false, "p0", "alice", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, Label: "p0", ClaimedByActor: "alice"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2196,7 +2196,7 @@ func TestRunList_ClaimedByFilter_ExcludesExpiredClaims(t *testing.T) {
 	}
 
 	CurrentNowFunc = func() time.Time { return baseTime.Add(2 * time.Hour) }
-	nodes, err := RunListFiltered(db, "", TestActor, false, "", "alice", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, ClaimedByActor: "alice"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2215,7 +2215,7 @@ func TestRunList_ClaimedByFilter_ExcludesDoneTasks(t *testing.T) {
 		t.Fatalf("done: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, ShowAll: true, ClaimedByActor: "alice"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}
@@ -2232,7 +2232,7 @@ func TestRunList_ClaimedByFilter_ComposesWithAll(t *testing.T) {
 		t.Fatalf("claim a: %v", err)
 	}
 
-	nodes, err := RunListFiltered(db, "", TestActor, true, "", "alice", "")
+	nodes, err := RunListFiltered(db, ListFilter{Actor: TestActor, ShowAll: true, ClaimedByActor: "alice"})
 	if err != nil {
 		t.Fatalf("RunListFiltered: %v", err)
 	}

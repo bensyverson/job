@@ -172,12 +172,22 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string, labels
 	return result, tx.Commit()
 }
 
-func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
-	return RunListFiltered(db, parentShortID, actor, showAll, "", "", "")
+// ListFilter holds all filtering parameters for RunListFiltered.
+type ListFilter struct {
+	ParentID       string
+	Actor          string
+	ShowAll        bool
+	ClaimedByActor string
+	Label          string
+	GrepPattern    string
 }
 
-func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labelName, claimedByFilter, grepPattern string) ([]*TaskNode, error) {
-	if err := expireStaleClaims(db, actor); err != nil {
+func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
+	return RunListFiltered(db, ListFilter{ParentID: parentShortID, Actor: actor, ShowAll: showAll})
+}
+
+func RunListFiltered(db *sql.DB, f ListFilter) ([]*TaskNode, error) {
+	if err := expireStaleClaims(db, f.Actor); err != nil {
 		return nil, err
 	}
 
@@ -188,10 +198,10 @@ func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labe
 
 	tree := buildTree(tasks)
 
-	if parentShortID != "" {
-		parent := findNodeByShortID(tree, parentShortID)
+	if f.ParentID != "" {
+		parent := findNodeByShortID(tree, f.ParentID)
 		if parent == nil {
-			return nil, fmt.Errorf("task %q not found", parentShortID)
+			return nil, fmt.Errorf("task %q not found", f.ParentID)
 		}
 		tree = parent.Children
 	}
@@ -201,20 +211,20 @@ func RunListFiltered(db *sql.DB, parentShortID, actor string, showAll bool, labe
 		return nil, err
 	}
 
-	effectiveShowAll := showAll || claimedByFilter != ""
+	effectiveShowAll := f.ShowAll || f.ClaimedByActor != ""
 	filtered := filterTree(tree, effectiveShowAll, blockedIDs)
-	if claimedByFilter != "" {
-		filtered = filterByClaimedActor(filtered, claimedByFilter)
+	if f.ClaimedByActor != "" {
+		filtered = filterByClaimedActor(filtered, f.ClaimedByActor)
 	}
-	if labelName != "" {
-		labeledIDs, err := taskIDsWithLabel(db, labelName)
+	if f.Label != "" {
+		labeledIDs, err := taskIDsWithLabel(db, f.Label)
 		if err != nil {
 			return nil, err
 		}
 		filtered = filterByLabel(filtered, labeledIDs)
 	}
-	if grepPattern != "" {
-		filtered = filterByGrep(filtered, grepPattern)
+	if f.GrepPattern != "" {
+		filtered = filterByGrep(filtered, f.GrepPattern)
 	}
 	return filtered, nil
 }

@@ -126,10 +126,10 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 | Command | Description |
 |---------|-------------|
 | `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. Done tasks render as structural lines (`- [x] \`<id>\` Title`) without inline note bodies — labels and blockers stay scannable. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job ls` is a deprecated alias. |
-| `job info <id>` | Show full details for one task. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `job show <id>` is a deprecated alias. |
+| `job info <id> [id ...]` | Show full details for one or more tasks, separated by a blank line. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `--format=json` returns a JSON array. `job show <id>` is a deprecated alias. |
 | `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. `-l, --label <name>` filters. |
-| `job status` | Session briefing: claimed / open / done tally + identity line, then a per-root rollup of the top-level forest (one row per top-level task with its own subtree counts). Ends with a `Next:` hint naming the globally-next claimable leaf, and `Stale:` lines for any claims past their TTL. With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. |
-| `job status <id>` | Two-level rollup of a task and its direct children: headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`, with zero-count tokens suppressed) plus one rollup line per direct child. When every direct child is a leaf, the per-child block collapses — the headline already says everything worth saying — and only claimed rows surface (the "who's working on what" signal). Fully-complete subtrees append `closed <timestamp>`. Ends with the same `Next:` / `Stale:` trailers scoped to the subtree. `job summary [id]` is a deprecated alias. |
+| `job status` | Session briefing: claimed / open / done tally + identity line, then a per-root rollup of the top-level forest (one row per top-level task with its own subtree counts). Ends with a `Next:` hint naming the globally-next claimable leaf, `Stale:` lines for any claims past their TTL, and `Decision:` lines for any open tasks labeled `decision` (human-decision pending). With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. |
+| `job status <id>` | Two-level rollup of a task and its direct children: headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`, with zero-count tokens suppressed) plus one rollup line per direct child. When every direct child is a leaf, the per-child block collapses — the headline already says everything worth saying — and only claimed rows surface (the "who's working on what" signal). Fully-complete subtrees append `closed <timestamp>`. Ends with `Next:` / `Stale:` / `Decision:` trailers scoped to the subtree, followed by the actionable task list (identical to `job list <id>`). `job summary [id]` is a deprecated alias. |
 
 All support `--format=json` (except `status`, which is always plain text).
 
@@ -152,7 +152,7 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 | | `--result '<json>'` Record structured JSON on the `done` event. |
 | | `--claim-next` After closing, atomically claim the next available leaf. Collapses the close-then-advance flow into one call. On race (leaf grabbed by another agent between close and claim), done still succeeds and a status line names the taken leaf — claim is opportunistic, close is irreversible. |
 | | `--format=json` Machine-readable output. |
-| `job reopen <id>` | Reopen a completed task. `--cascade` also reopens all done descendants. |
+| `job reopen <id>` | Reopen a completed task and auto-claim it (so you can continue work immediately). `--no-claim` skips the auto-claim. `--cascade` also reopens all done descendants (auto-claim is suppressed with `--cascade` since the parent would have open children). |
 
 After a successful `done`, the ack ends with a `Next:` hint naming the suggested next claimable leaf. The walk starts at the closed task's parent and, at each ancestor level, prefers forward siblings (later sort_order) over earlier ones before stepping up; it only crosses into a different root tree once the closed task's own root is exhausted. Agents following the hint stay inside the current plan as long as there's work there.
 
@@ -222,6 +222,8 @@ Tasks carry free-form, flat labels. Labels are local to each task — there's no
 | `job next all --label <name>` | The whole claimable frontier, scoped to the label. |
 
 Labels show up on `job info <id>` and inline in `job list` parentheses. They can also be set at import time via the YAML `labels: [...]` key.
+
+The `decision` label is a convention: tasks labeled `decision` represent questions that must be answered before work can proceed. Open `decision` tasks surface as `Decision: <id> "<title>"` lines in `job status` (global and scoped), making pending human decisions visible alongside `Next:` and `Stale:`.
 
 ### Planning
 

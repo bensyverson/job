@@ -58,6 +58,23 @@ func newStatusCmd() *cobra.Command {
 					return err
 				}
 				job.RenderSummary(out, rollup)
+
+				nodes, err := job.RunListFiltered(db, job.ListFilter{ParentID: target.ShortID})
+				if err != nil {
+					return err
+				}
+				if len(nodes) > 0 {
+					fmt.Fprintln(out)
+					blockers, err := job.CollectBlockers(db, nodes)
+					if err != nil {
+						return err
+					}
+					labels, err := collectLabels(db, nodes)
+					if err != nil {
+						return err
+					}
+					job.RenderMarkdownList(out, nodes, blockers, labels, 0)
+				}
 			} else {
 				s, err := job.RunStatus(db, asFlag)
 				if err != nil {

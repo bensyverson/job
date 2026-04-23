@@ -564,6 +564,82 @@ func TestStatus_CLI_WithID_MatchesSummary(t *testing.T) {
 	}
 }
 
+// R1 — `status <id>` inlines task list below the rollup on a flat subtree.
+func TestStatus_CLI_WithID_InlinesTaskList_Flat(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "MyProject")
+	leaf1 := job.MustAdd(t, db, root, "DoThing")
+	leaf2 := job.MustAdd(t, db, root, "OtherThing")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status", root)
+	if err != nil {
+		t.Fatalf("status <id>: %v", err)
+	}
+	// Rollup header must be present.
+	if !strings.Contains(stdout, "MyProject") {
+		t.Errorf("rollup missing title:\n%s", stdout)
+	}
+	// Task list must appear below rollup.
+	if !strings.Contains(stdout, leaf1) {
+		t.Errorf("task list missing leaf1 %s:\n%s", leaf1, stdout)
+	}
+	if !strings.Contains(stdout, leaf2) {
+		t.Errorf("task list missing leaf2 %s:\n%s", leaf2, stdout)
+	}
+	if !strings.Contains(stdout, "DoThing") {
+		t.Errorf("task list missing 'DoThing':\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "OtherThing") {
+		t.Errorf("task list missing 'OtherThing':\n%s", stdout)
+	}
+}
+
+// R1 — `status` (no args) must NOT append a task list.
+func TestStatus_CLI_NoArgs_NoTaskList(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Root")
+	job.MustAdd(t, db, root, "Leaf")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	// Should not contain markdown task-list markers — those belong to list output.
+	if strings.Contains(stdout, "- [ ]") || strings.Contains(stdout, "- [x]") {
+		t.Errorf("status (no args) must not render a task list:\n%s", stdout)
+	}
+}
+
+// R1 — `status <id>` on a multi-level tree shows all levels (same
+// depth default as list), using markdown checkbox format.
+func TestStatus_CLI_WithID_InlinesTaskList_Deep(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	root := job.MustAdd(t, db, "", "Deep")
+	phase := job.MustAdd(t, db, root, "Phase1")
+	leaf := job.MustAdd(t, db, phase, "LeafTask")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status", root)
+	if err != nil {
+		t.Fatalf("status <id>: %v", err)
+	}
+	// Task list must use markdown checkbox format.
+	if !strings.Contains(stdout, "- [ ]") {
+		t.Errorf("task list must use markdown checkbox format:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, leaf) {
+		t.Errorf("deep leaf %s missing from task list:\n%s", leaf, stdout)
+	}
+	if !strings.Contains(stdout, "LeafTask") {
+		t.Errorf("deep leaf title missing:\n%s", stdout)
+	}
+}
+
 // u4 — `job status` (no id) now renders the forest-level rollup under
 // the session preamble: one row per top-level task, each with its own
 // subtree counts. Lets an agent see the landscape at session start
@@ -592,5 +668,119 @@ func TestStatus_CLI_RendersForestRollup(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Beta") {
 		t.Errorf("Beta root missing from forest block:\n%s", stdout)
+	}
+}
+
+// R4 — open decision-labeled task surfaces in status output.
+func TestStatus_CLI_Decision_OpenTask_Surfaces(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "ChooseAuthStrategy")
+	if _, err := job.RunLabelAdd(db, id, []string{"decision"}, "alice"); err != nil {
+		t.Fatalf("label add: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(stdout, "Decision:") {
+		t.Errorf("expected 'Decision:' line in status:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "ChooseAuthStrategy") {
+		t.Errorf("expected decision task title in status:\n%s", stdout)
+	}
+}
+
+// R4 — done decision-labeled task does NOT surface.
+func TestStatus_CLI_Decision_DoneTask_Hidden(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "OldDecision")
+	if _, err := job.RunLabelAdd(db, id, []string{"decision"}, "alice"); err != nil {
+		t.Fatalf("label add: %v", err)
+	}
+	job.MustDone(t, db, id)
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(stdout, "Decision:") {
+		t.Errorf("done decision task must not surface:\n%s", stdout)
+	}
+}
+
+// R4 — non-decision open task does NOT produce a Decision: line.
+func TestStatus_CLI_Decision_NoDecisionLabel_Hidden(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "NormalTask")
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(stdout, "Decision:") {
+		t.Errorf("non-decision task must not produce Decision: line:\n%s", stdout)
+	}
+}
+
+// R4 — multiple decision tasks each get their own Decision: line.
+func TestStatus_CLI_Decision_MultipleDecisions(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	a := job.MustAdd(t, db, "", "DecisionAlpha")
+	b := job.MustAdd(t, db, "", "DecisionBeta")
+	for _, id := range []string{a, b} {
+		if _, err := job.RunLabelAdd(db, id, []string{"decision"}, "alice"); err != nil {
+			t.Fatalf("label add: %v", err)
+		}
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	count := strings.Count(stdout, "Decision:")
+	if count != 2 {
+		t.Errorf("expected 2 Decision: lines, got %d:\n%s", count, stdout)
+	}
+}
+
+// R4 — scoped status <id> shows only in-subtree decisions.
+func TestStatus_CLI_Decision_ScopedToSubtree(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	inRoot := job.MustAdd(t, db, "", "InRoot")
+	inDecision := job.MustAdd(t, db, inRoot, "InDecision")
+	outDecision := job.MustAdd(t, db, "", "OutDecision")
+	for _, id := range []string{inDecision, outDecision} {
+		if _, err := job.RunLabelAdd(db, id, []string{"decision"}, "alice"); err != nil {
+			t.Fatalf("label add: %v", err)
+		}
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status", inRoot)
+	if err != nil {
+		t.Fatalf("status <id>: %v", err)
+	}
+	if !strings.Contains(stdout, "Decision:") {
+		t.Errorf("Decision: line missing:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "InDecision") {
+		t.Errorf("in-subtree decision title must appear:\n%s", stdout)
+	}
+	// OutDecision is outside the subtree — must not appear on a Decision: line.
+	lines := strings.SplitSeq(stdout, "\n")
+	for line := range lines {
+		if strings.HasPrefix(line, "Decision:") && strings.Contains(line, "OutDecision") {
+			t.Errorf("out-of-subtree decision must not appear on Decision: line:\n%s", stdout)
+		}
 	}
 }

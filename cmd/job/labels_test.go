@@ -404,7 +404,7 @@ func TestList_LabelFilter_MatchesOnly(t *testing.T) {
 	if _, err := job.RunLabelAdd(db, a, []string{"foo"}, job.TestActor); err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "foo", "", "")
+	nodes, err := job.RunListFiltered(db, job.ListFilter{Actor: job.TestActor, Label: "foo"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func TestList_LabelFilter_MatchesOnly(t *testing.T) {
 func TestList_LabelFilter_NoMatch_Empty(t *testing.T) {
 	db := job.SetupTestDB(t)
 	job.MustAdd(t, db, "", "A")
-	nodes, err := job.RunListFiltered(db, "", job.TestActor, false, "nope", "", "")
+	nodes, err := job.RunListFiltered(db, job.ListFilter{Actor: job.TestActor, Label: "nope"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,10 +491,14 @@ func TestInfo_Json_IncludesLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got map[string]any
-	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+	var arr []map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &arr); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, stdout)
 	}
+	if len(arr) != 1 {
+		t.Fatalf("expected 1-element array, got %d", len(arr))
+	}
+	got := arr[0]
 	labels, ok := got["labels"].([]any)
 	if !ok {
 		t.Fatalf("labels missing or wrong type: %v", got["labels"])
@@ -514,10 +518,14 @@ func TestInfo_Json_EmptyLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got map[string]any
-	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+	var arr []map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &arr); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, stdout)
 	}
+	if len(arr) != 1 {
+		t.Fatalf("expected 1-element array, got %d", len(arr))
+	}
+	got := arr[0]
 	if labels, ok := got["labels"].([]any); !ok || len(labels) != 0 {
 		t.Errorf("labels: got %v, want []", got["labels"])
 	}

@@ -9,11 +9,11 @@ import (
 func newInfoCmd() *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
-		Use:     "info <id>",
+		Use:     "info <id> [id ...]",
 		Aliases: []string{"show"},
-		Short:   "Show full details of a task",
-		Long:    "Show ID, title, description, status, claim info, blockers, children summary, and creation time. Use --format=json for machine-readable output.",
-		Args:    cobra.ExactArgs(1),
+		Short:   "Show full details of one or more tasks",
+		Long:    "Show ID, title, description, status, claim info, blockers, children summary, and creation time. Accepts multiple IDs; tasks are separated by a blank line. Use --format=json for machine-readable output (returns a JSON array).",
+		Args:    cobra.MinimumNArgs(1),
 		PreRun: func(cmd *cobra.Command, args []string) {
 			if cmd.CalledAs() == "show" {
 				fmt.Fprintln(cmd.ErrOrStderr(), "note: `job show` is an alias for `job info`; prefer the canonical form.")
@@ -26,16 +26,33 @@ func newInfoCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			info, err := job.RunInfo(db, args[0])
-			if err != nil {
-				return err
-			}
+			out := cmd.OutOrStdout()
 
 			if format == "json" {
-				job.RenderInfoJSON(cmd.OutOrStdout(), info)
-				fmt.Fprintln(cmd.OutOrStdout())
-			} else {
-				job.RenderInfoMarkdown(cmd.OutOrStdout(), info)
+				fmt.Fprint(out, "[")
+				for i, id := range args {
+					info, err := job.RunInfo(db, id)
+					if err != nil {
+						return err
+					}
+					if i > 0 {
+						fmt.Fprint(out, ",")
+					}
+					job.RenderInfoJSON(out, info)
+				}
+				fmt.Fprintln(out, "]")
+				return nil
+			}
+
+			for i, id := range args {
+				info, err := job.RunInfo(db, id)
+				if err != nil {
+					return err
+				}
+				if i > 0 {
+					fmt.Fprintln(out)
+				}
+				job.RenderInfoMarkdown(out, info)
 			}
 			return nil
 		},

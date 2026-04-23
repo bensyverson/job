@@ -67,7 +67,13 @@ Use --format=json for machine-readable output.`,
 				claimedByFilter = claimedBy
 			}
 
-			nodes, err := job.RunListFiltered(db, parentShortID, "", showAll, labelFilter, claimedByFilter, grepPattern)
+			nodes, err := job.RunListFiltered(db, job.ListFilter{
+				ParentID:       parentShortID,
+				ShowAll:        showAll,
+				Label:          labelFilter,
+				ClaimedByActor: claimedByFilter,
+				GrepPattern:    grepPattern,
+			})
 			if err != nil {
 				return err
 			}

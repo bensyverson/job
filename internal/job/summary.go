@@ -12,11 +12,13 @@ import (
 // own rollup gives the headline numbers; one rollup per direct child
 // adds enough granularity to tell which sub-phase needs attention,
 // without redrawing the full tree. Next names the first claimable leaf
-// in scope (nil when the scope has no claimable work).
+// in scope (nil when the scope has no claimable work). DecisionTasks
+// lists open tasks labeled "decision" within the scope.
 type Summary struct {
 	Target         *SubtreeRollup
 	DirectChildren []*SubtreeRollup
 	Next           *Task
+	DecisionTasks  []*Task
 }
 
 type SubtreeRollup struct {
@@ -105,7 +107,61 @@ func BuildRollup(db *sql.DB, target *Task) (*Summary, error) {
 		next = leaves[0]
 	}
 
-	return &Summary{Target: targetRollup, DirectChildren: childRollups, Next: next}, nil
+	decisions, err := queryDecisionTasks(db, parentID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Summary{Target: targetRollup, DirectChildren: childRollups, Next: next, DecisionTasks: decisions}, nil
+}
+
+// queryDecisionTasks returns open tasks labeled "decision" within the
+// given scope. When parentID is nil the whole DB is searched.
+func queryDecisionTasks(db *sql.DB, parentID *int64) ([]*Task, error) {
+	var rows *sql.Rows
+	var err error
+	if parentID == nil {
+		rows, err = db.Query(`
+			SELECT t.id, t.short_id, t.title, t.status
+			FROM tasks t
+			JOIN task_labels l ON l.task_id = t.id
+			WHERE l.name = 'decision'
+			  AND t.status NOT IN ('done', 'canceled')
+			  AND t.deleted_at IS NULL
+			ORDER BY t.sort_order, t.id
+		`)
+	} else {
+		rows, err = db.Query(`
+			WITH RECURSIVE subtree(id) AS (
+				SELECT id FROM tasks WHERE id = ? AND deleted_at IS NULL
+				UNION ALL
+				SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+				WHERE t.deleted_at IS NULL
+			)
+			SELECT t.id, t.short_id, t.title, t.status
+			FROM tasks t
+			JOIN subtree s ON s.id = t.id
+			JOIN task_labels l ON l.task_id = t.id
+			WHERE l.name = 'decision'
+			  AND t.status NOT IN ('done', 'canceled')
+			  AND t.deleted_at IS NULL
+			ORDER BY t.sort_order, t.id
+		`, *parentID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Task
+	for rows.Next() {
+		t := &Task{}
+		if err := rows.Scan(&t.ID, &t.ShortID, &t.Title, &t.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // buildRollup walks the descendants of t (excluding t itself) and
@@ -298,6 +354,9 @@ func RenderSummary(w io.Writer, s *Summary) {
 
 	if s.Next != nil {
 		fmt.Fprintf(w, "Next: %s %q\n", s.Next.ShortID, s.Next.Title)
+	}
+	for _, d := range s.DecisionTasks {
+		fmt.Fprintf(w, "Decision: %s %q\n", d.ShortID, d.Title)
 	}
 }
 

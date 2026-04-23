@@ -1,0 +1,16 @@
+{{- /* Error pages (404, 500, generic). Tone: quiet and sparse — we
+     don't want a red "SYSTEM FAILURE" screen. Uses the shared chrome
+     so the header and footer stay around to give the reader somewhere
+     to go. */ -}}
+{{define "title"}}{{.Title}} · Jobs{{end}}
+{{define "content"}}
+<section class="stack stack-gap-md" style="max-width: 560px; margin: var(--space-xxl) auto">
+  <p class="t-label-caps t-dim">Error {{.Status}}</p>
+  <h1>{{.Title}}</h1>
+  <p class="t-muted">{{.Message}}</p>
+  <div class="row row-gap-sm" style="margin-top: var(--space-md)">
+    <a href="/" class="c-button c-button--primary">Back to home</a>
+    <a href="/log" class="c-button c-button--ghost">Open log</a>
+  </div>
+</section>
+{{end}}

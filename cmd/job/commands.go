@@ -93,6 +93,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newImportCmd())
 	cmd.AddCommand(newSchemaCmd())
 	cmd.AddCommand(newStatusCmd())
+	cmd.AddCommand(newServeCmd())
 	return cmd
 }
 
@@ -154,6 +155,7 @@ VERBS (grouped by role)
   Reserved label:  "decision" → surfaces as Decision: in status until done/canceled
   Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
   Observation:  list, info, log, status, next, next all, tail
+  Web UI:       serve (read-only dashboard, binds 127.0.0.1:7823 by default)
 
   Grammar:
     Multi-operation verbs (label, block):  job <verb> <add|remove> <args>

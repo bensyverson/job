@@ -1,0 +1,2180 @@
+/*
+  Component stylesheet — every component in DESIGN.md §Components.
+  Naming convention: .c-<component>[-modifier].
+  Component colors for actors/labels are provided as inline style (see colors.js);
+  everything else is derived from tokens.
+*/
+
+/* ---------- Avatar — the canonical actor primitive ---------- */
+
+.c-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  flex: none;
+  user-select: none;
+  /* Fill color is set inline via --actor-color (see colors.js).
+     The fallback keeps unstyled avatars visible. */
+  background: var(--actor-color, var(--color-outline-strong));
+}
+
+.c-avatar-dot {
+  width: var(--avatar-dot-size);
+  height: var(--avatar-dot-size);
+  font-size: 0; /* no letter — dot form */
+}
+
+.c-avatar-sm {
+  width: var(--avatar-sm-size);
+  height: var(--avatar-sm-size);
+  font-size: var(--font-data-id-size);
+  line-height: 1;
+}
+
+.c-avatar-md {
+  width: var(--avatar-md-size);
+  height: var(--avatar-md-size);
+  font-size: var(--font-data-id-size);
+  line-height: 1;
+}
+
+.c-avatar-lg {
+  width: var(--avatar-lg-size);
+  height: var(--avatar-lg-size);
+  font-size: var(--font-data-sm-size);
+  line-height: 1;
+}
+
+/* Stack — 8px overlap when multiple actors have touched a task. */
+.c-avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.c-avatar-stack > .c-avatar + .c-avatar {
+  margin-left: calc(var(--space-sm) * -1);
+  box-shadow: 0 0 0 2px var(--color-background);
+}
+
+/* ---------- Status pill ---------- */
+
+.c-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--status-color, var(--color-status-todo));
+  background: color-mix(in srgb, var(--status-color, var(--color-status-todo)) 10%, transparent);
+  color: var(--status-color, var(--color-on-surface));
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  line-height: var(--font-label-caps-line-height);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  white-space: nowrap;
+}
+
+.c-status-pill .c-status-pill__icon {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+
+.c-status-pill--todo {
+  --status-color: var(--color-status-todo);
+}
+
+.c-status-pill--active {
+  --status-color: var(--color-status-active);
+}
+
+.c-status-pill--blocked {
+  --status-color: var(--color-status-blocked);
+}
+
+.c-status-pill--done {
+  --status-color: var(--color-status-done);
+}
+
+/* ---------- ID pill ---------- */
+
+.c-id-pill {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-surface-raised);
+  color: var(--color-on-surface);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  font-weight: var(--font-data-id-weight);
+  line-height: var(--font-data-id-line-height);
+}
+
+a.c-id-pill {
+  border-bottom: none;
+}
+
+a.c-id-pill:hover {
+  background: var(--color-outline);
+}
+
+/* ---------- Label pill ---------- */
+
+.c-label-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-data-id-size);
+  font-weight: var(--font-body-sm-weight);
+  line-height: var(--font-data-id-line-height);
+  text-transform: none;
+  /* Colors supplied inline via --label-color (see colors.js). */
+  border: 1px solid var(--label-color, var(--color-outline));
+  background: color-mix(in srgb, var(--label-color, var(--color-outline)) 15%, transparent);
+  color: var(--color-on-surface);
+  white-space: nowrap;
+}
+
+/* ---------- Signal card ---------- */
+
+.c-signal-card {
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  overflow: hidden;
+  min-width: 0;
+  /* --signal-color is provided per-card to colorize the icon and underline. */
+  --signal-color: var(--color-on-surface-dim);
+}
+
+.c-signal-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-on-surface-muted);
+}
+
+.c-signal-card__icon {
+  width: 14px;
+  height: 14px;
+  color: var(--signal-color);
+  flex: none;
+}
+
+.c-signal-card__label {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+}
+
+.c-signal-card__value {
+  font-size: var(--font-display-size);
+  font-weight: var(--font-display-weight);
+  line-height: var(--font-display-line-height);
+  letter-spacing: var(--font-display-letter-spacing);
+  color: var(--color-on-surface);
+}
+
+.c-signal-card__context {
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-muted);
+  margin-top: auto;
+}
+
+.c-signal-card__underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-outline);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.c-signal-card__underline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--progress, 0%);
+  background: var(--signal-color);
+  border-radius: inherit;
+  transition: width var(--motion-duration-slow) var(--motion-ease-out);
+}
+
+.c-signal-card--warn {
+  --signal-color: var(--color-signal-warn);
+}
+
+.c-signal-card--alert {
+  --signal-color: var(--color-signal-alert);
+}
+
+.c-signal-card--primary {
+  --signal-color: var(--color-primary);
+}
+
+/* ---------- Activity histogram ----------
+   Activity Monitor-style bar chart inside a signal card. 60 bars
+   (one per minute over the last hour), each stacked by event type
+   using the status palette. Heights are driven by inline --h on each
+   bar (percent of the card's vertical budget). Segments inside each
+   bar use flex:N where N is the event count for that type. */
+
+.c-histogram {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0;
+}
+
+.c-histogram__bar {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--h, 0%);
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 1px 1px 0 0;
+  overflow: hidden;
+  min-height: 1px;
+}
+
+.c-histogram__bar--empty {
+  background: var(--color-outline);
+  border-radius: var(--radius-full);
+}
+
+.c-histogram__seg {
+  display: block;
+  width: 100%;
+  flex-grow: var(--f, 1);
+  flex-shrink: 1;
+  flex-basis: 0;
+}
+
+.c-histogram__seg--done { background: var(--color-status-done); }
+.c-histogram__seg--claim { background: var(--color-status-active); }
+.c-histogram__seg--create { background: var(--color-primary); }
+.c-histogram__seg--block { background: var(--color-status-blocked); }
+
+/* Legend row — each swatch+label is a no-wrap unit so items never break
+   mid-phrase. Items wrap as whole units when the card is narrow. */
+.c-hist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: center;
+}
+
+.c-hist-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.c-hist-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.c-hist-swatch--done { background: var(--color-status-done); }
+.c-hist-swatch--claim { background: var(--color-status-active); }
+.c-hist-swatch--create { background: var(--color-primary); }
+.c-hist-swatch--block { background: var(--color-status-blocked); }
+
+/* ---------- Filter bar ---------- */
+
+.c-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+
+.c-filter-bar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.c-filter-bar__label {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-dim);
+  min-width: 56px;
+  flex: none;
+  margin-right: var(--space-xs);
+}
+
+.c-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-outline);
+  background: transparent;
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: lowercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.c-filter-chip:hover {
+  border-color: var(--color-outline-strong);
+  color: var(--color-on-surface);
+}
+
+.c-filter-chip--active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+/* ---------- Log view ---------- */
+
+.c-log-live {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+  padding: var(--space-xs) 0;
+}
+
+.c-log-live__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-status-active);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
+  animation: heartbeat-pulse var(--motion-duration-slow) var(--motion-ease-out) infinite;
+}
+
+.c-log {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.c-log-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(90px, 120px) 78px 80px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-md);
+  padding: 8px var(--space-lg);
+  font-size: var(--font-body-sm-size);
+  line-height: 1.35;
+  border-top: 1px solid var(--color-outline);
+  min-width: 0;
+  color: var(--color-text-todo);
+}
+
+/* Per-event-type row tint — mirrors Plan's row-state text tints so the
+   event's effect on the task state reads at a glance. Title + id-pill
+   inherit this; actor/timestamp stay neutral (see below). */
+.c-log-row--claimed,
+.c-log-row--unblocked { color: var(--color-text-active); }
+.c-log-row--done,
+.c-log-row--released,
+.c-log-row--canceled { color: var(--color-text-done); }
+.c-log-row--blocked { color: var(--color-text-blocked); }
+/* created and noted stay at default text-todo. */
+
+.c-log-row .c-id-pill {
+  color: inherit;
+}
+
+.c-log-row:first-child {
+  border-top: none;
+}
+
+.c-log-row:hover,
+.c-log-row:has(.c-row-link:focus-visible) {
+  background: var(--color-surface-raised);
+}
+
+.c-log-row > * {
+  min-width: 0;
+}
+
+.c-log-row__time {
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-dim);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.c-log-row__actor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-on-surface);
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.c-log-row__actor > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+a.c-log-row__actor {
+  border-bottom: none;
+}
+
+.c-log-row__verb {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.c-log-row__verb--created { color: var(--color-primary); }
+.c-log-row__verb--claimed { color: var(--color-status-active); }
+.c-log-row__verb--done { color: var(--color-on-surface-muted); }
+.c-log-row__verb--blocked { color: var(--color-status-blocked); }
+.c-log-row__verb--unblocked { color: var(--color-primary); }
+.c-log-row__verb--released { color: var(--color-on-surface-dim); }
+.c-log-row__verb--canceled { color: var(--color-signal-warn); }
+.c-log-row__verb--noted { color: var(--color-on-surface-dim); }
+
+.c-log-row__detail {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.c-log-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.c-log-row__note {
+  color: var(--color-on-surface-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.c-log-row__note::before {
+  content: "— ";
+  color: var(--color-on-surface-dim);
+  margin-right: 2px;
+}
+
+.c-log-row--new {
+  animation: log-slide-in var(--motion-duration-slow) var(--motion-ease-out);
+}
+
+@keyframes log-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    background: transparent;
+  }
+}
+
+/* ---------- Actors view (Trello-board layout) ----------
+   Horizontally-scrolling board of actor columns (DESIGN.md §6 +
+   2026-04-22 review). Each column is a fixed-width card with a
+   non-scrolling header and a vertically-scrolling stream. Stream
+   uses flex-direction: column-reverse so the DOM lists newest-first
+   while the viewport anchors to the bottom (current claims), with
+   recent history scrolling away above. Chat-UI semantics: new events
+   append at the bottom and push older history upward. */
+
+.c-actors-board {
+  display: flex;
+  gap: var(--space-md);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: var(--space-xs);
+  scroll-snap-type: x proximity;
+}
+
+.c-actor-col {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-height: 0;
+  scroll-snap-align: start;
+}
+
+.c-actor-col--idle {
+  opacity: 0.72;
+}
+
+.c-actor-col__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-outline);
+  flex: none;
+}
+
+.c-actor-col__stream {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  min-height: 0;
+}
+
+/* Actor card — a Trello-ish card for one event. Reuses the per-verb
+   text tint; claimed/blocked cards also get a tinted border accent so
+   the "live" cards pop against the history wall. */
+.c-actor-card {
+  position: relative;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  color: var(--color-on-surface);
+  font-size: var(--font-body-sm-size);
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out);
+  flex: none;
+  min-width: 0;
+}
+
+.c-actor-card:hover,
+.c-actor-card:has(.c-row-link:focus-visible) {
+  background: color-mix(in srgb, var(--color-surface-raised) 80%, var(--color-primary) 6%);
+}
+
+.c-actor-card > * {
+  min-width: 0;
+}
+
+.c-actor-card--claimed {
+  color: var(--color-text-active);
+  border-color: color-mix(in srgb, var(--color-status-active) 45%, var(--color-outline));
+}
+
+.c-actor-card--blocked {
+  color: var(--color-text-blocked);
+  border-color: color-mix(in srgb, var(--color-status-blocked) 45%, var(--color-outline));
+}
+
+/* Created cards carry the primary (teal) tint — the "birth" of a task.
+   Mirrors the c-log-row__verb--created color mapping. */
+.c-actor-card--created {
+  color: color-mix(in srgb, var(--color-primary) 35%, #ffffff);
+}
+
+/* done / noted / released / canceled / unblocked use the default
+   on-surface color — bright enough to read as real content, not faded
+   background noise. User review (2026-04-22): matches the brighter
+   rendering the noted cards originally got by accident. */
+
+.c-actor-card__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-dim);
+}
+
+.c-actor-card__meta > time {
+  margin-left: auto;
+}
+
+/* Notes badge — accumulates note-event count onto the parent task card.
+   Notes don't change state, so they don't deserve their own card; a
+   muted inline count keeps them discoverable without adding noise. */
+.c-actor-card__notes {
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-data-id-size);
+  white-space: nowrap;
+}
+
+.c-actor-card__notes::before {
+  content: "· ";
+  color: var(--color-on-surface-dim);
+}
+
+.c-actor-card__title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.c-actor-card__title-row > .c-id-pill {
+  flex: none;
+}
+
+.c-actor-card__title {
+  font-size: var(--font-body-sm-size);
+  font-weight: 500;
+  color: inherit;
+  margin: 0;
+  line-height: 1.3;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.c-actor-card__desc {
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-body-sm-size);
+  line-height: 1.4;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.c-actor-card .c-id-pill {
+  color: inherit;
+}
+
+.c-actor-col__name {
+  font-size: var(--font-body-md-size);
+  font-weight: 600;
+  color: var(--color-on-surface);
+  border-bottom: none;
+}
+
+.c-actor-col__status {
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.c-actor-col__status--idle {
+  color: var(--color-on-surface-dim);
+}
+
+.c-actor-col__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.c-actor-col__section + .c-actor-col__section {
+  border-top: 1px solid var(--color-outline);
+}
+
+.c-actor-col__section-title {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+  padding: var(--space-md) var(--space-lg) var(--space-xs);
+  margin: 0;
+}
+
+/* ---------- Single-actor view ---------- */
+
+.c-actor-hero {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-xl);
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+}
+
+.c-actor-hero__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: var(--actor-color, var(--color-outline-strong));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  border-bottom: none;
+}
+
+.c-actor-hero__name {
+  font-size: var(--font-display-size);
+  font-weight: var(--font-display-weight);
+  line-height: var(--font-display-line-height);
+  color: var(--color-on-surface);
+}
+
+.c-actor-hero__status {
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-muted);
+}
+
+.c-actor-hero__stats {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xl);
+}
+
+.c-actor-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.c-actor-stat__value {
+  font-family: var(--font-mono);
+  font-size: var(--font-heading-lg-size);
+  font-weight: 500;
+  color: var(--color-on-surface);
+}
+
+.c-actor-stat__label {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-dim);
+}
+
+/* Timeline strip — event density over the last ~24 hours, one lane
+   per event type. Bars are positioned with inline left+width and
+   colored by their type class. Provides a quick visual of when the
+   actor was busy, claiming, finishing, or blocked. */
+
+.c-actor-timeline {
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+}
+
+.c-actor-timeline__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.c-actor-timeline__lanes {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.c-actor-timeline__lane {
+  position: relative;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.c-actor-timeline__lane-label {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+  text-align: right;
+}
+
+.c-actor-timeline__track {
+  position: relative;
+  height: 14px;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-sm);
+}
+
+.c-actor-timeline__mark {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 1px;
+  width: var(--w, 4px);
+  left: var(--x, 0%);
+}
+
+.c-actor-timeline__mark--claimed { background: var(--color-status-active); }
+.c-actor-timeline__mark--done { background: var(--color-status-done); }
+.c-actor-timeline__mark--blocked { background: var(--color-status-blocked); }
+.c-actor-timeline__mark--created { background: var(--color-primary); }
+.c-actor-timeline__mark--noted { background: var(--color-on-surface-dim); }
+
+.c-actor-timeline__axis {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.c-actor-timeline__axis-labels {
+  position: relative;
+  height: 14px;
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-dim);
+}
+
+.c-actor-timeline__axis-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+  top: 0;
+}
+
+/* ---------- Data row ---------- */
+
+.c-data-row {
+  display: grid;
+  align-items: center;
+  height: var(--data-row-height);
+  padding: 0 var(--space-md);
+  font-size: var(--font-body-sm-size);
+  line-height: var(--font-body-sm-line-height);
+  border-bottom: 1px solid var(--color-outline);
+  position: relative;
+}
+
+.c-data-row:last-child {
+  border-bottom: none;
+}
+
+.c-data-row:hover {
+  background: var(--color-surface-raised);
+}
+
+.c-data-row--selected {
+  background: var(--color-surface-raised);
+}
+
+.c-data-row--selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-primary);
+}
+
+.c-data-row .t-mono,
+.c-data-row .c-id-pill {
+  font-family: var(--font-mono);
+}
+
+/* ---------- Buttons ---------- */
+
+.c-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  line-height: var(--font-label-caps-line-height);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+  user-select: none;
+}
+
+.c-button--primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.c-button--primary:hover {
+  background: var(--color-primary-dim);
+}
+
+.c-button--ghost {
+  background: transparent;
+  color: var(--color-on-surface-muted);
+}
+
+.c-button--ghost:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-on-surface);
+}
+
+.c-button--icon {
+  padding: var(--space-sm);
+}
+
+/* ---------- Input ---------- */
+
+.c-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-outline);
+  border-radius: 0;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-on-surface);
+  font-family: var(--font-ui);
+  font-size: var(--font-body-md-size);
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.c-input::placeholder {
+  color: var(--color-on-surface-dim);
+}
+
+.c-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--color-primary);
+  box-shadow: 0 2px 0 0 color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+/* ---------- Tabs ---------- */
+
+.c-tabs {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.c-tab {
+  position: relative;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-on-surface-muted);
+  border-bottom: none;
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  transition: color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.c-tab:hover {
+  color: var(--color-on-surface);
+  border-bottom: none;
+}
+
+.c-tab--active {
+  color: var(--color-on-surface);
+}
+
+.c-tab--active::after {
+  content: "";
+  position: absolute;
+  left: var(--space-md);
+  right: var(--space-md);
+  bottom: -1px;
+  height: 2px;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+}
+
+/* ---------- Header + Footer chrome ---------- */
+
+.c-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: 0 var(--space-container-padding);
+  height: 48px;
+  border-bottom: 1px solid var(--color-outline);
+  background: var(--color-background);
+}
+
+.c-header__brand {
+  font-size: var(--font-label-caps-size);
+  font-weight: 700;
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface);
+}
+
+.c-header__search {
+  flex: 1 1 420px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.c-header__search > .c-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.c-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  height: var(--metric-strip-height);
+  padding: 0 var(--space-container-padding);
+  background: var(--color-background);
+  border-top: 1px solid var(--color-outline);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  color: var(--color-on-surface-muted);
+}
+
+.c-footer__metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.c-footer__metric-value {
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-data-sm-size);
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.c-footer__metric-label {
+  text-transform: uppercase;
+}
+
+.c-footer__heartbeat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-on-surface-muted);
+}
+
+.c-footer__heartbeat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-status-active);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
+  animation: heartbeat-pulse var(--motion-duration-slow) var(--motion-ease-out) infinite;
+}
+
+@keyframes heartbeat-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-status-active) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 0%, transparent);
+  }
+}
+
+/* ---------- Scrubber pill ---------- */
+
+.c-scrubber-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-full);
+  padding: 6px 12px;
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  color: var(--color-on-surface);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.c-scrubber-pill:hover {
+  background: var(--color-surface-popover);
+}
+
+.c-scrubber-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-status-active);
+}
+
+/* ---------- Expanded time-travel scrubber ----------
+   Shown above the footer when the view is scrubbing history. Contains
+   the full event-density strip (24h), a draggable cursor with a preview
+   tooltip, zoom-range handles, and a primary-tinted "Return to live"
+   button that collapses back to the pill form. */
+
+.c-scrubber-strip {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-outline);
+  padding: var(--space-sm) var(--space-container-padding) var(--space-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.c-scrubber-strip__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  min-width: 0;
+}
+
+.c-scrubber-strip__meta-at {
+  color: var(--color-signal-warn);
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Return-to-live inside the strip — same pill form as the banner version. */
+.c-scrubber-strip__return {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  border: 1px solid var(--color-status-active);
+  color: var(--color-status-active);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+  flex: none;
+}
+
+.c-scrubber-strip__return:hover {
+  background: var(--color-status-active);
+  color: var(--color-background);
+}
+
+.c-scrubber-strip__return-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-status-active);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
+  animation: heartbeat-pulse var(--motion-duration-slow) var(--motion-ease-out) infinite;
+}
+
+.c-scrubber-strip__return:hover .c-scrubber-strip__return-dot {
+  background: var(--color-background);
+}
+
+/* Track — holds density bars, zoom handles, cursor, and tooltip. */
+.c-scrubber-strip__track {
+  position: relative;
+  height: 44px;
+  background: var(--color-background);
+  border-radius: var(--radius-sm);
+  overflow: visible;
+}
+
+.c-scrubber-strip__bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 2px;
+}
+
+.c-scrubber-strip__bar {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--h, 0%);
+  background: var(--color-outline-strong);
+  border-radius: 1px;
+  min-height: 1px;
+}
+
+/* Cursor — vertical line with a round grip at the bottom. Position via
+   inline --x on the parent strip (percent across the track). */
+.c-scrubber-strip__cursor {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: var(--x, 50%);
+  width: 2px;
+  background: var(--color-signal-warn);
+  transform: translateX(-1px);
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.c-scrubber-strip__cursor::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-signal-warn);
+  box-shadow: 0 0 0 3px var(--color-background);
+}
+
+/* Preview tooltip — sits above the cursor, shows the event at --x. */
+.c-scrubber-strip__tooltip {
+  position: absolute;
+  left: var(--x, 50%);
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  background: var(--color-surface-popover);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-level-3-shadow);
+  padding: var(--space-sm) var(--space-md);
+  min-width: 260px;
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.c-scrubber-strip__tooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: var(--color-surface-popover);
+  border-right: 1px solid var(--color-outline);
+  border-bottom: 1px solid var(--color-outline);
+}
+
+.c-scrubber-strip__tooltip-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-data-id-size);
+  font-family: var(--font-mono);
+}
+
+.c-scrubber-strip__tooltip-body {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-top: 2px;
+}
+
+/* Time axis under the track. */
+.c-scrubber-strip__axis {
+  position: relative;
+  height: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-dim);
+}
+
+.c-scrubber-strip__axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  top: 0;
+}
+
+.c-scrubber-strip__axis span:first-child { transform: translateX(0); }
+.c-scrubber-strip__axis span:last-child { transform: translateX(-100%); }
+
+/* History banner — one-line amber strip below the header letting the
+   user know they're viewing a scrubbed past state. */
+.c-history-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-container-padding);
+  background: color-mix(in srgb, var(--color-status-blocked) 12%, var(--color-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-status-blocked) 35%, var(--color-outline));
+  color: var(--color-text-blocked);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+}
+
+.c-history-banner__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-signal-warn);
+  flex: none;
+}
+
+.c-history-banner__at {
+  color: var(--color-signal-warn);
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  letter-spacing: 0;
+  text-transform: none;
+  margin-left: var(--space-xs);
+}
+
+/* Small Return-to-live pill inside the banner. Matches the collapsed
+   Live pill's green so the "live" affordance is consistent wherever
+   it appears. */
+.c-history-banner__return {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  border: 1px solid var(--color-status-active);
+  color: var(--color-status-active);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+  flex: none;
+}
+
+.c-history-banner__return:hover {
+  background: var(--color-status-active);
+  color: var(--color-background);
+}
+
+.c-history-banner__return-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-status-active);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
+  animation: heartbeat-pulse var(--motion-duration-slow) var(--motion-ease-out) infinite;
+}
+
+.c-history-banner__return:hover .c-history-banner__return-dot {
+  background: var(--color-background);
+}
+
+/* Page modifier: add an extra auto row for the scrubber strip. */
+.page--scrubbing {
+  grid-template-rows: auto auto 1fr auto auto;
+}
+
+/* ---------- Peek sheet ---------- */
+
+.c-peek-underlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 10;
+}
+
+.c-peek-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--peek-sheet-width);
+  background: var(--color-surface-popover);
+  border-left: 1px solid var(--color-outline);
+  box-shadow: var(--elevation-level-3-shadow);
+  padding: var(--space-container-padding);
+  overflow-y: auto;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.c-peek-sheet__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.c-peek-sheet__title {
+  font-size: var(--font-heading-lg-size);
+  font-weight: var(--font-heading-lg-weight);
+  line-height: var(--font-heading-lg-line-height);
+  letter-spacing: var(--font-heading-lg-letter-spacing);
+}
+
+.c-peek-sheet__close {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--color-on-surface-muted);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.c-peek-sheet__close:hover {
+  color: var(--color-on-surface);
+  background: var(--color-surface-raised);
+}
+
+.c-peek-sheet__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.c-peek-sheet__section-label {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+}
+
+/* ---------- Notes (render as code blocks per DESIGN.md) ---------- */
+
+.c-note {
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-data-md-size);
+  line-height: var(--font-data-md-line-height);
+  color: var(--color-on-surface);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  margin: 0;
+}
+
+/* ---------- Graph node ---------- */
+
+/* Status drives the disk color + glyph; actor identity is overlaid as a small
+   filled avatar at the bottom-right when the task is claimed. Keeps the graph
+   legible at a glance and lets actor colors live in a single axis. */
+.c-graph-node {
+  position: relative;
+  width: var(--graph-node-size);
+  height: var(--graph-node-size);
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: var(--font-data-sm-size);
+  font-weight: 600;
+  background: var(--color-surface-raised);
+  color: var(--color-on-surface);
+  border: 1px solid var(--color-outline);
+}
+
+.c-graph-node--todo {
+  background: var(--color-surface-raised);
+  border-color: var(--color-outline-strong);
+  color: var(--color-on-surface-muted);
+}
+
+.c-graph-node--active {
+  background: color-mix(in srgb, var(--color-status-active) 22%, var(--color-surface));
+  border-color: var(--color-status-active);
+  color: var(--color-status-active);
+}
+
+.c-graph-node--blocked {
+  background: color-mix(in srgb, var(--color-status-blocked) 22%, var(--color-surface));
+  border-color: var(--color-status-blocked);
+  color: var(--color-status-blocked);
+}
+
+.c-graph-node--done {
+  background: var(--color-status-done);
+  border-color: var(--color-status-done);
+  color: var(--color-on-surface-muted);
+}
+
+.c-graph-node__glyph {
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex: none;
+}
+
+/* Anchor form — every task node links to its task (peek). */
+a.c-graph-node {
+  text-decoration: none;
+  cursor: pointer;
+  /* box-sizing explicit so the 32px dimensions include the 1px border,
+     keeping the disc perfectly circular and concentric with the hover ring. */
+  box-sizing: border-box;
+  transition: box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+a.c-graph-node:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 40%, transparent);
+}
+
+a.c-graph-node:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color),
+    0 0 0 6px var(--focus-ring-outer-color);
+}
+
+/* Node ID label — centered under (or over) the node circle. */
+.c-graph-label {
+  position: absolute;
+  transform: translate(-50%, 0);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-on-surface-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Actor avatar overlaid as a "bug" in the bottom-right quadrant.
+   Matches avatar-sm sizing + typography for visual continuity with the
+   avatars that appear in rows and tables. Slight overhang is intentional
+   — visually distinct from the state disk. */
+.c-graph-node__bug {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: var(--avatar-sm-size);
+  height: var(--avatar-sm-size);
+  border-radius: var(--radius-full);
+  background: var(--actor-color, var(--color-outline-strong));
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Detached form — bug is a sibling of the node anchor (not a child),
+   so it can be its own link. Position supplied inline per node. */
+.c-graph-node__bug--detached {
+  right: auto;
+  bottom: auto;
+}
+
+a.c-graph-node__bug {
+  border-bottom: none;
+  text-decoration: none;
+  cursor: pointer;
+  transition: box-shadow var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+a.c-graph-node__bug:hover {
+  box-shadow: 0 0 0 2px var(--color-background),
+    0 0 0 4px var(--actor-color, var(--color-outline-strong));
+}
+
+a.c-graph-node__bug:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-background),
+    0 0 0 4px var(--actor-color, var(--color-outline-strong)),
+    0 0 0 6px var(--focus-ring-outer-color);
+}
+
+/* ---------- Plan tree rows ----------
+   Fixed 5-column grid keeps avatars, pills, and timestamps aligned into
+   tidy vertical columns across the whole tree:
+     1. disclosure chevron (16px)
+     2. title + inline chips (flexible)
+     3. actor avatar slot (fixed, empty when unclaimed)
+     4. status pill slot (left-aligned, min-width so widest pill sets it)
+     5. timestamp (right-aligned)
+*/
+/* Fixed 5-column grid — text on left, metadata on right:
+     1. disclosure chevron (16px)
+     2. title + inline chips (flexible)
+     3. actor avatar slot (empty when unclaimed)
+     4. status pill (left-aligned in its column)
+     5. timestamp (right-aligned)
+*/
+.c-plan-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) var(--avatar-md-size) minmax(86px, auto) 72px;
+  align-items: start;
+  /* Row-gap (between main row and blocked-by) matches the 4px gap between
+     title, desc, and the progress summary — the whole block reads as
+     evenly spaced metadata. */
+  gap: var(--space-xs) var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  color: var(--color-text-todo);
+}
+
+/* Right-side items align with the first line of the title rather than the
+   top of the row (which may contain a multi-line description). */
+.c-plan-row > .c-plan-row__disclosure,
+.c-plan-row > .c-plan-row__avatar-slot,
+.c-plan-row > .c-status-pill,
+.c-plan-row > .c-plan-row__timestamp {
+  margin-top: 2px;
+}
+
+.c-plan-row:hover {
+  background: var(--color-surface-raised);
+}
+
+/* Row-state text tints — reinforce the pill by tinting the title text.
+   Done fades into the visual background; active brightens toward white;
+   blocked takes a warm wash; todo/default stays neutral on-surface. */
+.c-plan-row--status-active {
+  color: var(--color-text-active);
+}
+
+.c-plan-row--status-blocked {
+  color: var(--color-text-blocked);
+}
+
+.c-plan-row--status-done {
+  color: var(--color-text-done);
+}
+
+.c-plan-row--selected {
+  background: var(--color-surface-raised);
+  position: relative;
+}
+
+.c-plan-row--selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.c-plan-row__disclosure {
+  width: 16px;
+  height: 16px;
+  color: var(--color-on-surface-dim);
+  flex: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.c-plan-row__disclosure svg {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.c-plan-row__disclosure[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.c-plan-row__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.c-plan-row__title-line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.c-plan-row__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Inherit the row's state-tinted color. h1/h2/h3 default to
+     on-surface, which would override the parent row's tint otherwise. */
+  color: inherit;
+}
+
+/* Progress summary for parent rows — injected by colors.js alongside the
+   progress bar. Sits below the description so the counter reads like
+   quiet metadata: "8 of 9 tasks done". */
+.c-plan-row__progress-text {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-dim);
+  margin-top: var(--space-xs);
+}
+
+/* Description from the task record — reads as the second line of each row.
+   Inherits the row's status-tinted color so the description reinforces the
+   title's state, just at a quieter register (slight opacity reduction).
+   Line length caps at ~40em for comfortable reading on wide monitors. */
+.c-plan-row__desc {
+  font-size: var(--font-body-sm-size);
+  line-height: 1.4;
+  color: inherit;
+  opacity: 0.75;
+  white-space: normal;
+  max-width: 40em;
+}
+
+.c-plan-row__avatar-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: var(--avatar-md-size);
+  height: var(--avatar-md-size);
+}
+
+.c-plan-row__timestamp {
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-dim);
+  text-align: right;
+}
+
+.c-plan-subtree {
+  margin-left: var(--space-lg);
+  border-left: 1px dashed var(--color-outline);
+  padding-left: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Notes left by agents on a task — render as code blocks per DESIGN.md
+   §5.5, attached to their parent row at the same indentation as the title
+   column. Comment-like: avatar + name + monospace body + timestamp. */
+.c-plan-note {
+  display: grid;
+  grid-template-columns: var(--avatar-sm-size) minmax(0, 1fr) auto;
+  gap: var(--space-sm) var(--space-md);
+  /* Align note body under the title column of the parent row:
+     row-padding(12) + chevron-col(16) + grid-gap(12) = 40px. */
+  padding: var(--space-xs) var(--space-md) var(--space-sm)
+    calc(var(--space-md) + 16px + var(--space-md));
+  margin-top: -2px;
+}
+
+.c-plan-note__meta {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--font-body-sm-size);
+}
+
+.c-plan-note__actor {
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.c-plan-note__time {
+  grid-column: 3;
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-dim);
+  align-self: baseline;
+}
+
+.c-plan-note__text {
+  /* Start at the avatar column so the left border of the quote sits
+     directly below the avatar's center, reading as a single thread. */
+  grid-column: 1 / -1;
+  margin: 0 0 0 calc(var(--avatar-sm-size) / 2 - 1px);
+  padding: var(--space-xs) var(--space-md);
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  border-left: 2px solid var(--color-outline);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-data-sm-size);
+  line-height: var(--font-data-sm-line-height);
+  color: var(--color-on-surface-muted);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-width: 40em;
+}
+
+/* Note tints mirror the parent row's status tint so a thread of notes
+   reads as part of its task, not a separate register. */
+.c-plan-note--status-active .c-plan-note__text {
+  color: var(--color-text-active);
+}
+
+.c-plan-note--status-blocked .c-plan-note__text {
+  color: var(--color-text-blocked);
+}
+
+.c-plan-note--status-done .c-plan-note__text {
+  color: var(--color-text-done);
+}
+
+/* Inline "Blocked by ..." sub-row drops below the main row in the title
+   column, keeping the avatar/pill/timestamp columns clean. */
+.c-plan-row__blocked-by {
+  grid-column: 2 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-dim);
+}
+
+/* Ambient progress bar — same visual language as signal-card underlines.
+   Sits at the top edge of the parent row, aligned with the start of the
+   title text (past the disclosure chevron). Track always visible so you
+   can read "0 of 7" as an empty outline. Fill color follows the state. */
+.c-plan-row__progress {
+  position: absolute;
+  /* Title column begins at: row-padding + chevron-col + grid-gap. */
+  left: calc(var(--space-md) + 16px + var(--space-md));
+  right: var(--space-md);
+  top: 0;
+  height: 2px;
+  background: var(--color-outline);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.c-plan-row__progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--progress, 0%);
+  background: var(--color-on-surface-muted);
+  border-radius: inherit;
+  transition: width var(--motion-duration-slow) var(--motion-ease-out);
+}
+
+.c-plan-row--status-active .c-plan-row__progress::after {
+  background: var(--color-status-active);
+}
+
+.c-plan-row--status-blocked .c-plan-row__progress::after {
+  background: var(--color-status-blocked);
+}
+
+.c-plan-row--status-done .c-plan-row__progress::after {
+  background: var(--color-status-done);
+}
+
+/* ---------- Sections + block titles ---------- */
+
+.c-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.c-section__title {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+}
+
+.c-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+/* ---------- Grids used on Home ---------- */
+
+.c-grid-signals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-lg);
+}
+
+.c-grid-cols-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+}
+
+.c-grid-cols-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-lg);
+}
+
+/* Panel — a sectioned surface used in Home's four-column row. */
+.c-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.c-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg) var(--space-sm);
+}
+
+.c-panel__title {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-on-surface-muted);
+}
+
+.c-panel__meta {
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-dim);
+}
+
+.c-panel__list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.c-panel-row {
+  position: relative;
+  display: grid;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-lg);
+  height: 32px;
+  font-size: var(--font-body-sm-size);
+  line-height: 1;
+  border-top: 1px solid var(--color-outline);
+  grid-template-columns: var(--row-cols, auto 1fr auto);
+  min-width: 0;
+}
+
+.c-panel-row:hover,
+.c-panel-row:has(.c-row-link:focus-visible) {
+  background: var(--color-surface-raised);
+}
+
+.c-panel-row > * {
+  min-width: 0;
+}
+
+/* Stretched link — the .c-row-link overlay sits above default-z content
+   (z-index: 1) so clicks anywhere on the row hit the anchor and navigate
+   to the task. Internal links inside the row bump to z-index: 2 so they
+   keep their own clicks (see the selector block below). */
+.c-row-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: none;
+  outline: none;
+}
+
+.c-row-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 4px var(--focus-ring-outer-color);
+  border-radius: var(--radius-sm);
+}
+
+/* Any interactive child (actor avatar, blocker pill, etc.) must sit
+   ABOVE the row-link overlay so clicks on it aren't swallowed. */
+.c-panel-row a:not(.c-row-link),
+.c-log-row a:not(.c-row-link),
+.c-actor-card a:not(.c-row-link) {
+  position: relative;
+  z-index: 2;
+}
+
+/* The avatar inside a linked row is its own link to the actor. Strip
+   the default anchor border and keep it above the stretched overlay. */
+.c-panel-row a.c-avatar {
+  border: none;
+}
+
+.c-panel-row a.c-avatar:hover {
+  box-shadow: 0 0 0 2px var(--color-outline-strong);
+}
+
+.c-panel-row a.c-id-pill {
+  /* Blocker pills inside stacked blocked rows — keep them interactive. */
+  position: relative;
+  z-index: 1;
+}
+
+/* Stacked variant — for panels where each row carries two lines
+   (title + "waiting on X"). Drops the fixed height in favor of vertical
+   padding so content flows naturally. */
+.c-panel-row--stacked {
+  height: auto;
+  align-items: center;
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
+}
+
+.c-panel-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.c-panel-row__meta {
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  color: var(--color-on-surface-muted);
+  white-space: nowrap;
+}
+
+/* ---------- Blocked list (vertical) ---------- */
+
+.c-blocked-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.c-blocked-item {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  border-left: 2px solid var(--color-status-blocked);
+  background: color-mix(in srgb, var(--color-status-blocked) 7%, transparent);
+  font-size: var(--font-body-sm-size);
+}
+
+.c-blocked-item__waiting {
+  color: var(--color-on-surface-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* ---------- Mini-graph placeholder ---------- */
+
+.c-mini-graph {
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- Empty states ---------- */
+
+.c-empty {
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-dim);
+  padding: var(--space-md);
+}
+
+/* ---------- Bell ---------- */
+
+.c-bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  color: var(--color-on-surface-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.c-bell:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-on-surface);
+}
+
+.c-bell--active {
+  color: var(--color-primary);
+}

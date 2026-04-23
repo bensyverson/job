@@ -1,0 +1,21 @@
+{{- /* Global footer. Ports prototype/*.html footer markup verbatim.
+     Live values ship in a later task; numbers below are placeholders. */ -}}
+{{define "footer"}}
+<footer class="c-footer" role="contentinfo">
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="actors">—</span><span class="c-footer__metric-label">actors</span></span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="wip">—</span><span class="c-footer__metric-label">WIP</span></span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="epm">—</span><span class="c-footer__metric-label">events / min</span></span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="throughput">—</span><span class="c-footer__metric-label">tasks / hr</span></span>
+  <div class="grow"></div>
+  <button class="c-scrubber-pill" aria-label="Scrub through history" data-scrubber-toggle>
+    <span class="c-scrubber-pill__dot"></span>
+    <span>Live</span>
+  </button>
+  <div class="grow"></div>
+  <span class="c-footer__heartbeat" data-heartbeat>
+    <span class="c-footer__heartbeat-dot"></span>
+    <span>connecting…</span>
+  </span>
+  <span class="c-footer__metric"><span data-connection>—</span></span>
+</footer>
+{{end}}

@@ -1,0 +1,33 @@
+{{- /* Global header. Ports prototype/*.html header markup verbatim,
+     retargeting hrefs from "plan.html" etc. to real routes. The active
+     tab is set via .ActiveTab ("home" | "plan" | "actors" | "log"). */ -}}
+{{define "header"}}
+<header class="c-header" role="banner">
+  <span class="c-header__brand">Jobs</span>
+  <nav class="c-tabs" aria-label="Primary">
+    <a href="/" class="c-tab{{if eq .ActiveTab "home"}} c-tab--active{{end}}">Home</a>
+    <a href="/plan" class="c-tab{{if eq .ActiveTab "plan"}} c-tab--active{{end}}">Plan</a>
+    <a href="/actors" class="c-tab{{if eq .ActiveTab "actors"}} c-tab--active{{end}}">Actors</a>
+    <a href="/log" class="c-tab{{if eq .ActiveTab "log"}} c-tab--active{{end}}">Log</a>
+  </nav>
+  <div class="grow"></div>
+  <label class="c-header__search row row-gap-sm">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+    </svg>
+    <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" data-search-input />
+  </label>
+  <button class="c-bell" aria-label="Notifications">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+      <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+    </svg>
+  </button>
+  <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme" data-theme-toggle>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+    </svg>
+  </button>
+</header>
+{{end}}

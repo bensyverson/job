@@ -1,0 +1,3 @@
+Web fonts live here and are embedded into the binary by
+assets.go. Keep this file (or another real font file) present
+so the //go:embed directive finds something to embed.

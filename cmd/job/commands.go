@@ -151,6 +151,7 @@ VERBS (grouped by role)
 
   Setup:        init, identity, schema
   Planning:     add, import, edit, block, move, label
+  Reserved label:  "decision" → surfaces as Decision: in status until done/canceled
   Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
   Observation:  list, info, log, status, next, next all, tail
 

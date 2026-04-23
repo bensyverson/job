@@ -139,6 +139,29 @@ a.c-id-pill:hover {
   background: color-mix(in srgb, var(--label-color, var(--color-outline)) 15%, transparent);
   color: var(--color-on-surface);
   white-space: nowrap;
+  text-decoration: none;
+}
+
+/* Selected state — flips from ringed to filled, label-color background
+   with white text. Used in the plan filter strip and on inline label
+   pills that sit on a task row when the label is in the selection. */
+.c-label-pill--active {
+  background: var(--label-color, var(--color-primary));
+  color: #fff;
+  border-color: var(--label-color, var(--color-primary));
+}
+
+/* The leftmost "All" pill in the filter strip clears every selected
+   label. It has no label color of its own — uses the neutral primary
+   tint so it reads as a clear-the-filter affordance, not as a label. */
+.c-label-pill--all {
+  --label-color: var(--color-on-surface-dim);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: lowercase;
+}
+.c-label-pill--all.c-label-pill--active {
+  --label-color: var(--color-primary);
 }
 
 /* ---------- Signal card ---------- */

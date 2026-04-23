@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -332,20 +333,135 @@ func TestPlan_LabelFilter_KeepsMatchingTasksAndAncestors(t *testing.T) {
 	}
 }
 
-func TestPlan_LabelFilter_RendersActivePillAndClearLink(t *testing.T) {
+func TestPlan_LabelStrip_AllPillActiveWhenNoFilter(t *testing.T) {
 	db := setupPlanTestDB(t)
 	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
-	_ = mustAdd(t, db, "claude", "B", nil, []string{"other"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	// Leftmost "All" pill carries the --active state when nothing is
+	// selected, and points at /plan to clear filters.
+	mustContain(t, body, `<a href="/plan" class="c-label-pill c-label-pill--all c-label-pill--active">All</a>`)
+	// No data-label pill is active in this state.
+	if strings.Contains(body, `c-label-pill--active" data-label=`) {
+		t.Errorf("no filter → no data-label pill should be --active")
+	}
+}
+
+func TestPlan_LabelStrip_AllPillNotActiveWhenFiltering(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
 
 	deps := newPlanDeps(t, db)
 	body := fetchPlan(t, deps, "label=web")
 
-	// Each distinct label is a clickable pill; the active one carries
-	// the --active modifier.
-	mustContain(t, body, `c-label-pill--active" data-label="web"`)
-	mustContain(t, body, `href="/plan?label=other"`)
-	// A clear link appears only when a filter is active.
-	mustContain(t, body, `href="/plan"`)
+	mustContain(t, body, `<a href="/plan" class="c-label-pill c-label-pill--all">All</a>`)
+	// Toggling the active "web" pill removes web → href="/plan".
+	mustContain(t, body, `<a href="/plan" class="c-label-pill c-label-pill--active" data-label="web">web</a>`)
+}
+
+func TestPlan_LabelStrip_TopFiveByOpenTaskFrequency(t *testing.T) {
+	db := setupPlanTestDB(t)
+	// Six labels with descending counts: a×6, b×5, c×4, d×3, e×2, f×1.
+	// Strip should keep a-e and drop f.
+	mustAddMany := func(label string, n int) {
+		for i := 0; i < n; i++ {
+			mustAdd(t, db, "claude", label+"-"+strconv.Itoa(i), nil, []string{label})
+		}
+	}
+	mustAddMany("a", 6)
+	mustAddMany("b", 5)
+	mustAddMany("c", 4)
+	mustAddMany("d", 3)
+	mustAddMany("e", 2)
+	mustAddMany("f", 1)
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	strip := extractFilterBar(t, body)
+	for _, want := range []string{"a", "b", "c", "d", "e"} {
+		if !strings.Contains(strip, `data-label="`+want+`"`) {
+			t.Errorf("strip should include top-5 label %q", want)
+		}
+	}
+	if strings.Contains(strip, `data-label="f"`) {
+		t.Errorf("strip should not include 6th-most-frequent label %q", "f")
+	}
+}
+
+func TestPlan_LabelStrip_SelectedLabelOutsideTopFiveStillAppears(t *testing.T) {
+	db := setupPlanTestDB(t)
+	// Same shape as TopFive — but ?label=f should pull "f" into the
+	// strip even though it's outside the top-5, so the selection isn't
+	// orphaned.
+	mustAddMany := func(label string, n int) {
+		for i := 0; i < n; i++ {
+			mustAdd(t, db, "claude", label+"-"+strconv.Itoa(i), nil, []string{label})
+		}
+	}
+	for _, l := range []string{"a", "b", "c", "d", "e"} {
+		mustAddMany(l, 6)
+	}
+	mustAddMany("f", 1)
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "label=f")
+
+	mustContain(t, body, `c-label-pill c-label-pill--active" data-label="f"`)
+}
+
+func TestPlan_LabelStrip_StripPillTogglesSelection(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+	_ = mustAdd(t, db, "claude", "B", nil, []string{"dashboard"})
+
+	deps := newPlanDeps(t, db)
+
+	// With ?label=web,dashboard, the web strip pill removes web.
+	body := fetchPlan(t, deps, "label=web,dashboard")
+	mustContain(t, body, `<a href="/plan?label=dashboard" class="c-label-pill c-label-pill--active" data-label="web">web</a>`)
+	mustContain(t, body, `<a href="/plan?label=web" class="c-label-pill c-label-pill--active" data-label="dashboard">dashboard</a>`)
+
+	// With ?label=web alone, the dashboard strip pill adds dashboard.
+	body = fetchPlan(t, deps, "label=web")
+	mustContain(t, body, `<a href="/plan?label=dashboard,web" class="c-label-pill" data-label="dashboard">dashboard</a>`)
+}
+
+func TestPlan_LabelFilter_MultiSelectIsORSemantic(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "Web only", nil, []string{"web"})
+	_ = mustAdd(t, db, "claude", "Dashboard only", nil, []string{"dashboard"})
+	_ = mustAdd(t, db, "claude", "Other only", nil, []string{"other"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "label=web,dashboard")
+
+	// Both web-only and dashboard-only tasks should be visible (OR);
+	// other-labeled tasks should drop out.
+	mustContain(t, body, `Web only`)
+	mustContain(t, body, `Dashboard only`)
+	if strings.Contains(body, `Other only`) {
+		t.Errorf("?label=web,dashboard should exclude an other-only task")
+	}
+}
+
+func TestPlan_InlineLabelPillIsClickableAndAddsLabel(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+	_ = mustAdd(t, db, "claude", "B", nil, []string{"css"})
+
+	deps := newPlanDeps(t, db)
+
+	// With no filter: inline pill on row A points at /plan?label=web.
+	body := fetchPlan(t, deps, "")
+	mustContain(t, body, `<a href="/plan?label=web" class="c-label-pill" data-label="web">web</a>`)
+
+	// With ?label=web: inline pill on row B (label=css) adds css to
+	// the existing selection.
+	body = fetchPlan(t, deps, "label=web")
+	mustContain(t, body, `<a href="/plan?label=css,web" class="c-label-pill" data-label="css">css</a>`)
 }
 
 func TestPlan_LabelFilter_UnknownLabelShowsEmptyState(t *testing.T) {
@@ -358,18 +474,20 @@ func TestPlan_LabelFilter_UnknownLabelShowsEmptyState(t *testing.T) {
 	mustContain(t, body, `c-plan-empty`)
 }
 
-func TestPlan_NoLabelFilter_OmitsClearLinkAndNoActivePill(t *testing.T) {
-	db := setupPlanTestDB(t)
-	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
-
-	deps := newPlanDeps(t, db)
-	body := fetchPlan(t, deps, "")
-
-	// Pill exists, but without --active.
-	mustContain(t, body, `data-label="web"`)
-	if strings.Contains(body, `c-label-pill--active`) {
-		t.Errorf("no ?label= → no active pill should render")
+// extractFilterBar returns just the markup inside the plan view's
+// <section class="c-filter-bar">…</section>. Lets strip-only tests
+// avoid matching the inline label pills that decorate task rows.
+func extractFilterBar(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `<section class="c-filter-bar"`)
+	if start == -1 {
+		t.Fatalf("c-filter-bar section not found in body")
 	}
+	end := strings.Index(body[start:], `</section>`)
+	if end == -1 {
+		t.Fatalf("filter-bar section is not closed")
+	}
+	return body[start : start+end]
 }
 
 // assertRowHasClass finds the row tagged with data-plan-task="<shortID>"

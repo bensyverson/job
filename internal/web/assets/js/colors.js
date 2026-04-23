@@ -122,14 +122,17 @@
       // Skip if a progress bar is already present.
       if (row.querySelector(":scope > .c-plan-row__progress")) return;
 
-      // Find this row's subtree. Usually the next sibling. For the root
-      // row (no explicit subtree) fall back to counting every sibling in
-      // the enclosing stack.
+      // Find this row's own subtree. The notes <details> sits between
+      // the row and the subtree when present; skip it. If the row
+      // doesn't actually own a subtree (a leaf with a description gets
+      // a disclosure for collapse purposes but has no children), there
+      // is no progress to paint — bail rather than falling back to the
+      // parent's subtree, which would steal the parent's stats.
       let subtree = row.nextElementSibling;
-      if (!subtree || !subtree.classList.contains("c-plan-subtree")) {
-        subtree = row.parentElement;
+      if (subtree && subtree.classList.contains("c-plan-notes-group")) {
+        subtree = subtree.nextElementSibling;
       }
-      if (!subtree) return;
+      if (!subtree || !subtree.classList.contains("c-plan-subtree")) return;
 
       const result = countLeaves(subtree);
       if (result.total === 0) return;

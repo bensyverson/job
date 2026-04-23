@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,22 +18,29 @@ import (
 // PlanPageData is the payload rendered by the plan template.
 type PlanPageData struct {
 	templates.Chrome
-	Roots       []*PlanNode
-	HasTasks    bool
-	ActiveLabel string
-	Labels      []PlanLabelChip
-	// ClearURL points to /plan without any filter params, used as the
-	// target of the "clear" link that appears when a filter is active.
-	ClearURL string
+	Roots     []*PlanNode
+	HasTasks  bool
+	Labels    []PlanLabelChip
+	AllURL    string
+	AllActive bool
 }
 
-// PlanLabelChip is one label pill in the plan filter bar. Each pill
-// is a link to /plan?label=<name>; the active label's pill carries
-// the --active modifier so the bar reads like a chip-selector.
+// PlanLabelChip is one label pill in the plan filter bar. URL is the
+// toggle URL — clicking adds the label if absent, removes if present.
+// Active reflects whether the label is in the current selection.
 type PlanLabelChip struct {
 	Name   string
 	URL    string
 	Active bool
+}
+
+// PlanRowLabel is one label pill rendered inline on a task row. URL
+// is an enable-URL: clicking adds the label to the current selection
+// (no-op if already selected). Inline pills don't deselect — that's
+// the strip's job.
+type PlanRowLabel struct {
+	Name string
+	URL  string
 }
 
 // PlanNode is one node in the rendered plan tree. All fields are
@@ -44,7 +52,7 @@ type PlanNode struct {
 	Description   string
 	DisplayStatus string
 	Actor         string
-	Labels        []string
+	Labels        []PlanRowLabel
 	RelTime       string
 	ISOTime       string
 	BlockedBy     []PlanBlockerRef
@@ -88,11 +96,11 @@ type PlanBlockerRef struct {
 }
 
 // Plan renders the document-mode tree view. See vision §3.2.
-// Live-update wiring still pending (p4-live); ?label= and the
-// disclosure JS (E2ffo) are wired.
+// Live-update wiring still pending (p4-live); ?label= (multi-select)
+// and the disclosure JS (E2ffo) are wired.
 func Plan(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		activeLabel := strings.TrimSpace(r.URL.Query().Get("label"))
+		selected := parseLabelParam(r.URL.Query().Get("label"))
 
 		// Load the unfiltered forest first so the labels strip reflects
 		// what's actually present in the document; the strip needs to
@@ -114,9 +122,9 @@ func Plan(deps Deps) http.Handler {
 			return
 		}
 
-		stripLabels := distinctLabelsOnOpenTasks(roots, labels)
-		if activeLabel != "" {
-			roots = filterForestByLabel(roots, labels, activeLabel)
+		stripNames := pickStripLabels(roots, labels, selected, 5)
+		if len(selected) > 0 {
+			roots = filterForestByLabels(roots, labels, selected)
 		}
 		// Recompute ids after the in-memory filter so the follow-up
 		// blockers / notes / actors lookups stay scoped to what we'll
@@ -139,59 +147,123 @@ func Plan(deps Deps) http.Handler {
 		}
 
 		now := time.Now()
-		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, titlesByShortID, now, 0)
+		addLabelURLs := buildAddLabelURLs(roots, labels, selected)
+		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, titlesByShortID, addLabelURLs, now, 0)
 
 		data := PlanPageData{
-			Chrome:      templates.Chrome{ActiveTab: "plan"},
-			Roots:       planRoots,
-			HasTasks:    len(planRoots) > 0,
-			ActiveLabel: activeLabel,
-			Labels:      buildPlanLabelChips(stripLabels, activeLabel),
-			ClearURL:    "/plan",
+			Chrome:    templates.Chrome{ActiveTab: "plan"},
+			Roots:     planRoots,
+			HasTasks:  len(planRoots) > 0,
+			Labels:    buildPlanLabelChips(stripNames, selected),
+			AllURL:    "/plan",
+			AllActive: len(selected) == 0,
 		}
 		renderPage(deps, w, "plan", data)
 	})
 }
 
-// distinctLabelsOnOpenTasks returns the set of label names that appear
-// on at least one not-done, not-canceled task in the forest, sorted.
-// The plan view shows done parents for context (their subtree has open
-// work), but those parents' historical labels would noisily inflate
-// the filter strip — a label is only useful as a filter if there's at
-// least one open task to filter to. Derived from the already-batched
-// labels map so no extra DB round-trip is needed.
-func distinctLabelsOnOpenTasks(roots []*job.TaskNode, labels map[int64][]string) []string {
+// parseLabelParam splits a comma-separated ?label= value into a sorted,
+// deduped slice. Empty/whitespace inputs collapse to nil. Sorting is
+// canonical so toggling the same set produces the same URL regardless
+// of the order chips were clicked in.
+func parseLabelParam(raw string) []string {
+	if raw == "" {
+		return nil
+	}
 	seen := make(map[string]struct{})
+	for _, part := range strings.Split(raw, ",") {
+		s := strings.TrimSpace(part)
+		if s == "" {
+			continue
+		}
+		seen[s] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// labelFreqsOnOpenTasks counts how many open tasks (not done/canceled)
+// in the forest carry each label. A label is only useful as a filter
+// when at least one open task wears it.
+func labelFreqsOnOpenTasks(roots []*job.TaskNode, labels map[int64][]string) map[string]int {
+	out := make(map[string]int)
 	var walk func([]*job.TaskNode)
 	walk = func(ns []*job.TaskNode) {
 		for _, n := range ns {
 			if n.Task.Status != "done" && n.Task.Status != "canceled" {
 				for _, name := range labels[n.Task.ID] {
-					seen[name] = struct{}{}
+					out[name]++
 				}
 			}
 			walk(n.Children)
 		}
 	}
 	walk(roots)
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	sort.Strings(out)
 	return out
 }
 
-// filterForestByLabel applies the ?label=<name> filter in memory. A
-// node is kept if it carries the label itself or any descendant does
-// (ancestor-chain for context); descendants that don't themselves
-// match are dropped. Mirrors job.filterByLabel but operates on the
-// pre-loaded labels map to avoid a second DB pass.
-func filterForestByLabel(nodes []*job.TaskNode, labels map[int64][]string, name string) []*job.TaskNode {
+// pickStripLabels returns the labels that appear in the filter strip:
+// top-N most frequent labels on open tasks, plus any currently-selected
+// labels not in the top-N (so a selection never orphans). Top-N first
+// (frequency desc, name asc tiebreak), then extras in name order.
+func pickStripLabels(roots []*job.TaskNode, labels map[int64][]string, selected []string, n int) []string {
+	freqs := labelFreqsOnOpenTasks(roots, labels)
+	type entry struct {
+		name  string
+		count int
+	}
+	all := make([]entry, 0, len(freqs))
+	for name, c := range freqs {
+		all = append(all, entry{name, c})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].count != all[j].count {
+			return all[i].count > all[j].count
+		}
+		return all[i].name < all[j].name
+	})
+	top := make([]string, 0, n)
+	inTop := make(map[string]bool)
+	for i := 0; i < len(all) && len(top) < n; i++ {
+		top = append(top, all[i].name)
+		inTop[all[i].name] = true
+	}
+	// Append selected labels not already in the top-N.
+	extras := make([]string, 0)
+	for _, s := range selected {
+		if !inTop[s] {
+			extras = append(extras, s)
+			inTop[s] = true
+		}
+	}
+	sort.Strings(extras)
+	return append(top, extras...)
+}
+
+// filterForestByLabels applies a multi-select label filter in memory.
+// OR semantic: a task is kept if it carries any selected label OR has
+// a descendant that does (ancestor chain preserved for context).
+// Mirrors job.filterByLabel but operates on the pre-loaded labels map
+// and a label set instead of a single name.
+func filterForestByLabels(nodes []*job.TaskNode, labels map[int64][]string, selected []string) []*job.TaskNode {
+	if len(selected) == 0 {
+		return nodes
+	}
+	wanted := make(map[string]struct{}, len(selected))
+	for _, s := range selected {
+		wanted[s] = struct{}{}
+	}
 	matches := make(map[int64]bool)
 	for id, ls := range labels {
 		for _, n := range ls {
-			if n == name {
+			if _, ok := wanted[n]; ok {
 				matches[id] = true
 				break
 			}
@@ -211,19 +283,91 @@ func filterForestByLabel(nodes []*job.TaskNode, labels map[int64][]string, name 
 	return walk(nodes)
 }
 
-// buildPlanLabelChips turns the DB's distinct-labels list into chip
-// rows for the filter bar. Each chip's URL is /plan?label=<name>; the
-// active label gets the --active flag so the template can paint it.
-func buildPlanLabelChips(names []string, active string) []PlanLabelChip {
-	out := make([]PlanLabelChip, 0, len(names))
-	for _, n := range names {
+// buildPlanLabelChips renders the strip pills. URL toggles the label
+// in/out of the current selection; Active reflects current membership.
+func buildPlanLabelChips(stripNames []string, selected []string) []PlanLabelChip {
+	selSet := make(map[string]struct{}, len(selected))
+	for _, s := range selected {
+		selSet[s] = struct{}{}
+	}
+	out := make([]PlanLabelChip, 0, len(stripNames))
+	for _, name := range stripNames {
+		_, isSel := selSet[name]
 		out = append(out, PlanLabelChip{
-			Name:   n,
-			URL:    "/plan?label=" + url.QueryEscape(n),
-			Active: n == active,
+			Name:   name,
+			URL:    planLabelURL(toggleLabel(selected, name)),
+			Active: isSel,
 		})
 	}
 	return out
+}
+
+// buildAddLabelURLs maps each label name encountered in the forest to
+// its enable-URL — the URL that adds the label to the current
+// selection (no-op if already present). Used by inline pills on task
+// rows; one shared map across rows keeps the per-row work tiny.
+func buildAddLabelURLs(roots []*job.TaskNode, labels map[int64][]string, selected []string) map[string]string {
+	out := make(map[string]string)
+	var walk func([]*job.TaskNode)
+	walk = func(ns []*job.TaskNode) {
+		for _, n := range ns {
+			for _, name := range labels[n.Task.ID] {
+				if _, ok := out[name]; ok {
+					continue
+				}
+				out[name] = planLabelURL(addLabel(selected, name))
+			}
+			walk(n.Children)
+		}
+	}
+	walk(roots)
+	return out
+}
+
+// toggleLabel returns selected with name added if absent, removed if
+// present. Returns a sorted slice so URLs are canonical.
+func toggleLabel(selected []string, name string) []string {
+	out := make([]string, 0, len(selected)+1)
+	found := false
+	for _, s := range selected {
+		if s == name {
+			found = true
+			continue
+		}
+		out = append(out, s)
+	}
+	if !found {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// addLabel returns selected with name added if absent (a no-op if
+// already present). Returns a sorted slice so URLs are canonical.
+func addLabel(selected []string, name string) []string {
+	if slices.Contains(selected, name) {
+		return append([]string(nil), selected...)
+	}
+	out := append([]string{name}, selected...)
+	sort.Strings(out)
+	return out
+}
+
+// planLabelURL composes the /plan URL for a given selection. Empty
+// selection → /plan (clear-filter URL). Each label is QueryEscape'd
+// individually so an exotic label name still survives a round-trip,
+// but the joining commas stay raw — they're URL-safe in query values
+// and a literal comma is what parseLabelParam splits on.
+func planLabelURL(selected []string) string {
+	if len(selected) == 0 {
+		return "/plan"
+	}
+	parts := make([]string, len(selected))
+	for i, s := range selected {
+		parts[i] = url.QueryEscape(s)
+	}
+	return "/plan?label=" + strings.Join(parts, ",")
 }
 
 // collectTaskIDs walks a task forest in pre-order and returns every
@@ -268,12 +412,13 @@ func buildPlanNodes(
 	notes map[int64][]PlanNote,
 	actors map[int64]string,
 	titlesByShortID map[string]string,
+	addLabelURLs map[string]string,
 	now time.Time,
 	depth int,
 ) []*PlanNode {
 	out := make([]*PlanNode, 0, len(nodes))
 	for _, n := range nodes {
-		children := buildPlanNodes(n.Children, labels, blockers, notes, actors, titlesByShortID, now, depth+1)
+		children := buildPlanNodes(n.Children, labels, blockers, notes, actors, titlesByShortID, addLabelURLs, now, depth+1)
 
 		taskBlockers := blockers[n.Task.ID]
 		displayStatus := DisplayStatus(n.Task.Status, len(taskBlockers) > 0)
@@ -310,7 +455,7 @@ func buildPlanNodes(
 			Description:   n.Task.Description,
 			DisplayStatus: displayStatus,
 			Actor:         actors[n.Task.ID],
-			Labels:        labels[n.Task.ID],
+			Labels:        buildRowLabels(labels[n.Task.ID], addLabelURLs),
 			RelTime:       render.RelativeTime(now, ts),
 			ISOTime:       ts.UTC().Format(time.RFC3339),
 			BlockedBy:     buildBlockerRefs(taskBlockers, titlesByShortID),
@@ -329,6 +474,19 @@ func buildPlanNodes(
 // Done and canceled subtrees can collapse; everything else expands.
 func isOpenStatus(displayStatus string) bool {
 	return displayStatus != "done" && displayStatus != "canceled"
+}
+
+// buildRowLabels turns a row's plain label-name list into PlanRowLabels
+// with their pre-computed enable-URLs.
+func buildRowLabels(names []string, addLabelURLs map[string]string) []PlanRowLabel {
+	if len(names) == 0 {
+		return nil
+	}
+	out := make([]PlanRowLabel, len(names))
+	for i, n := range names {
+		out[i] = PlanRowLabel{Name: n, URL: addLabelURLs[n]}
+	}
+	return out
 }
 
 func buildBlockerRefs(shortIDs []string, titlesByShortID map[string]string) []PlanBlockerRef {

@@ -12,12 +12,14 @@
     <a href="/plan" class="c-tab" aria-disabled="true">Archived</a>
     <a href="/plan" class="c-tab" aria-disabled="true">All</a>
   </nav>
-  {{if .Labels}}
-  <span class="c-panel__title" style="margin-left: var(--space-xl)">Labels</span>
-  {{range .Labels}}<a href="{{.URL}}" class="c-label-pill{{if .Active}} c-label-pill--active{{end}}" data-label="{{.Name}}">{{.Name}}</a>{{end}}
-  {{if .ActiveLabel}}<a href="{{.ClearURL}}" class="t-muted t-body-sm" style="margin-left: var(--space-xs)">clear</a>{{end}}
-  {{end}}
 </div>
+<section class="c-filter-bar" aria-label="Plan filters">
+  <div class="c-filter-bar__group" role="group" aria-label="Labels">
+    <span class="c-filter-bar__label">Labels</span>
+    <a href="{{.AllURL}}" class="c-label-pill c-label-pill--all{{if .AllActive}} c-label-pill--active{{end}}">All</a>
+    {{range .Labels}}<a href="{{.URL}}" class="c-label-pill{{if .Active}} c-label-pill--active{{end}}" data-label="{{.Name}}">{{.Name}}</a>{{end}}
+  </div>
+</section>
 
 <section class="c-section" aria-label="Plan">
   {{if .HasTasks}}
@@ -50,7 +52,7 @@
     <div class="c-plan-row__title-line">
       <span class="c-plan-row__title-text{{if eq .Depth 0}} t-heading-lg{{else if eq .Depth 1}} t-heading-md{{end}}">{{.Title}}</span>
       <a href="{{.URL}}" class="c-id-pill">{{.ShortID}}</a>
-      {{range .Labels}}<span class="c-label-pill" data-label="{{.}}">{{.}}</span>{{end}}
+      {{range .Labels}}<a href="{{.URL}}" class="c-label-pill" data-label="{{.Name}}">{{.Name}}</a>{{end}}
     </div>
     {{if .Description}}<div class="c-plan-row__desc">{{.Description}}</div>{{end}}
   </div>

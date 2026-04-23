@@ -152,16 +152,28 @@ a.c-id-pill:hover {
 }
 
 /* The leftmost "All" pill in the filter strip clears every selected
-   label. It has no label color of its own — uses the neutral primary
-   tint so it reads as a clear-the-filter affordance, not as a label. */
+   label. It mirrors the Log view's c-filter-chip styling — neutral
+   ring when inactive, cyan ring + cyan text when active — instead of
+   the filled treatment used by the label pills proper. White-on-cyan
+   reads poorly at this size, and the all/any pill is structurally
+   "system chrome" rather than user data, so it gets a different
+   visual register. */
 .c-label-pill--all {
-  --label-color: var(--color-on-surface-dim);
+  background: transparent;
+  border-color: var(--color-outline);
+  color: var(--color-on-surface-muted);
   font-weight: var(--font-label-caps-weight);
   letter-spacing: var(--font-label-caps-letter-spacing);
   text-transform: lowercase;
 }
+.c-label-pill--all:hover {
+  border-color: var(--color-outline-strong);
+  color: var(--color-on-surface);
+}
 .c-label-pill--all.c-label-pill--active {
-  --label-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 /* ---------- Signal card ---------- */
@@ -332,7 +344,9 @@ a.c-id-pill:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  padding: var(--space-sm) 0;
+  /* Match .c-tab and .c-plan-row padding so the filter bar's left
+     edge aligns with the tabs above and the tree below. */
+  padding: var(--space-sm) var(--space-md);
 }
 
 .c-filter-bar__group {

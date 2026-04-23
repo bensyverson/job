@@ -52,10 +52,10 @@ func newCancelCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&reason, "reason", "", "human-readable reason (required)")
+	cmd.Flags().StringVarP(&reason, "reason", "m", "", "human-readable reason (required)")
 	cmd.Flags().BoolVar(&cascade, "cascade", false, "also cancel/purge open descendants")
 	cmd.Flags().BoolVar(&purge, "purge", false, "erase the task row and its events instead of transitioning state")
-	cmd.Flags().BoolVar(&yes, "yes", false, "confirm irrecoverable purge of a subtree (required with --purge --cascade)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "confirm irrecoverable purge of a subtree (required with --purge --cascade)")
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
 }

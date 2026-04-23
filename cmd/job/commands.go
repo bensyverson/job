@@ -93,6 +93,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newImportCmd())
 	cmd.AddCommand(newSchemaCmd())
 	cmd.AddCommand(newStatusCmd())
+	cmd.AddCommand(newSummaryCmd())
 	return cmd
 }
 
@@ -149,6 +150,15 @@ VERBS (grouped by role)
   Grammar — pick the shape from the verb category:
     Multi-operation verbs (label, block):  job <verb> <add|remove> <args>
     Single-operation verbs:                job <verb> <id> [--flags]
+
+  Short flags follow these conventions:
+    -m  free-text body (note -m, done -m, cancel -m)
+    -d  --desc       -t  --title (edit) / --timeout (tail)
+    -l  --label      -p  --parent (import)
+    -n  --dry-run    -s  --since (log)
+    -e  --events     -u  --users     -q  --quiet     -y  --yes
+    Letters reserved by convention (-r recursive, -f force, -v verbose,
+    -h help) are intentionally NOT reused for unrelated semantics.
 
   For full options on any verb:  job <verb> --help
 

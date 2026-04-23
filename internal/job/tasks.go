@@ -1142,6 +1142,14 @@ type TaskInfo struct {
 	Children []*Task
 	Blockers []*Task
 	Labels   []string
+	Notes    []NoteEntry
+}
+
+// NoteEntry is a single rendered note pulled from the event stream.
+type NoteEntry struct {
+	Actor     string
+	Text      string
+	CreatedAt int64
 }
 
 func RunInfo(db *sql.DB, shortID string) (*TaskInfo, error) {
@@ -1197,11 +1205,48 @@ func RunInfo(db *sql.DB, shortID string) (*TaskInfo, error) {
 		return nil, err
 	}
 
+	notes, err := getNotesForTask(db, task.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TaskInfo{
 		Task:     task,
 		Parent:   parent,
 		Children: children,
 		Blockers: blockers,
 		Labels:   labels,
+		Notes:    notes,
 	}, nil
+}
+
+// getNotesForTask returns the chronological list of `noted` events for a
+// task, with the body extracted from the event detail JSON.
+func getNotesForTask(db *sql.DB, taskID int64) ([]NoteEntry, error) {
+	rows, err := db.Query(`
+		SELECT actor, detail, created_at
+		FROM events
+		WHERE task_id = ? AND event_type = 'noted'
+		ORDER BY created_at ASC, id ASC
+	`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notes []NoteEntry
+	for rows.Next() {
+		var actor, detailJSON string
+		var createdAt int64
+		if err := rows.Scan(&actor, &detailJSON, &createdAt); err != nil {
+			return nil, err
+		}
+		var detail map[string]any
+		if detailJSON != "" {
+			_ = json.Unmarshal([]byte(detailJSON), &detail)
+		}
+		text, _ := detail["text"].(string)
+		notes = append(notes, NoteEntry{Actor: actor, Text: text, CreatedAt: createdAt})
+	}
+	return notes, rows.Err()
 }

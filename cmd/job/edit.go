@@ -46,7 +46,7 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&title, "title", "", "new title (replaces current)")
-	cmd.Flags().StringVar(&desc, "desc", "", "new description (replaces current; pass \"\" to clear)")
+	cmd.Flags().StringVarP(&title, "title", "t", "", "new title (replaces current)")
+	cmd.Flags().StringVarP(&desc, "desc", "d", "", "new description (replaces current; pass \"\" to clear)")
 	return cmd
 }

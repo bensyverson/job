@@ -117,11 +117,11 @@ func newTailCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
-	cmd.Flags().StringVar(&eventsFlag, "events", "", "comma-separated list of event types to include (default: all except heartbeat)")
-	cmd.Flags().StringVar(&usersFlag, "users", "", "comma-separated list of actor names to include")
+	cmd.Flags().StringVarP(&eventsFlag, "events", "e", "", "comma-separated list of event types to include (default: all except heartbeat)")
+	cmd.Flags().StringVarP(&usersFlag, "users", "u", "", "comma-separated list of actor names to include")
 	cmd.Flags().StringSliceVar(&untilClose, "until-close", nil, "block until the named task closes; repeatable; use --until-close=_ to default to the positional id")
 	cmd.Flags().Lookup("until-close").NoOptDefVal = "_"
-	cmd.Flags().StringVar(&timeoutStr, "timeout", "", "exit 2 if no close occurs in this duration (e.g. 30s, 5m)")
-	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress event stream while waiting; preserves close and timeout messages")
+	cmd.Flags().StringVarP(&timeoutStr, "timeout", "t", "", "exit 2 if no close occurs in this duration (e.g. 30s, 5m)")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress event stream while waiting; preserves close and timeout messages")
 	return cmd
 }

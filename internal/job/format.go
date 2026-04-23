@@ -93,9 +93,10 @@ func listStateParens(node *TaskNode, blockers map[string][]string, labels map[in
 	var parts []string
 	switch node.Task.Status {
 	case "done":
-		if node.Task.CompletionNote != nil && *node.Task.CompletionNote != "" {
-			parts = append(parts, "note: "+*node.Task.CompletionNote)
-		}
+		// Completion note bodies used to be inlined here; they now live
+		// in `job info` (R5). Keeping the list view structural makes
+		// labels — the most common scan target — visible without a wall
+		// of note text in front of them.
 	case "canceled":
 		parts = append(parts, "canceled")
 	case "claimed":
@@ -156,7 +157,7 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 	fmt.Fprintf(w, "ID:           %s\n", info.Task.ShortID)
 	fmt.Fprintf(w, "Title:        %s\n", info.Task.Title)
 	if info.Task.Description != "" {
-		fmt.Fprintf(w, "Description:  %s\n", info.Task.Description)
+		fmt.Fprintf(w, "Description:  %s\n", unwrapProse(info.Task.Description))
 	}
 	fmt.Fprintf(w, "Status:       %s\n", info.Task.Status)
 	if info.Task.Status == "claimed" {
@@ -196,19 +197,106 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 		fmt.Fprintf(w, "Blocking:     %s\n", strings.Join(ids, ", "))
 	}
 	fmt.Fprintf(w, "Created:      %s\n", formatTimestamp(info.Task.CreatedAt))
+
+	if len(info.Notes) > 0 {
+		fmt.Fprintln(w, "Notes:")
+		now := nowUnix()
+		for _, n := range info.Notes {
+			ago := now - n.CreatedAt
+			ts := formatTimestamp(n.CreatedAt)
+			if ago > 0 {
+				fmt.Fprintf(w, "  [%s] @%s (%s ago)\n", ts, n.Actor, FormatDuration(ago))
+			} else {
+				fmt.Fprintf(w, "  [%s] @%s\n", ts, n.Actor)
+			}
+			fmt.Fprintf(w, "    %s\n", unwrapProse(n.Text))
+		}
+	}
+}
+
+// unwrapProse turns author-supplied hard-wrapped prose into terminal-
+// friendly output:
+//   - Single \n inside a paragraph collapses to a space.
+//   - Blank lines (\n\n+) are preserved as paragraph breaks.
+//   - Bullet lines (- or *) and numbered list lines (1.) keep their own
+//     line so list structure survives.
+//
+// Trailing whitespace and trailing blank lines are trimmed.
+func unwrapProse(s string) string {
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	var out []string
+	var para []string
+
+	flush := func() {
+		if len(para) > 0 {
+			out = append(out, strings.Join(para, " "))
+			para = para[:0]
+		}
+	}
+
+	isBullet := func(line string) bool {
+		t := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "* ") || t == "-" || t == "*" {
+			return true
+		}
+		// Loose numbered-list detection: "1. " through "999. ".
+		for i := 0; i < len(t) && i < 4; i++ {
+			c := t[i]
+			if c >= '0' && c <= '9' {
+				continue
+			}
+			if c == '.' && i > 0 && i+1 < len(t) && t[i+1] == ' ' {
+				return true
+			}
+			break
+		}
+		return false
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, " \t")
+		if trimmed == "" {
+			flush()
+			out = append(out, "")
+			continue
+		}
+		if isBullet(trimmed) {
+			flush()
+			out = append(out, trimmed)
+			continue
+		}
+		para = append(para, trimmed)
+	}
+	flush()
+
+	// Trim trailing blank lines so descriptions that ended in newlines
+	// don't blow out the bottom of the section.
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return strings.Join(out, "\n")
 }
 
 func RenderInfoJSON(w io.Writer, info *TaskInfo) {
+	type noteJSON struct {
+		Text      string `json:"text"`
+		Actor     string `json:"actor"`
+		CreatedAt int64  `json:"created_at"`
+	}
 	type infoJSON struct {
-		ID          string   `json:"id"`
-		Title       string   `json:"title"`
-		Description string   `json:"description"`
-		Status      string   `json:"status"`
-		Parent      *string  `json:"parent,omitempty"`
-		Children    int      `json:"children"`
-		Blockers    []string `json:"blockers,omitempty"`
-		Labels      []string `json:"labels"`
-		CreatedAt   int64    `json:"created_at"`
+		ID          string     `json:"id"`
+		Title       string     `json:"title"`
+		Description string     `json:"description"`
+		Status      string     `json:"status"`
+		Parent      *string    `json:"parent,omitempty"`
+		Children    int        `json:"children"`
+		Blockers    []string   `json:"blockers,omitempty"`
+		Labels      []string   `json:"labels"`
+		Notes       []noteJSON `json:"notes"`
+		CreatedAt   int64      `json:"created_at"`
 	}
 
 	var parentID *string
@@ -225,6 +313,11 @@ func RenderInfoJSON(w io.Writer, info *TaskInfo) {
 		labels = []string{}
 	}
 
+	notes := make([]noteJSON, 0, len(info.Notes))
+	for _, n := range info.Notes {
+		notes = append(notes, noteJSON{Text: n.Text, Actor: n.Actor, CreatedAt: n.CreatedAt})
+	}
+
 	obj := infoJSON{
 		ID:          info.Task.ShortID,
 		Title:       info.Task.Title,
@@ -234,6 +327,7 @@ func RenderInfoJSON(w io.Writer, info *TaskInfo) {
 		Children:    len(info.Children),
 		Blockers:    blockers,
 		Labels:      labels,
+		Notes:       notes,
 		CreatedAt:   info.Task.CreatedAt,
 	}
 	b, _ := json.MarshalIndent(obj, "", "  ")

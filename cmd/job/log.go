@@ -56,6 +56,6 @@ func newLogCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
-	cmd.Flags().StringVar(&since, "since", "", "only events at or after this RFC3339 timestamp")
+	cmd.Flags().StringVarP(&since, "since", "s", "", "only events at or after this RFC3339 timestamp")
 	return cmd
 }

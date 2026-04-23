@@ -86,24 +86,6 @@ func TestList_BlockedParens(t *testing.T) {
 	}
 }
 
-func TestList_DoneWithNote(t *testing.T) {
-	db := SetupTestDB(t)
-	id := MustAdd(t, db, "", "Task")
-	if _, _, err := RunDone(db, []string{id}, false, "abc123", nil, TestActor); err != nil {
-		t.Fatalf("done: %v", err)
-	}
-	nodes, err := runList(db, "", "", true)
-	if err != nil {
-		t.Fatalf("runList: %v", err)
-	}
-	blockers, _ := CollectBlockers(db, nodes)
-	got := renderListString(db, nodes, blockers)
-	want := "- [x] `" + id + "` Task (note: abc123)\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
 func TestList_NestedIndentation(t *testing.T) {
 	db := SetupTestDB(t)
 	parent := MustAdd(t, db, "", "Parent")

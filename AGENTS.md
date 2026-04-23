@@ -11,6 +11,12 @@ When you need additional context, consult the docs:
 - [README.md](README.md) - Project overview and quick start
 - [project/](project/) - Historical design documents and past project plans
 
+## CLI conventions
+
+- **Check default identity first.** Run `job status` (or `job identity` directly) at session start to see whether a default identity is configured. If one is set, you do not need to pass `--as` on every write — the default already attributes you correctly.
+- **Prefer canonical forms; aliases warn.** `block add` / `block remove` are the canonical block-edge verbs (kept the `by` keyword: `block add X by Y`). The shorter `block X by Y` and `unblock X from Y` still work as aliases but emit a one-line stderr deprecation notice on every call. Same for `ls` (use `list`) and `show <id>` (use `info <id>`). When you write tooling or examples, prefer the canonical form.
+- **`-m` is the free-text body short flag** across `note`, `done`, and `cancel`. The convention extends to other commands' obvious mappings: `-d` for `--desc`, `-t` for `--title`, `-l` for `--label`, `-p` for `--parent`, `-n` for `--dry-run`, `-s` for `--since`, `-y` for `--yes`. Letters reserved by long-standing convention (`-r` recursive, `-f` force, `-v` verbose, `-h` help) are intentionally not reused for unrelated semantics.
+
 ## General
 
 - If a requirement is ambiguous or could be solved in several ways, choose the most idiomatic way to solve the problem in the given language if that would resolve the ambiguity.

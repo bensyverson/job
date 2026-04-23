@@ -59,7 +59,7 @@ func newNextCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
-	cmd.Flags().StringVar(&labelFilter, "label", "", "filter to tasks carrying this label")
+	cmd.Flags().StringVarP(&labelFilter, "label", "l", "", "filter to tasks carrying this label")
 	cmd.Flags().BoolVar(&includeParents, "include-parents", false, "surface tasks with open children (legacy behavior)")
 	return cmd
 }

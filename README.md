@@ -92,6 +92,10 @@ Multiple agents can work in the same directory simultaneously. Each passes its o
 
 ## Commands
 
+**Grammar.** Multi-operation verbs (`label`, `block`) take a subcommand: `job label add ...`, `job block add ...`. Single-operation verbs take a positional id and flags: `job claim <id>`, `job done <id> -m "..."`. Aliases are kept for the older shapes (`job block <blocked> by <blocker>`, `job unblock <blocked> from <blocker>`, `job ls`, `job show <id>`); they still work and emit a one-line stderr notice naming the canonical form.
+
+**Short flags.** `-m` is the free-text body across commands that take one (`note -m`, `done -m`, `cancel -m`). Common single-letter flags follow the obvious mapping: `-d`/`-t` for `--desc`/`--title`, `-l` for `--label`, `-p` for `--parent`, `-n` for `--dry-run`, `-s` for `--since`, `-e`/`-u`/`-q` for tail's `--events`/`--users`/`--quiet`, `-y` for `--yes`. Letters with strong prior meaning (`-r` recursive, `-f` force, `-v` verbose, `-h` help) are intentionally not reused for unrelated semantics.
+
 ### Database
 
 | Command | Description |
@@ -112,19 +116,20 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 | Command | Description |
 |---------|-------------|
 | `job add [parent] <title>` | Add a new task. Optionally under a parent. |
-| | `--desc <text>` Set a description. |
-| | `--before <id>` Insert before this sibling. |
+| | `-d, --desc <text>` Set a description. |
+| | `-b, --before <id>` Insert before this sibling. |
 
 ### Viewing tasks
 
 | Command | Description |
 |---------|-------------|
-| `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. |
-| `job info <id>` | Show full details for one task. |
-| `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. |
-| `job status` | One-line summary: claimed / open / done, plus time since the last event. With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. Suppressed when zero. |
+| `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. Done tasks render as structural lines (`- [x] \`<id>\` Title`) without inline note bodies — labels and blockers stay scannable. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job ls` is a deprecated alias. |
+| `job info <id>` | Show full details for one task. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `job show <id>` is a deprecated alias. |
+| `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. `-l, --label <name>` filters. |
+| `job status` | One-line summary: claimed / open / done, plus time since the last event. A second line names the configured default identity and strict-mode state — `Identity: <name> (default) · strict mode <on|off>` when a default is set, else `Identity: none set · --as required on writes`. With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. Suppressed when zero. |
+| `job summary <id>` | Two-level rollup of a task and its direct children. Headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`) plus one rollup line per direct child. Fills the gap between `status` (whole DB) and `list ... all` (full subtree). |
 
-All four support `--format=json` (except `status`, which is always plain text).
+All support `--format=json` (except `status` and `summary`, which are always plain text).
 
 List output is GitHub-Flavored Markdown with checkbox items, so pasting `job list all` into a PR or issue renders as a task list:
 
@@ -151,8 +156,8 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 
 | Command | Description |
 |---------|-------------|
-| `job edit <id> [--title <t>] [--desc <d>]` | Replace title and/or description. `--desc ""` clears the description. |
-| `job note <id> -m "<text>"` | Append a timestamped note to a task's description. The message argument also accepts `-m @path/to/file.txt` to read the note from a file (handy for multi-line evidence payloads where shell quoting is painful) and `-m -` to read from stdin. The positional `job note <id> -` form for stdin is still supported. `--result '<json>'` attaches structured JSON to the event without touching the description. |
+| `job edit <id> [-t <title>] [-d <desc>]` | Replace title and/or description. `-d ""` clears the description. |
+| `job note <id> -m "<text>"` | Append a timestamped note to a task's description. The message argument also accepts `-m @path/to/file.txt` to read the note from a file (handy for multi-line evidence payloads where shell quoting is painful) and `-m -` to read from stdin. The positional `job note <id> -` form for stdin is still supported. `--result '<json>'` attaches structured JSON to the event without touching the description. On success the ack echoes the stored body: `Noted: <id> · <N chars> · "<preview>"` (preview snaps to a word boundary; long bodies elide with `…`). |
 | `job move <id> before\|after <sibling>` | Reorder a task among its siblings. |
 
 ### Cancellation
@@ -162,10 +167,10 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 
 | Command | Description |
 |---------|-------------|
-| `job --as <name> cancel <id> [<id>...] --reason "<text>"` | Cancel one or more open tasks atomically. `--reason` is mandatory. |
+| `job --as <name> cancel <id> [<id>...] -m "<reason>"` | Cancel one or more open tasks atomically. `-m, --reason` is mandatory (`-m` matches `note -m` and `done -m` as the cross-command "free-text body" short flag — `-r` is intentionally avoided to dodge "recursive" muscle memory). |
 | | `--cascade` Also cancel every still-open descendant. |
-| | `--purge` Erase the task row and its events instead of transitioning state (audit trail kept on the parent task). Requires `--reason`. |
-| | `--purge --cascade --yes` Erase an entire subtree. `--yes` is required and there is no interactive prompt. |
+| | `--purge` Erase the task row and its events instead of transitioning state (audit trail kept on the parent task). Requires `-m`. |
+| | `--purge --cascade -y` Erase an entire subtree. `-y, --yes` is required and there is no interactive prompt. |
 | | `--format=json` Machine-readable output. |
 
 `reopen` accepts both `done` and `canceled` tasks, returning them to `available`.
@@ -195,8 +200,10 @@ These three behaviors together mean parents are pure scaffolding: you never expl
 
 | Command | Description |
 |---------|-------------|
-| `job block <blocked> by <blocker>` | Block a task until another is done. Detects circular dependencies. |
-| `job unblock <blocked> from <blocker>` | Remove a block manually. Blocks also auto-remove when the blocker is done. |
+| `job block add <blocked> by <blocker> [<blocker>...]` | Declare that one or more blockers prevent the task from proceeding. Multi-blocker calls run in a single transaction — all-or-nothing. Cycles are detected across the full input set; duplicates collapse to a single edge. |
+| `job block remove <blocked> by <blocker> [<blocker>...]` | Remove one or more blocking relationships atomically. Blocks also auto-remove when the blocker is marked done. |
+
+The legacy single-blocker forms `job block <blocked> by <blocker>` and `job unblock <blocked> from <blocker>` still work but emit a one-line stderr deprecation notice routing to the canonical `block add` / `block remove` form.
 
 ### Labels
 
@@ -248,8 +255,8 @@ Every task inside the first fenced YAML block whose top-level key is `tasks:` is
 | Command | Description |
 |---------|-------------|
 | `job import <file.md>` | Import tasks from a Markdown plan. |
-| | `--dry-run` Validate without writing. |
-| | `--parent <id>` Import under an existing task. |
+| | `-n, --dry-run` Validate without writing. |
+| | `-p, --parent <id>` Import under an existing task. |
 | | `--format=json` Machine-readable echo of created IDs. |
 
 Per-task keys in the YAML:
@@ -268,12 +275,12 @@ Run `job schema` for the full JSON Schema.
 | Command | Description |
 |---------|-------------|
 | `job log [<id>\|all]` | Show full event history for a task and its descendants. With no arg (or the literal `all`), streams events from every top-level tree — effectively the whole database. |
-| | `--since <rfc3339>` Only events at or after the given timestamp. |
+| | `-s, --since <rfc3339>` Only events at or after the given timestamp. |
 | | `--format=json` Pretty-printed JSON array. |
 | `job tail [<id>\|all]` | Stream events in real-time. Polls every second until Ctrl+C. With no arg (or `all`), streams globally from every top-level tree. |
 | | `--format=json` Emits one JSON object per line (JSON-lines), suitable for `jq -c` or line-based subscriber agents. |
-| | `--events <type,type,...>` Only emit events of the listed types. By default `heartbeat` events are hidden; pass `--events heartbeat` to opt in. |
-| | `--users <name,...>` Only emit events from the listed actors. |
+| | `-e, --events <type,type,...>` Only emit events of the listed types. By default `heartbeat` events are hidden; pass `--events heartbeat` to opt in. |
+| | `-u, --users <name,...>` Only emit events from the listed actors. |
 
 Every event includes the actor who performed it.
 
@@ -298,8 +305,8 @@ child to finish without polling.
 | Flag | Description |
 |------|-------------|
 | `--until-close=<id>` | Block until the named task reaches `done` or `canceled`. Repeatable: all listed tasks must close before exit. Use `--until-close` bare (no value) to watch the positional id. |
-| `--timeout <duration>` | Exit with code **2** if the watch set hasn't drained within this duration. Units: `s`, `m`, `h`, `d`. |
-| `--quiet` | Suppress the streamed event output while waiting; the close-transition line still prints. |
+| `-t, --timeout <duration>` | Exit with code **2** if the watch set hasn't drained within this duration. Units: `s`, `m`, `h`, `d`. |
+| `-q, --quiet` | Suppress the streamed event output while waiting; the close-transition line still prints. |
 
 Exit codes for `tail --until-close`:
 

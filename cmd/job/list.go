@@ -108,7 +108,7 @@ Use --format=json for machine-readable output.`,
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
-	cmd.Flags().StringVar(&labelFilter, "label", "", "filter to tasks carrying this label")
+	cmd.Flags().StringVarP(&labelFilter, "label", "l", "", "filter to tasks carrying this label")
 	cmd.Flags().BoolVar(&mine, "mine", false, "show only tasks claimed by the caller")
 	cmd.Flags().StringVar(&claimedBy, "claimed-by", "", "show only tasks claimed by this agent")
 	return cmd

@@ -49,8 +49,8 @@ func newImportCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&parent, "parent", "", "make imported roots children of this task")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate the plan without writing to the database")
+	cmd.Flags().StringVarP(&parent, "parent", "p", "", "make imported roots children of this task")
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "validate the plan without writing to the database")
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	return cmd
 }

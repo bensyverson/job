@@ -46,7 +46,7 @@ func newAddCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&desc, "desc", "", "task description")
-	cmd.Flags().StringVar(&before, "before", "", "insert before this sibling task ID")
+	cmd.Flags().StringVarP(&desc, "desc", "d", "", "task description")
+	cmd.Flags().StringVarP(&before, "before", "b", "", "insert before this sibling task ID")
 	return cmd
 }

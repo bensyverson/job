@@ -3,6 +3,7 @@ package job
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // GetEventsForTask returns events for a single task (not its
@@ -147,17 +148,17 @@ func TaskTitlesByID(db *sql.DB, ids []int64) (map[int64]string, error) {
 	if len(ids) == 0 {
 		return map[int64]string{}, nil
 	}
-	placeholders := ""
+	var placeholders strings.Builder
 	args := make([]any, len(ids))
 	for i, id := range ids {
 		if i > 0 {
-			placeholders += ","
+			placeholders.WriteString(",")
 		}
-		placeholders += "?"
+		placeholders.WriteString("?")
 		args[i] = id
 	}
 	rows, err := db.Query(
-		`SELECT id, title FROM tasks WHERE id IN (`+placeholders+`)`,
+		`SELECT id, title FROM tasks WHERE id IN (`+placeholders.String()+`)`,
 		args...,
 	)
 	if err != nil {

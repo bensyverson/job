@@ -128,10 +128,10 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 | `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. Done tasks render as structural lines (`- [x] \`<id>\` Title`) without inline note bodies — labels and blockers stay scannable. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job ls` is a deprecated alias. |
 | `job info <id>` | Show full details for one task. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `job show <id>` is a deprecated alias. |
 | `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. `-l, --label <name>` filters. |
-| `job status` | One-line summary: claimed / open / done, plus time since the last event. A second line names the configured default identity and strict-mode state — `Identity: <name> (default) · strict mode <on|off>` when a default is set, else `Identity: none set · --as required on writes`. With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. Suppressed when zero. |
-| `job summary <id>` | Two-level rollup of a task and its direct children. Headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`) plus one rollup line per direct child. Fills the gap between `status` (whole DB) and `list ... all` (full subtree). |
+| `job status` | Session briefing: claimed / open / done tally + identity line, then a per-root rollup of the top-level forest (one row per top-level task with its own subtree counts). Ends with a `Next:` hint naming the globally-next claimable leaf, and `Stale:` lines for any claims past their TTL. With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. |
+| `job status <id>` | Two-level rollup of a task and its direct children: headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`, with zero-count tokens suppressed) plus one rollup line per direct child. When every direct child is a leaf, the per-child block collapses — the headline already says everything worth saying — and only claimed rows surface (the "who's working on what" signal). Fully-complete subtrees append `closed <timestamp>`. Ends with the same `Next:` / `Stale:` trailers scoped to the subtree. `job summary [id]` is a deprecated alias. |
 
-All support `--format=json` (except `status` and `summary`, which are always plain text).
+All support `--format=json` (except `status`, which is always plain text).
 
 List output is GitHub-Flavored Markdown with checkbox items, so pasting `job list all` into a PR or issue renders as a task list:
 
@@ -148,11 +148,13 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 |---------|-------------|
 | `job done <id> [<id>...]` | Mark one or more tasks done, atomically. Idempotent: already-done IDs are reported, not re-recorded. |
 | | `--cascade` Also close all open descendants. |
-| | `-m "<note>"` Record a completion note. Also accepts `-m @path` (read from file) or `-m -` (read from stdin) for multi-line payloads. |
+| | `-m "<note>"` Record a completion note. Also accepts `-m @path` (read from file) or `-m -` (read from stdin) for multi-line payloads. The ack echoes the stored body beneath the `Done:` line: `  note: <N> chars · "<preview>"`. |
 | | `--result '<json>'` Record structured JSON on the `done` event. |
 | | `--claim-next` After closing, atomically claim the next available leaf. Collapses the close-then-advance flow into one call. On race (leaf grabbed by another agent between close and claim), done still succeeds and a status line names the taken leaf — claim is opportunistic, close is irreversible. |
 | | `--format=json` Machine-readable output. |
 | `job reopen <id>` | Reopen a completed task. `--cascade` also reopens all done descendants. |
+
+After a successful `done`, the ack ends with a `Next:` hint naming the suggested next claimable leaf. The walk starts at the closed task's parent and, at each ancestor level, prefers forward siblings (later sort_order) over earlier ones before stepping up; it only crosses into a different root tree once the closed task's own root is exhausted. Agents following the hint stay inside the current plan as long as there's work there.
 
 ### Editing tasks
 
@@ -169,7 +171,7 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 
 | Command | Description |
 |---------|-------------|
-| `job --as <name> cancel <id> [<id>...] -m "<reason>"` | Cancel one or more open tasks atomically. `-m, --reason` is mandatory (`-m` matches `note -m` and `done -m` as the cross-command "free-text body" short flag — `-r` is intentionally avoided to dodge "recursive" muscle memory). |
+| `job --as <name> cancel <id> [<id>...] -m "<reason>"` | Cancel one or more open tasks atomically. `-m, --reason` is mandatory (`-m` matches `note -m` and `done -m` as the cross-command "free-text body" short flag — `-r` is intentionally avoided to dodge "recursive" muscle memory). The ack echoes the reason in the same preview format as `note`/`done`: `  reason: <N> chars · "<preview>"`. |
 | | `--cascade` Also cancel every still-open descendant. |
 | | `--purge` Erase the task row and its events instead of transitioning state (audit trail kept on the parent task). Requires `-m`. |
 | | `--purge --cascade -y` Erase an entire subtree. `-y, --yes` is required and there is no interactive prompt. |
@@ -181,12 +183,12 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job lis
 
 | Command | Description |
 |---------|-------------|
-| `job claim <id> [duration]` | Claim a task. Duration defaults to `30m`. Units: `s`, `m`, `h`, `d`. |
+| `job claim <id> [duration]` | Claim a task. Duration defaults to `30m`. Units: `s`, `m`, `h`, `d`. Ack echoes the title for confirmation: `Claimed: <id> "<title>" (expires in <dur>)`. |
 | `job release <id>` | Release a claim. |
 | `job claim-next [parent] [duration]` | Find and claim the next available leaf in one step. Pass `--include-parents` to claim any available task. |
-| `job heartbeat <id> [<id>...]` | Extend your live claim(s) by 30 minutes. Errors if the caller doesn't hold the claim. |
+| `job heartbeat <id> [<id>...]` | Extend your live claim(s) by 30 minutes. Rarely needed — any write to a task you hold (`note`, `edit`, `label add`, `label remove`) auto-extends the claim. Reach for `heartbeat` only for the "I'm thinking, not writing" case. |
 
-Claims are attributed to the `--as` name. Claims expire automatically. `--force` overrides an existing claim. For long-running work, `heartbeat` refreshes a live claim without re-acquiring it.
+Claims are attributed to the `--as` name. Claims expire automatically. `--force` overrides an existing claim. Writes to a claimed task by its holder auto-extend the TTL — keep noting, editing, or labelling and the claim stays fresh without explicit heartbeats.
 
 #### Leaf-frontier semantics
 

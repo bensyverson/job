@@ -1,0 +1,107 @@
+{{- /* Plan view — document-mode tree. Markup ports prototype/plan.html.
+     p4-ssr is SSR only: filter chrome (Active/Archived/All, Labels) is
+     inert until p4-archive and p4-labels wire it up. Collapse state is
+     emitted as data-collapsed="…" on branch rows; p4-collapse attaches
+     the JS toggle. Notes are wrapped in <details> so they collapse
+     without JS. */ -}}
+{{define "title"}}Plan · Jobs{{end}}
+{{define "content"}}
+<div class="row row-gap-md" style="align-items: center">
+  <nav class="c-tabs" aria-label="Plan filter">
+    <a href="/plan" class="c-tab c-tab--active">Active</a>
+    <a href="/plan" class="c-tab" aria-disabled="true">Archived</a>
+    <a href="/plan" class="c-tab" aria-disabled="true">All</a>
+  </nav>
+</div>
+
+<section class="c-section" aria-label="Plan">
+  {{if .HasTasks}}
+  <div class="stack stack-gap-xs">
+    {{range .Roots}}{{template "plan-node" .}}{{end}}
+  </div>
+  {{else}}
+  <div class="c-plan-empty">
+    <span class="t-muted">No tasks yet. <code style="font-family: var(--font-mono)">job add &lt;title&gt;</code> to get started.</span>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{- /* Recursive node renderer. Root rows get t-heading-lg, direct
+     children t-heading-md, deeper nodes use default body weight.
+     The disclosure button and subtree wrapper only render when there
+     are children — leaf rows keep a placeholder <span> so the CSS
+     grid's disclosure column stays aligned with sibling branches. */ -}}
+{{define "plan-node"}}
+<div class="c-plan-row c-plan-row--status-{{.DisplayStatus}}{{if .Collapsed}} c-plan-row--collapsed{{end}}" data-plan-task="{{.ShortID}}"{{if .HasChildren}} data-collapsed="{{if .Collapsed}}true{{else}}false{{end}}"{{end}}>
+  {{if .HasChildren -}}
+  <button class="c-plan-row__disclosure" aria-expanded="{{if .Collapsed}}false{{else}}true{{end}}" aria-label="{{if .Collapsed}}Expand{{else}}Collapse{{end}}">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  {{- else -}}
+  <span></span>
+  {{- end}}
+  <div class="c-plan-row__title">
+    <div class="c-plan-row__title-line">
+      <span class="c-plan-row__title-text{{if eq .Depth 0}} t-heading-lg{{else if eq .Depth 1}} t-heading-md{{end}}">{{.Title}}</span>
+      <a href="{{.URL}}" class="c-id-pill">{{.ShortID}}</a>
+      {{range .Labels}}<span class="c-label-pill" data-label="{{.}}">{{.}}</span>{{end}}
+    </div>
+    {{if .Description}}<div class="c-plan-row__desc">{{.Description}}</div>{{end}}
+  </div>
+  <span class="c-plan-row__avatar-slot">
+    {{- if .Actor}}<span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>{{end -}}
+  </span>
+  <span class="c-status-pill c-status-pill--{{.DisplayStatus}}">
+    {{- template "plan-status-icon" .DisplayStatus -}}
+    {{template "plan-status-label" .DisplayStatus}}
+  </span>
+  <span class="c-plan-row__timestamp">{{if .RelTime}}<time datetime="{{.ISOTime}}">{{.RelTime}}</time>{{else}}—{{end}}</span>
+  {{if .BlockedBy}}
+  <span class="c-plan-row__blocked-by">Blocked by {{range $i, $b := .BlockedBy}}{{if $i}}, {{end}}<a href="{{$b.URL}}" class="c-id-pill">{{$b.ShortID}}</a>{{end}}</span>
+  {{end}}
+</div>
+{{if .Notes}}
+<details class="c-plan-notes-group" data-plan-task="{{.ShortID}}">
+  <summary class="c-plan-notes-group__summary"><span class="t-dim">{{len .Notes}} note{{if gt (len .Notes) 1}}s{{end}}</span></summary>
+  {{range .Notes}}
+  <div class="c-plan-note c-plan-note--status-{{.DisplayStatus}}">
+    <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
+    <div class="c-plan-note__meta"><span class="c-plan-note__actor">{{.Actor}}</span></div>
+    <span class="c-plan-note__time"><time datetime="{{.ISOTime}}">{{.RelTime}}</time></span>
+    <pre class="c-plan-note__text">{{.Text}}</pre>
+  </div>
+  {{end}}
+</details>
+{{end}}
+{{if .HasChildren}}
+<div class="c-plan-subtree">
+  {{range .Children}}{{template "plan-node" .}}{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{- /* Per-status icon. Kept as small named templates so the row
+     template stays readable and svg markup lives in one place. */ -}}
+{{define "plan-status-icon"}}
+{{- if eq . "done" -}}
+<svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{{- else if eq . "blocked" -}}
+<svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5"/><rect x="5.5" y="2.5" width="1.5" height="5"/></svg>
+{{- else if eq . "active" -}}
+<svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3"/></svg>
+{{- else if eq . "canceled" -}}
+<svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke-linecap="round"/></svg>
+{{- else -}}
+<svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3"/></svg>
+{{- end -}}
+{{end}}
+
+{{define "plan-status-label"}}
+{{- if eq . "done" -}}Done
+{{- else if eq . "blocked" -}}Blocked
+{{- else if eq . "active" -}}Active
+{{- else if eq . "canceled" -}}Canceled
+{{- else -}}Todo
+{{- end -}}
+{{end}}

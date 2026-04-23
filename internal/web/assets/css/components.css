@@ -1882,6 +1882,38 @@ a.c-graph-node__bug:focus-visible {
   color: var(--color-text-done);
 }
 
+/* Notes default to hidden under a collapsed <details>. The summary sits
+   in the title column (same indentation as .c-plan-note__meta) so the
+   "N notes" affordance lines up with the thread it unfolds. */
+.c-plan-notes-group {
+  margin-top: -2px;
+}
+.c-plan-notes-group > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-md) var(--space-xs)
+    calc(var(--space-md) + 16px + var(--space-md) + var(--avatar-sm-size) + var(--space-md));
+  font-size: var(--font-body-sm-size);
+}
+.c-plan-notes-group > summary::-webkit-details-marker { display: none; }
+.c-plan-notes-group > summary::marker { content: ""; }
+.c-plan-notes-group > summary:hover { color: var(--color-on-surface); }
+
+/* A fully-done subtree is collapsed by default: the immediately-
+   following .c-plan-subtree is hidden so the page stays focused on
+   what's still open. Future p4-collapse JS toggles data-collapsed. */
+.c-plan-row[data-collapsed="true"] + .c-plan-subtree,
+.c-plan-row[data-collapsed="true"] + .c-plan-notes-group + .c-plan-subtree {
+  display: none;
+}
+
+/* Quiet empty state shown when the task table is completely empty.
+   One muted line — no card, no illustration, per DESIGN.md tone. */
+.c-plan-empty {
+  padding: var(--space-lg) 0;
+  font-size: var(--font-body-sm-size);
+}
+
 /* Inline "Blocked by ..." sub-row drops below the main row in the title
    column, keeping the avatar/pill/timestamp columns clean. */
 .c-plan-row__blocked-by {

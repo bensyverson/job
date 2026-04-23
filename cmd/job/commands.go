@@ -239,12 +239,37 @@ func humanJoin(items []string) string {
 	}
 }
 
-func countTasks(db *sql.DB) (total, done int, err error) {
-	if err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL").Scan(&total); err != nil {
+func countTasks(db *sql.DB, parentShortID string) (total, done int, err error) {
+	if parentShortID == "" {
+		if err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL").Scan(&total); err != nil {
+			return 0, 0, err
+		}
+		if err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL AND status = 'done'").Scan(&done); err != nil {
+			return 0, 0, err
+		}
+		return total, done, nil
+	}
+
+	parent, lerr := job.GetTaskByShortID(db, parentShortID)
+	if lerr != nil || parent == nil {
+		return 0, 0, lerr
+	}
+	var nullDone sql.NullInt64
+	err = db.QueryRow(`
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM tasks WHERE parent_id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+			WHERE t.deleted_at IS NULL
+		)
+		SELECT COUNT(*), SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END)
+		FROM tasks WHERE id IN (SELECT id FROM subtree) AND deleted_at IS NULL
+	`, parent.ID).Scan(&total, &nullDone)
+	if err != nil {
 		return 0, 0, err
 	}
-	if err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL AND status = 'done'").Scan(&done); err != nil {
-		return 0, 0, err
+	if nullDone.Valid {
+		done = int(nullDone.Int64)
 	}
 	return total, done, nil
 }

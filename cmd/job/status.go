@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	job "github.com/bensyverson/jobs/internal/job"
 	"github.com/spf13/cobra"
@@ -52,12 +53,15 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
+			var decisions []*job.Task
+
 			if target != nil {
 				rollup, err := job.BuildRollup(db, target)
 				if err != nil {
 					return err
 				}
 				job.RenderSummary(out, rollup)
+				decisions = rollup.DecisionTasks
 
 				nodes, err := job.RunListFiltered(db, job.ListFilter{ParentID: target.ShortID})
 				if err != nil {
@@ -90,14 +94,22 @@ func newStatusCmd() *cobra.Command {
 					fmt.Fprintln(out)
 					job.RenderSummary(out, rollup)
 				}
+				decisions = rollup.DecisionTasks
 			}
 
 			if len(stales) > 0 {
 				fmt.Fprintln(out)
 				job.RenderStaleClaims(out, stales)
 			}
+			renderDecisionTasks(out, decisions)
 			return nil
 		},
 	}
 	return cmd
+}
+
+func renderDecisionTasks(w io.Writer, tasks []*job.Task) {
+	for _, d := range tasks {
+		fmt.Fprintf(w, "Decision: %s %q\n", d.ShortID, d.Title)
+	}
 }

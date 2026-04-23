@@ -183,6 +183,34 @@ func TestReopen_NoClaim_Flag_SkipsClaim(t *testing.T) {
 	}
 }
 
+// R2 — --cascade suppresses auto-claim even on leaf nodes.
+func TestReopen_Cascade_NoAutoClaim(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	p := job.MustAdd(t, db, "", "Parent")
+	c := job.MustAdd(t, db, p, "Child")
+	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "reopen", p, "--cascade")
+	if err != nil {
+		t.Fatalf("reopen --cascade: %v", err)
+	}
+	if strings.Contains(stdout, "claimed") {
+		t.Errorf("--cascade must not auto-claim:\n%s", stdout)
+	}
+
+	db = openTestDB(t, dbFile)
+	for _, id := range []string{p, c} {
+		task := job.MustGet(t, db, id)
+		if task.Status != "available" {
+			t.Errorf("%s: status=%q, want available (cascade suppresses auto-claim)", id, task.Status)
+		}
+	}
+}
+
 // R2 — output includes the task title.
 func TestReopen_Output_IncludesTitle(t *testing.T) {
 	dbFile := setupCLI(t)

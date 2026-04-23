@@ -752,6 +752,71 @@ func TestStatus_CLI_Decision_MultipleDecisions(t *testing.T) {
 	}
 }
 
+// R4 — a claimed (in-progress) decision task still surfaces as Decision:.
+func TestStatus_CLI_Decision_Claimed_StillSurfaces(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "PickDeploymentTarget")
+	if _, err := job.RunLabelAdd(db, id, []string{"decision"}, "alice"); err != nil {
+		t.Fatalf("label add: %v", err)
+	}
+	if err := job.RunClaim(db, id, "1h", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(stdout, "Decision:") {
+		t.Errorf("claimed decision task must still surface as Decision: line:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "PickDeploymentTarget") {
+		t.Errorf("claimed decision task title must appear in Decision: line:\n%s", stdout)
+	}
+}
+
+// R4 — when both a stale claim and a decision task exist, Stale: appears
+// before Decision: in the output (Next: / Stale: / Decision: spec order).
+func TestStatus_CLI_Decision_OrderedAfterStale(t *testing.T) {
+	origNow := job.CurrentNowFunc
+	defer func() { job.CurrentNowFunc = origNow }()
+	base := time.Unix(1_700_000_000, 0)
+	job.CurrentNowFunc = func() time.Time { return base }
+
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	staleTask := job.MustAdd(t, db, "", "StaleWork")
+	if err := job.RunClaim(db, staleTask, "30m", "alice", false); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	decTask := job.MustAdd(t, db, "", "PickStrategy")
+	if _, err := job.RunLabelAdd(db, decTask, []string{"decision"}, "alice"); err != nil {
+		t.Fatalf("label add: %v", err)
+	}
+	db.Close()
+
+	job.CurrentNowFunc = func() time.Time { return base.Add(2 * time.Hour) }
+
+	stdout, _, err := runCLI(t, dbFile, "status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+
+	staleIdx := strings.Index(stdout, "Stale:")
+	decIdx := strings.Index(stdout, "Decision:")
+	if staleIdx == -1 {
+		t.Fatalf("Stale: line missing:\n%s", stdout)
+	}
+	if decIdx == -1 {
+		t.Fatalf("Decision: line missing:\n%s", stdout)
+	}
+	if decIdx < staleIdx {
+		t.Errorf("Decision: (pos %d) must appear after Stale: (pos %d):\n%s", decIdx, staleIdx, stdout)
+	}
+}
+
 // R4 — scoped status <id> shows only in-subtree decisions.
 func TestStatus_CLI_Decision_ScopedToSubtree(t *testing.T) {
 	dbFile := setupCLI(t)

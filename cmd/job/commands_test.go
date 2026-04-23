@@ -825,6 +825,31 @@ func TestList_EmptyState_HasDoneTasks(t *testing.T) {
 	}
 }
 
+// When scoped to a subtree, the empty-state count reflects only the
+// subtree's descendants — not the global task count.
+func TestList_EmptyState_Scoped_CountsSubtreeOnly(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	parent := job.MustAdd(t, db, "", "Parent")
+	child := job.MustAdd(t, db, parent, "Child")
+	job.MustDone(t, db, child)
+	// Extra global done tasks that must NOT appear in the scoped count.
+	for range 5 {
+		extra := job.MustAdd(t, db, "", "Extra")
+		job.MustDone(t, db, extra)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "list", parent)
+	if err != nil {
+		t.Fatalf("list <id>: %v", err)
+	}
+	want := "Nothing actionable. 1 tasks done. Run 'list all' to see the full tree.\n"
+	if stdout != want {
+		t.Errorf("got %q, want %q", stdout, want)
+	}
+}
+
 func TestList_EmptyState_FreshDB(t *testing.T) {
 	dbFile := setupCLI(t)
 

@@ -99,7 +99,7 @@ Use --format=json for machine-readable output.`,
 						fmt.Fprintf(cmd.OutOrStdout(), "No tasks claimed by %s.\n", claimedByFilter)
 						return nil
 					}
-					total, done, cerr := countTasks(db)
+					total, done, cerr := countTasks(db, parentShortID)
 					if cerr != nil {
 						return cerr
 					}

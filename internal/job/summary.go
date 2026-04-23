@@ -355,9 +355,6 @@ func RenderSummary(w io.Writer, s *Summary) {
 	if s.Next != nil {
 		fmt.Fprintf(w, "Next: %s %q\n", s.Next.ShortID, s.Next.Title)
 	}
-	for _, d := range s.DecisionTasks {
-		fmt.Fprintf(w, "Decision: %s %q\n", d.ShortID, d.Title)
-	}
 }
 
 // rollupLine formats the target's scoreboard. Zero-count tokens are

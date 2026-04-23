@@ -1,0 +1,10 @@
+{
+  "name": "jobs-screenshot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless-Chromium screenshots of the web dashboard prototype.",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

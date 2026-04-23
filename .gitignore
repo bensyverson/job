@@ -17,3 +17,8 @@ vendor/
 
 # local files
 Local/
+
+# Screenshot tooling
+scripts/screenshot/node_modules/
+scripts/screenshot/package-lock.json
+scripts/screenshots/

@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — Jobs</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab">Home</a>
+          <a href="plan.html" class="c-tab c-tab--active">Plan</a>
+          <a href="actors.html" class="c-tab">Actors</a>
+          <a href="log.html" class="c-tab">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <main class="main" role="main">
+        <div class="row row-gap-md" style="align-items: center">
+          <nav class="c-tabs" aria-label="Plan filter">
+            <a href="#" class="c-tab c-tab--active">Active</a>
+            <a href="#" class="c-tab">Archived</a>
+            <a href="#" class="c-tab">All</a>
+          </nav>
+          <span class="c-panel__title" style="margin-left: var(--space-xl)">Labels</span>
+          <span class="c-label-pill" data-label="web">web</span>
+          <span class="c-label-pill" data-label="dashboard">dashboard</span>
+          <a href="#" class="t-muted t-body-sm" style="margin-left: var(--space-xs)">clear</a>
+        </div>
+
+        <section class="c-section" aria-labelledby="s-plan">
+          <div class="stack stack-gap-xs">
+            <!-- ===================== Root — Web dashboard v1 ===================== -->
+            <div class="c-plan-row c-plan-row--status-active">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line">
+                  <h1 id="s-plan" class="c-plan-row__title-text t-heading-lg">Web dashboard v1</h1>
+                  <a href="#" class="c-id-pill">bYr6R</a>
+                  <span class="c-label-pill" data-label="web">web</span>
+                  <span class="c-label-pill" data-label="dashboard">dashboard</span>
+                </div>
+                <div class="c-plan-row__desc">Read-only live web dashboard for the Jobs task store. Bound to 127.0.0.1:7823 by default. SSR + progressive enhancement, SSE for live updates, no JS framework. See project/2026-04-21-web-dashboard-vision.md and DESIGN.md for full spec.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--active"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Active</span>
+              <span class="c-plan-row__timestamp">23m ago</span>
+            </div>
+
+            <div class="c-plan-subtree">
+            <!-- ===================== Phase 1 — Active ===================== -->
+            <div class="c-plan-row c-plan-row--status-active">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line">
+                  <span class="c-plan-row__title-text t-heading-md">Phase 1 — Static HTML prototype</span>
+                  <a href="#" class="c-id-pill">z0OoG</a>
+                  <span class="c-label-pill" data-label="prototype">prototype</span>
+                  <span class="c-label-pill" data-label="web">web</span>
+                </div>
+                <div class="c-plan-row__desc">Build a static HTML prototype of the Home view and the Plan view (document mode) with a peek sheet shown in an open state. Embedded CSS uses custom properties translated from DESIGN.md tokens. System fonts only. Validates visual design in a real browser before committing to the full build.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+              <span class="c-status-pill c-status-pill--active"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Active</span>
+              <span class="c-plan-row__timestamp">just now</span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Translate DESIGN.md tokens to CSS custom properties</span><a href="#" class="c-id-pill">6rIG3</a><span class="c-label-pill" data-label="css">css</span></div>
+                  <div class="c-plan-row__desc">Create assets/css/tokens.css mapping every color, typography, rounded, spacing, and motion token to CSS variables.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">12m ago</span>
+              </div>
+              <div class="c-plan-note c-plan-note--status-done">
+                <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+                <div class="c-plan-note__meta"><span class="c-plan-note__actor">claude</span></div>
+                <span class="c-plan-note__time">12m ago</span>
+                <pre class="c-plan-note__text">Wrote prototype/css/tokens.css. Translates every DESIGN.md color, typography, rounded, spacing, and motion token to CSS custom properties. Plus focus-ring variables and Level-3 shadow, for use by base and components stylesheets.</pre>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Base stylesheet — layout, surfaces, typography, focus</span><a href="#" class="c-id-pill">LGpqD</a><span class="c-label-pill" data-label="css">css</span></div>
+                  <div class="c-plan-row__desc">assets/css/base.css. Body background, surface tiers, default heading and body styles, focus-ring rule, scrollbar styling for dark mode.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">10m ago</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Component stylesheet — avatars, pills, cards, rows, sheet, scrubber</span><a href="#" class="c-id-pill">P5JAV</a><span class="c-label-pill" data-label="css">css</span></div>
+                  <div class="c-plan-row__desc">assets/css/components.css. Every component spec'd in DESIGN.md §Components.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">7m ago</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Deterministic color helpers (actors, labels) as inline JS</span><a href="#" class="c-id-pill">lPEW1</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">One small JS module exposing hash-to-HSL for actor names (S65 L48) and labels (S40 L50). Used by the prototype to color static elements; graduates to production use later.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">5m ago</span>
+              </div>
+              <div class="c-plan-note c-plan-note--status-done">
+                <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+                <div class="c-plan-note__meta"><span class="c-plan-note__actor">claude</span></div>
+                <span class="c-plan-note__time">7m ago</span>
+                <pre class="c-plan-note__text">Wrote prototype/js/colors.js. FNV-1a string hash (stable across runtimes, zero-dep). actorColor(name) -> hsl(H 65% 55%); labelColor(name) -> hsl(H 40% 50%); initialOf(name) for avatar letters. paint(root) walks the DOM, sets --actor-color on [data-actor] and --label-color on [data-label]. Auto-runs at DOMContentLoaded.</pre>
+              </div>
+              <div class="c-plan-note c-plan-note--status-done">
+                <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+                <div class="c-plan-note__meta"><span class="c-plan-note__actor">claude</span></div>
+                <span class="c-plan-note__time">5m ago</span>
+                <pre class="c-plan-note__text">Dropped actor L from 55% to 48% for more uniform white-text contrast across the hue wheel. Earlier value was borderline on yellow/green/cyan avatars.</pre>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Home view prototype HTML</span><a href="#" class="c-id-pill">hru6q</a><span class="c-label-pill" data-label="prototype">prototype</span></div>
+                  <div class="c-plan-row__desc">Static Home page with header (tabs, search, bell, theme toggle), signal cards with ambient progress underlines, four-panel row (Recent / Active / Blocked / Available), LTR mini-graph with avatar-bug overlays.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">2m ago</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Plan view prototype HTML (document mode)</span><a href="#" class="c-id-pill">P4gto</a><span class="c-label-pill" data-label="prototype">prototype</span></div>
+                  <div class="c-plan-row__desc">Static Plan page rendered as a document: indented tree, status pills, actor avatars inline, updated timestamps, label pills, inline "Blocked by" sub-rows, collapsible affordances, keyboard-shortcut hint in footer.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">1m ago</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Peek sheet prototype HTML</span><a href="#" class="c-id-pill">PECgy</a><span class="c-label-pill" data-label="prototype">prototype</span></div>
+                  <div class="c-plan-row__desc">Static rendering of the peek sheet in its open state on top of the Plan view. Includes task status, labels, notes rendered as code blocks, blockers, event history, notification bell. Demonstrates the Level 3 elevation and dim-underlay treatment.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">1m ago</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Empty-state examples</span><a href="#" class="c-id-pill">WJFAK</a><span class="c-label-pill" data-label="prototype">prototype</span></div>
+                  <div class="c-plan-row__desc">Show subtle empty states on Home (no active claims) and Plan (no tasks) in the prototype. One quiet line of muted text per empty region — not a blank rectangle.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done</span>
+                <span class="c-plan-row__timestamp">30s ago</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-active">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Design review gate</span><a href="#" class="c-id-pill">9AWkj</a><span class="c-label-pill" data-label="review">review</span></div>
+                  <div class="c-plan-row__desc">Open the prototype in a browser, walk through every state, capture any visual adjustments needed, iterate on tokens and CSS until aligned. Do not proceed to Phase 2 until the prototype is accepted.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--active"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Active</span>
+                <span class="c-plan-row__timestamp">just now</span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 2 ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 2 — Server skeleton + SSR foundation</span><a href="#" class="c-id-pill">xT3qP</a><span class="c-label-pill" data-label="server">server</span></div>
+                <div class="c-plan-row__desc">Introduce <code style="font-family: var(--font-mono)">job serve</code>. Package layout under internal/web/. go:embed pipeline for HTML templates, CSS, and JS. Real routes, real HTML, no live updates yet. Ship the Log view as the first SSR target because its layout is the simplest.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">9AWkj</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">internal/web package skeleton</span><a href="#" class="c-id-pill">p2skl</a><span class="c-label-pill" data-label="server">server</span></div>
+                  <div class="c-plan-row__desc">Sub-packages: internal/web/server (http.Server setup, routes), internal/web/templates (html/template funcs + embed), internal/web/assets (css/js/fonts embed), internal/web/handlers (one file per view), internal/web/render (shared render helpers, actor color fn).</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text"><code style="font-family: var(--font-mono)">job serve</code> command</span><a href="#" class="c-id-pill">p2srv</a><span class="c-label-pill" data-label="cli">cli</span></div>
+                  <div class="c-plan-row__desc">cmd/job/serve.go — binds 127.0.0.1:7823 by default, --bind flag for other addresses (refuses 0.0.0.0 without explicit --bind). Foreground process. Prints the URL on startup. Graceful shutdown on SIGINT.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2skl</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Asset embedding and serving</span><a href="#" class="c-id-pill">p2ast</a><span class="c-label-pill" data-label="server">server</span></div>
+                  <div class="c-plan-row__desc">go:embed all:internal/web/assets. Serve with http.FileServer under /static/. Long cache-control on hashed asset URLs.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2skl</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Template layout + shared chrome</span><a href="#" class="c-id-pill">p2lyt</a><span class="c-label-pill" data-label="templates">templates</span></div>
+                  <div class="c-plan-row__desc">Base template with header, main, footer. Header template with tabs, search, bell, theme toggle. Footer template with metric strip and collapsed scrubber pill. Partial templates included by every view.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2skl</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Log view SSR (initial render only, no live tail)</span><a href="#" class="c-id-pill">p2log</a><span class="c-label-pill" data-label="log">log</span></div>
+                  <div class="c-plan-row__desc">GET /log renders the full current event list with server-side filters (query params: actor, task, label, type, since). Event rows use data-row component. Filter controls above the list.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2lyt</a>, <a href="#" class="c-id-pill">p2ast</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Task detail SSR</span><a href="#" class="c-id-pill">p2tsk</a><span class="c-label-pill" data-label="tasks">tasks</span></div>
+                  <div class="c-plan-row__desc">GET /tasks/&lt;id&gt; renders a full-page task detail. Same content as the peek sheet, full-bleed. Serves as the cmd-click target from Plan and as the fallback when progressive-enhancement JS is disabled.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2lyt</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">404 / 500 pages</span><a href="#" class="c-id-pill">p2err</a><span class="c-label-pill" data-label="errors">errors</span></div>
+                  <div class="c-plan-row__desc">Styled 404 and 500 responses using DESIGN.md tone. Quiet, not alarming.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2lyt</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Unit tests — routes, template rendering, asset serving</span><a href="#" class="c-id-pill">p2tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Go httptest coverage for each handler. Table-driven tests for filter parsing.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p2log</a>, <a href="#" class="c-id-pill">p2tsk</a>, <a href="#" class="c-id-pill">p2err</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 3 — Live updates ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 3 — Live updates via SSE</span><a href="#" class="c-id-pill">mR9kN</a><span class="c-label-pill" data-label="sse">sse</span></div>
+                <div class="c-plan-row__desc">/events SSE endpoint backed by a 1-Hz poll-based broadcaster (same cadence as <code style="font-family: var(--font-mono)">job tail</code>). Event fanout to subscribers. Reconnect via ?since=&lt;event_id&gt;. Degrades to JSON array without Accept: text/event-stream. Serves both live updates and future time-travel replay.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">xT3qP</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Broadcaster — 1Hz poll + fanout</span><a href="#" class="c-id-pill">p3brd</a><span class="c-label-pill" data-label="sse">sse</span></div>
+                  <div class="c-plan-row__desc">internal/web/broadcast. One goroutine polls the events table every 1s using the existing tail primitive. Fans out new events to a slice of subscriber channels. Thread-safe subscribe/unsubscribe.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">/events SSE handler</span><a href="#" class="c-id-pill">p3sse</a><span class="c-label-pill" data-label="sse">sse</span></div>
+                  <div class="c-plan-row__desc">GET /events with Accept: text/event-stream opens an SSE stream. Handshake replays events since ?since= (paged with ?limit=), then subscribes to the broadcaster for live tail. Filter params: actor, task, label, type.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3brd</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">/events JSON replay mode</span><a href="#" class="c-id-pill">p3rpl</a><span class="c-label-pill" data-label="api">api</span></div>
+                  <div class="c-plan-row__desc">Same endpoint without Accept: text/event-stream returns a JSON array of events. Supports the same filter and pagination params. Documented as a stable API surface.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3sse</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Live-updates JS module</span><a href="#" class="c-id-pill">p3ljs</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">assets/js/live.js — small WebComponent &lt;live-region src="/events?..."&gt; that subscribes to the SSE stream and fires DOM update hooks. Used by Log, Home, Actors. Handles reconnect, heartbeat, last-event-id restore.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3sse</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Log view upgraded to live tail</span><a href="#" class="c-id-pill">p3llv</a><span class="c-label-pill" data-label="log">log</span></div>
+                  <div class="c-plan-row__desc">New events stream into the top of the Log view via live.js. Filter state preserved on update.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3ljs</a>, <a href="#" class="c-id-pill">p2log</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Footer heartbeat live</span><a href="#" class="c-id-pill">p3hrt</a><span class="c-label-pill" data-label="footer">footer</span></div>
+                  <div class="c-plan-row__desc">Footer shows "last event Ns ago" and connection state (connected / reconnecting / offline). Both update in real time via live.js.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3ljs</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Broadcaster + SSE tests</span><a href="#" class="c-id-pill">p3tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Unit tests for the broadcaster, integration tests for the SSE endpoint using httptest.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3sse</a>, <a href="#" class="c-id-pill">p3brd</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 4 — Plan view ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 4 — Plan view (document mode)</span><a href="#" class="c-id-pill">Pk2vQ</a><span class="c-label-pill" data-label="plan">plan</span></div>
+                <div class="c-plan-row__desc">Full Plan view: indented tree, document-style rendering, collapse/expand with localStorage persistence, labels filter (?label=), archive filter (?show=active|archived|all), live updates so newly added or completed tasks reshape the tree without reload.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">mR9kN</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">GET /plan — SSR indented tree</span><a href="#" class="c-id-pill">p4ssr</a><span class="c-label-pill" data-label="plan">plan</span></div>
+                  <div class="c-plan-row__desc">Recursive template rendering the full task tree in document mode. Auto-expand branches with non-done work, auto-collapse fully-done subtrees.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Collapse/expand with localStorage persistence</span><a href="#" class="c-id-pill">p4exp</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">Small JS module managing per-user expand state. ?expand=&lt;ids&gt; overrides localStorage.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p4ssr</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Labels filter</span><a href="#" class="c-id-pill">p4lbl</a><span class="c-label-pill" data-label="plan">plan</span></div>
+                  <div class="c-plan-row__desc">?label=&lt;name&gt; scopes the tree to tasks matching the label, keeping ancestor chain visible for context.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p4ssr</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Archive filter</span><a href="#" class="c-id-pill">p4arc</a><span class="c-label-pill" data-label="plan">plan</span></div>
+                  <div class="c-plan-row__desc">?show=active (default) | archived | all. Derived from subtree completion state. Composes with ?at= for time-travel semantics.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p4ssr</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Plan view live updates</span><a href="#" class="c-id-pill">p4liv</a><span class="c-label-pill" data-label="plan">plan</span></div>
+                  <div class="c-plan-row__desc">live.js wires the plan tree to the SSE stream so tasks added/claimed/closed reshape the view without reload.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p4ssr</a>, <a href="#" class="c-id-pill">p3ljs</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Keyboard navigation (j/k, space, arrows)</span><a href="#" class="c-id-pill">p4kbd</a><span class="c-label-pill" data-label="a11y">a11y</span></div>
+                  <div class="c-plan-row__desc">Vanilla JS — j/k move focus, space/enter toggles collapse, left/right collapse/expand. Focus ring uses primary color per DESIGN.md.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p4ssr</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Recursive rendering + filter composition tests</span><a href="#" class="c-id-pill">p4tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Golden-file tests for rendering; table-driven tests for filter composition against time-travel.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p4ssr</a>, <a href="#" class="c-id-pill">p4arc</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 5 — Home ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 5 — Home view</span><a href="#" class="c-id-pill">Ph5hm</a><span class="c-label-pill" data-label="home">home</span></div>
+                <div class="c-plan-row__desc">Home page landing view. Signal cards with ambient progress underlines, four-panel row (Recent completions, Active claims, Blocked, Available), and a full-width LTR mini-graph with avatar-bug overlays for claimed nodes. Live via SSE.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">mR9kN</a>, <a href="#" class="c-id-pill">Pk2vQ</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Signal card computation — server side</span><a href="#" class="c-id-pill">p5sgl</a><span class="c-label-pill" data-label="home">home</span></div>
+                  <div class="c-plan-row__desc">internal/web/signals. Computes "idle actors &gt;5min", "newly blocked in last 10m", "longest active claim", "oldest todo". Returns structured signal values with threshold info for the progress underlines.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Signal cards render + ambient progress bar</span><a href="#" class="c-id-pill">p5crd</a><span class="c-label-pill" data-label="home">home</span></div>
+                  <div class="c-plan-row__desc">Four cards in a horizontal grid, each with its own signal color, icon, value, context line, and threshold progress underline.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p5sgl</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Active claims table (live)</span><a href="#" class="c-id-pill">p5clm</a><span class="c-label-pill" data-label="home">home</span></div>
+                  <div class="c-plan-row__desc">Current claims with actor, idle timer, claimed-at. Live-updating rows via live.js.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3ljs</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Recent completions list (live)</span><a href="#" class="c-id-pill">p5rct</a><span class="c-label-pill" data-label="home">home</span></div>
+                  <div class="c-plan-row__desc">Last N completions with actor attribution. Streams in via SSE.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3ljs</a></span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Blocked panel</span><a href="#" class="c-id-pill">p5blk</a><span class="c-label-pill" data-label="home">home</span></div>
+                  <div class="c-plan-row__desc">Tasks currently blocked, with linked "waiting on" tasks. Vertical list sharing the four-panel grid.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Mini-graph — LTR, state disks with avatar bugs</span><a href="#" class="c-id-pill">p5grf</a><span class="c-label-pill" data-label="graph">graph</span></div>
+                  <div class="c-plan-row__desc">SVG rendering of the dependency graph. LTR layout, tree layers for parent/child, dashed arcs for blockers. Nodes are state-colored disks with a glyph; claimed tasks overlay an avatar-sm at the bottom-right. Auto-collapse rules (done → check disk, upcoming → +N placeholder, active → expanded). Click a node opens peek sheet (wired in Phase 7).</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">lPEW1</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Signal computation tests, edge cases</span><a href="#" class="c-id-pill">p5tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Unit tests for the signal computations with synthetic event logs.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p5sgl</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 6 — Actors ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 6 — Actors view</span><a href="#" class="c-id-pill">Ph6ac</a><span class="c-label-pill" data-label="actors">actors</span></div>
+                <div class="c-plan-row__desc">Column-per-actor chat-style layout. Bottom-pinned activity stream per column. Live via SSE. Timeline strip arrives with the scrubber in Phase 8.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">mR9kN</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">GET /actors — column layout SSR</span><a href="#" class="c-id-pill">p6col</a><span class="c-label-pill" data-label="actors">actors</span></div>
+                  <div class="c-plan-row__desc">One column per actor with recent activity. Actor column headers use avatar-lg. Chat-style, bottom-pinned list of claim/note/done events.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">GET /actors/&lt;name&gt; — single-actor view</span><a href="#" class="c-id-pill">p6sin</a><span class="c-label-pill" data-label="actors">actors</span></div>
+                  <div class="c-plan-row__desc">Full-width view of one actor's activity and currently held claims.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Live updates</span><a href="#" class="c-id-pill">p6liv</a><span class="c-label-pill" data-label="actors">actors</span></div>
+                  <div class="c-plan-row__desc">live.js wires the actor columns to the SSE stream.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p6col</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Tests</span><a href="#" class="c-id-pill">p6tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Handler tests for /actors and /actors/&lt;name&gt;.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p6col</a>, <a href="#" class="c-id-pill">p6sin</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 7 — Peek sheet ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 7 — Peek sheet</span><a href="#" class="c-id-pill">Ph7pk</a><span class="c-label-pill" data-label="peek">peek</span></div>
+                <div class="c-plan-row__desc">Click a task anywhere to open a side-panel peek sheet. URL state ?preview=&lt;id&gt;. Vanilla JS interception; full-page /tasks/&lt;id&gt; remains the no-JS fallback and cmd-click target.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">Pk2vQ</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">/tasks/&lt;id&gt;/peek fragment endpoint</span><a href="#" class="c-id-pill">p7frg</a><span class="c-label-pill" data-label="peek">peek</span></div>
+                  <div class="c-plan-row__desc">Returns the peek sheet body as an HTML fragment (no layout chrome).</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Peek sheet WebComponent</span><a href="#" class="c-id-pill">p7cmp</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">&lt;peek-sheet&gt; custom element with open/close, slide animation (motion.duration-base, ease-out), overlay dim, Escape-to-close. Reads ?preview= on load to auto-open.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p7frg</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Task-click interception (progressive enhancement)</span><a href="#" class="c-id-pill">p7int</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">Small delegator: any &lt;a data-peek href="/tasks/&lt;id&gt;"&gt; click triggers the peek sheet and pushState to ?preview=&lt;id&gt;. Cmd/ctrl-click passes through to native navigation. No JS → full navigation to /tasks/&lt;id&gt;.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p7cmp</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Notification bell on peek sheet + task detail</span><a href="#" class="c-id-pill">p7bll</a><span class="c-label-pill" data-label="notifications">notifications</span></div>
+                  <div class="c-plan-row__desc">Toggle per-tab browser-notification subscription for this task's completion. Client-side only. Toggled state uses primary accent.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p7cmp</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Tests</span><a href="#" class="c-id-pill">p7tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Fragment-endpoint tests; manual browser verification of peek behavior documented in the PR.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p7frg</a>, <a href="#" class="c-id-pill">p7cmp</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 8 — Scrubber ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 8 — Time-travel scrubber + timeline strip</span><a href="#" class="c-id-pill">Ph8tt</a><span class="c-label-pill" data-label="scrubber">scrubber</span></div>
+                <div class="c-plan-row__desc">Collapsed scrubber pill in the footer expands into a play/pause/drag control. Dragging the cursor sets ?at=&lt;event_id&gt; on the current view; view dims and a banner appears. Replay buffer fetches via /events?since=X&amp;limit=N. Ships the timeline strip for the Actors view as part of the same phase because they use the same replay buffer.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">mR9kN</a>, <a href="#" class="c-id-pill">Ph6ac</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">?at=&lt;event_id&gt; on every view (server side)</span><a href="#" class="c-id-pill">p8srv</a><span class="c-label-pill" data-label="scrubber">scrubber</span></div>
+                  <div class="c-plan-row__desc">Each view handler accepts ?at and renders the state of the world at that event. Implemented as a filter on event replay up to and including that event id.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Replay buffer client module</span><a href="#" class="c-id-pill">p8rpl</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">assets/js/replay.js — fetches event windows around the cursor via /events?since=X&amp;limit=N. Prefetches on drag. Drives the scrubber cursor and the views' DOM updates when in history mode.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3rpl</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Scrubber pill UI (collapsed + expanded)</span><a href="#" class="c-id-pill">p8pll</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">Collapsed: "● Live" pill in the footer. Expanded: horizontal bar with play/pause, ±1 event arrows, draggable cursor, event-density minimap. Dim the viewport to 0.85 and show "Viewing history — return to live" banner when active.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p8rpl</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Timeline strip for Actors view</span><a href="#" class="c-id-pill">p8tml</a><span class="c-label-pill" data-label="actors">actors</span></div>
+                  <div class="c-plan-row__desc">Swimlane visualization under the actor columns. One row per actor, bars for claim→done spans. Shares the replay buffer so scrubber drag moves the timeline cursor and actor columns together.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p8rpl</a>, <a href="#" class="c-id-pill">p6col</a></span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">?at composition with filters, replay edge cases</span><a href="#" class="c-id-pill">p8tst</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Golden-file tests for ?at rendering; unit tests for replay buffer edge behavior.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p8srv</a>, <a href="#" class="c-id-pill">p8rpl</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 9 — Search / keyboard / favicon ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 9 — Global search, keyboard, favicon</span><a href="#" class="c-id-pill">Ph9gs</a><span class="c-label-pill" data-label="polish">polish</span></div>
+                <div class="c-plan-row__desc">Cross-cutting affordances: global search from the header ("/" to focus), keyboard shortcuts on every view, dynamic favicon reflecting overall state.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">Pk2vQ</a>, <a href="#" class="c-id-pill">Ph5hm</a>, <a href="#" class="c-id-pill">Ph6ac</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Search handler and index</span><a href="#" class="c-id-pill">p9srh</a><span class="c-label-pill" data-label="search">search</span></div>
+                  <div class="c-plan-row__desc">Server-backed search across task titles, notes, labels, actor names. Returns results as a header-dropdown fragment. Each view's GET handler respects ?q=&lt;query&gt; so search acts as a lens on the current view.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Header search UI + "/" shortcut</span><a href="#" class="c-id-pill">p9sui</a><span class="c-label-pill" data-label="js">js</span></div>
+                  <div class="c-plan-row__desc">Input in the header, keyboard shortcut delegator, result dropdown.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p9srh</a></span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Keyboard shortcuts global module</span><a href="#" class="c-id-pill">p9kbd</a><span class="c-label-pill" data-label="keyboard">keyboard</span></div>
+                  <div class="c-plan-row__desc">Single delegator for j/k nav, space/enter, ?, g-then-letter view jumps. Page-specific handlers register with it.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Dynamic favicon</span><a href="#" class="c-id-pill">p9fav</a><span class="c-label-pill" data-label="favicon">favicon</span></div>
+                  <div class="c-plan-row__desc">Small canvas-rendered favicon reflecting state: idle dot, active primary pulse, stuck signal-warn tint. Updates via live.js.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p3ljs</a></span>
+              </div>
+            </div>
+
+            <!-- ===================== Phase 10 — Polish ===================== -->
+            <div class="c-plan-row c-plan-row--status-blocked">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+              <div class="c-plan-row__title">
+                <div class="c-plan-row__title-line"><span class="c-plan-row__title-text t-heading-md">Phase 10 — Polish, empty states, errors, accessibility</span><a href="#" class="c-id-pill">Ph10p</a><span class="c-label-pill" data-label="polish">polish</span></div>
+                <div class="c-plan-row__desc">Final sweep. Real empty states across every view, graceful error recovery (connection lost, DB locked, unknown task id), accessibility audit (keyboard-only, screen-reader landmarks, status-pill ARIA), mobile single-column fallback.</div>
+              </div>
+              <span class="c-plan-row__avatar-slot"></span>
+              <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+              <span class="c-plan-row__timestamp">—</span>
+              <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">Ph7pk</a>, <a href="#" class="c-id-pill">Ph8tt</a>, <a href="#" class="c-id-pill">Ph9gs</a></span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Empty-state polish across every view</span><a href="#" class="c-id-pill">p10em</a><span class="c-label-pill" data-label="polish">polish</span></div>
+                  <div class="c-plan-row__desc">Subtle one-line empty states everywhere, matching the prototype's tone. No blank rectangles.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Connection recovery UX</span><a href="#" class="c-id-pill">p10rc</a><span class="c-label-pill" data-label="polish">polish</span></div>
+                  <div class="c-plan-row__desc">When SSE disconnects, show "reconnecting…" in the footer without alarming chrome. Auto-retry with exponential backoff up to a cap. Resume from last event id.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Error pages for unknown tasks, DB locked, etc.</span><a href="#" class="c-id-pill">p10er</a><span class="c-label-pill" data-label="errors">errors</span></div>
+                  <div class="c-plan-row__desc">Quiet styled error pages that tell the user what happened without panic.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Accessibility sweep</span><a href="#" class="c-id-pill">p10a1</a><span class="c-label-pill" data-label="a11y">a11y</span></div>
+                  <div class="c-plan-row__desc">Keyboard-only walkthrough of every view. ARIA labels on status pills. Landmarks for header/main/footer. Screen-reader announcements for live-region updates (polite, not assertive).</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Mobile single-column fallback</span><a href="#" class="c-id-pill">p10mb</a><span class="c-label-pill" data-label="mobile">mobile</span></div>
+                  <div class="c-plan-row__desc">Home view degrades to a single column on narrow viewports showing only the signal cards and active claims. Task detail and peek work via full navigation. Not a primary target — just "is my agent stuck" from a phone.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Documentation sweep</span><a href="#" class="c-id-pill">p10dc</a><span class="c-label-pill" data-label="docs">docs</span></div>
+                  <div class="c-plan-row__desc">README reference to <code style="font-family: var(--font-mono)">job serve</code>. docs/ entry for the dashboard with screenshots. Update AGENTS.md if agent-relevant patterns changed.</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--todo"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Todo</span>
+                <span class="c-plan-row__timestamp">—</span>
+              </div>
+              <div class="c-plan-row c-plan-row--status-blocked">
+                <span></span>
+                <div class="c-plan-row__title">
+                  <div class="c-plan-row__title-line"><span class="c-plan-row__title-text">Full pre-release verification</span><a href="#" class="c-id-pill">p10vf</a><span class="c-label-pill" data-label="tests">tests</span></div>
+                  <div class="c-plan-row__desc">Run the whole test suite, walk every view at 5k+ events, confirm performance targets (cold load &lt;200ms, live update &lt;100ms on localhost).</div>
+                </div>
+                <span class="c-plan-row__avatar-slot"></span>
+                <span class="c-status-pill c-status-pill--blocked"><svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked</span>
+                <span class="c-plan-row__timestamp">—</span>
+                <span class="c-plan-row__blocked-by">Blocked by <a href="#" class="c-id-pill">p10em</a>, <a href="#" class="c-id-pill">p10rc</a>, <a href="#" class="c-id-pill">p10er</a>, <a href="#" class="c-id-pill">p10a1</a>, <a href="#" class="c-id-pill">p10mb</a></span>
+              </div>
+            </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">6</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">5</span><span class="c-footer__metric-label">WIP</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">142</span><span class="c-footer__metric-label">events / min</span></span>
+
+        <div class="grow"></div>
+
+        <span class="t-label-caps t-dim">
+          <span class="t-data-id" style="background: var(--color-surface-raised); padding: 2px 6px; border-radius: var(--radius-sm); margin-right: 4px">j/k</span>
+          nav
+          <span class="t-data-id" style="background: var(--color-surface-raised); padding: 2px 6px; border-radius: var(--radius-sm); margin: 0 4px 0 10px">space</span>
+          toggle
+          <span class="t-data-id" style="background: var(--color-surface-raised); padding: 2px 6px; border-radius: var(--radius-sm); margin: 0 4px 0 10px">/</span>
+          search
+        </span>
+
+        <div class="grow"></div>
+
+        <button class="c-scrubber-pill" aria-label="Scrub through history">
+          <span class="c-scrubber-pill__dot"></span>
+          <span>Live</span>
+        </button>
+
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>last event 3s ago</span>
+        </span>
+      </footer>
+    </div>
+
+    <script src="js/colors.js"></script>
+  </body>
+</html>

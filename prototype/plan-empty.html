@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan (empty) — Jobs</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab">Home</a>
+          <a href="plan.html" class="c-tab c-tab--active">Plan</a>
+          <a href="actors.html" class="c-tab">Actors</a>
+          <a href="log.html" class="c-tab">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <main class="main" role="main">
+        <div class="row row-gap-md" style="align-items: center">
+          <nav class="c-tabs" aria-label="Plan filter">
+            <a href="#" class="c-tab c-tab--active">Active</a>
+            <a href="#" class="c-tab">Archived</a>
+            <a href="#" class="c-tab">All</a>
+          </nav>
+        </div>
+
+        <section class="c-section" aria-labelledby="s-plan">
+          <div class="c-section__header">
+            <h1 id="s-plan" class="t-heading-lg t-dim">No plan imported yet</h1>
+          </div>
+          <p class="c-empty">
+            Nothing in the store. Run
+            <code class="t-data-id" style="background: var(--color-surface-raised); padding: 2px 6px; border-radius: var(--radius-sm); color: var(--color-on-surface-muted)">job import plan.md</code>
+            to populate.
+          </p>
+        </section>
+      </main>
+
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">0</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">0</span><span class="c-footer__metric-label">WIP</span></span>
+        <div class="grow"></div>
+        <span class="t-label-caps t-dim">
+          <span class="t-data-id" style="background: var(--color-surface-raised); padding: 2px 6px; border-radius: var(--radius-sm); margin-right: 4px">j/k</span>
+          nav
+          <span class="t-data-id" style="background: var(--color-surface-raised); padding: 2px 6px; border-radius: var(--radius-sm); margin: 0 4px 0 10px">/</span>
+          search
+        </span>
+        <div class="grow"></div>
+        <button class="c-scrubber-pill" aria-label="Scrub through history">
+          <span class="c-scrubber-pill__dot"></span>
+          <span>Live</span>
+        </button>
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>waiting for first event</span>
+        </span>
+      </footer>
+    </div>
+    <script src="js/colors.js"></script>
+  </body>
+</html>

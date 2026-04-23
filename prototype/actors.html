@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Actors — Jobs</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page">
+      <!-- ===================== Header ===================== -->
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab">Home</a>
+          <a href="plan.html" class="c-tab">Plan</a>
+          <a href="actors.html" class="c-tab c-tab--active">Actors</a>
+          <a href="log.html" class="c-tab">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <!-- ===================== Main ===================== -->
+      <main class="main" role="main">
+        <!-- Task-centric actor board. Each card is (actor, task) — one per
+             pair, with the latest state-changing event setting the tint.
+             Notes collapse to an inline badge. Per-column, current claims
+             dock to the bottom (visual), history scrolls up above. -->
+        <div class="c-actors-board" aria-label="Actors">
+
+          <!-- ================= claude ================= -->
+          <section class="c-actor-col" aria-labelledby="a-claude">
+            <header class="c-actor-col__header">
+              <a href="actors-single.html" class="c-avatar c-avatar-lg" data-actor="claude" aria-label="Open claude"></a>
+              <div class="stack stack-gap-xs" style="min-width: 0">
+                <a id="a-claude" href="actors-single.html" class="c-actor-col__name" data-actor="claude">claude</a>
+                <span class="c-actor-col__status">3 claims · last seen 4s ago</span>
+              </div>
+            </header>
+            <div class="c-actor-col__stream">
+              <!-- Current claims band (DOM first = visual bottom) -->
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>10s ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">FySZM</span>
+                  <h4 class="c-actor-card__title">Actors view prototype HTML</h4>
+                </div>
+                <p class="c-actor-card__desc">Column-per-actor Trello board per DESIGN.md §6. Sticky actor header, vertical-scroll stream with claims docked to the bottom.</p>
+                <a href="#/tasks/FySZM" class="c-row-link" aria-label="Open task FySZM"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>12m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">mPubp</span>
+                  <h4 class="c-actor-card__title">Log view prototype HTML</h4>
+                </div>
+                <p class="c-actor-card__desc">Chronological event feed across all tasks. Filters by type / actor / label. Live-tail slides new events in at the top.</p>
+                <a href="#/tasks/mPubp" class="c-row-link" aria-label="Open task mPubp"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>42m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">9AWkj</span>
+                  <h4 class="c-actor-card__title">Design review gate</h4>
+                </div>
+                <p class="c-actor-card__desc">Walk the Phase 1 prototypes one more time, confirm open feedback is addressed, then unblock the server skeleton work.</p>
+                <a href="#/tasks/9AWkj" class="c-row-link" aria-label="Open task 9AWkj"></a>
+              </article>
+
+              <!-- History band (newest first in DOM). 5aqpd carries a note
+                   badge — the earlier `noted` event collapses into this card
+                   rather than duplicating it. -->
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <span class="c-actor-card__notes">1 note</span>
+                  <time>18s ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">5aqpd</span>
+                  <h4 class="c-actor-card__title">Activity histogram signal card</h4>
+                </div>
+                <p class="c-actor-card__desc">60-bar Activity Monitor style chart, stacked by event type. Replaces Idle Actors. Empty state: flat baseline.</p>
+                <a href="#/tasks/5aqpd" class="c-row-link" aria-label="Open task 5aqpd"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>4m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">2YZO5</span>
+                  <h4 class="c-actor-card__title">Mini-graph interactivity and a11y</h4>
+                </div>
+                <p class="c-actor-card__desc">Every node is an anchor with a hover ring; centered ID labels; detached bug avatars link to the claiming actor.</p>
+                <a href="#/tasks/2YZO5" class="c-row-link" aria-label="Open task 2YZO5"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>8m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">NTG9Q</span>
+                  <h4 class="c-actor-card__title">Home view v2</h4>
+                </div>
+                <p class="c-actor-card__desc">Sticky chrome, stretched-link panel rows, reordered sections, fixed search field cut-off.</p>
+                <a href="#/tasks/NTG9Q" class="c-row-link" aria-label="Open task NTG9Q"></a>
+              </article>
+              <!-- claude only ever created 6mrqO (nobody has claimed it yet).
+                   So the card stays in the "created" state for this actor. -->
+              <article class="c-actor-card c-actor-card--created">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--created">created</span>
+                  <time>25m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">6mrqO</span>
+                  <h4 class="c-actor-card__title">Expanded time-travel scrubber prototype</h4>
+                </div>
+                <p class="c-actor-card__desc">Visualize the expanded state of the collapsed live scrubber — zoomed-out event density + draggable cursor.</p>
+                <a href="#/tasks/6mrqO" class="c-row-link" aria-label="Open task 6mrqO"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>48m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">P4gto</span>
+                  <h4 class="c-actor-card__title">Plan prototype HTML (document mode)</h4>
+                </div>
+                <p class="c-actor-card__desc">Document-mode indented tree with ambient progress bar per parent row and status-tinted titles.</p>
+                <a href="#/tasks/P4gto" class="c-row-link" aria-label="Open task P4gto"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>55m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">hru6q</span>
+                  <h4 class="c-actor-card__title">Home view prototype HTML</h4>
+                </div>
+                <p class="c-actor-card__desc">Initial Home shell: four signal cards, mini-graph, four-panel row, footer metric strip.</p>
+                <a href="#/tasks/hru6q" class="c-row-link" aria-label="Open task hru6q"></a>
+              </article>
+            </div>
+          </section>
+
+          <!-- ================= alice ================= -->
+          <!-- alice's g7h8i history (claim → release → re-claim) collapses
+               to a single "claimed" card reflecting her current relationship. -->
+          <section class="c-actor-col" aria-labelledby="a-alice">
+            <header class="c-actor-col__header">
+              <a href="actors-single.html" class="c-avatar c-avatar-lg" data-actor="alice" aria-label="Open alice"></a>
+              <div class="stack stack-gap-xs" style="min-width: 0">
+                <a id="a-alice" href="actors-single.html" class="c-actor-col__name" data-actor="alice">alice</a>
+                <span class="c-actor-col__status">2 claims · last seen 1m ago</span>
+              </div>
+            </header>
+            <div class="c-actor-col__stream">
+              <article class="c-actor-card c-actor-card--blocked">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--blocked">blocked</span>
+                  <time>1m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">Pk2vQ</span>
+                  <h4 class="c-actor-card__title">Plan view SSR</h4>
+                </div>
+                <p class="c-actor-card__desc">Blocked on <a href="#/tasks/NTG9Q" class="c-id-pill">NTG9Q</a> — waiting for the Home v2 stretched-link pattern to be reviewed.</p>
+                <a href="#/tasks/Pk2vQ" class="c-row-link" aria-label="Open task Pk2vQ"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>8m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">g7h8i</span>
+                  <h4 class="c-actor-card__title">SSR fragment endpoint</h4>
+                </div>
+                <p class="c-actor-card__desc">/tasks/&lt;id&gt;/peek returns a rendered HTML fragment. Same template composition as the full page, just scoped.</p>
+                <a href="#/tasks/g7h8i" class="c-row-link" aria-label="Open task g7h8i"></a>
+              </article>
+
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>2h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">dXJPQ</span>
+                  <h4 class="c-actor-card__title">internal/web package skeleton</h4>
+                </div>
+                <p class="c-actor-card__desc">Wired Chi router, static asset embed via //go:embed, base template layout with shared chrome.</p>
+                <a href="#/tasks/dXJPQ" class="c-row-link" aria-label="Open task dXJPQ"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>3h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">3gWDe</span>
+                  <h4 class="c-actor-card__title">Template layout + shared chrome</h4>
+                </div>
+                <p class="c-actor-card__desc">base.tmpl with slots for tabs / search / footer heartbeat. Views compose by named blocks.</p>
+                <a href="#/tasks/3gWDe" class="c-row-link" aria-label="Open task 3gWDe"></a>
+              </article>
+            </div>
+          </section>
+
+          <!-- ================= bob ================= -->
+          <section class="c-actor-col" aria-labelledby="a-bob">
+            <header class="c-actor-col__header">
+              <a href="actors-single.html" class="c-avatar c-avatar-lg" data-actor="bob" aria-label="Open bob"></a>
+              <div class="stack stack-gap-xs" style="min-width: 0">
+                <a id="a-bob" href="actors-single.html" class="c-actor-col__name" data-actor="bob">bob</a>
+                <span class="c-actor-col__status">1 claim · last seen 14s ago</span>
+              </div>
+            </header>
+            <div class="c-actor-col__stream">
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>2m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">kQn2r</span>
+                  <h4 class="c-actor-card__title">Broadcaster fan-out</h4>
+                </div>
+                <p class="c-actor-card__desc">Single producer → many SSE subscribers. Drop-slowest on backpressure; bounded buffer per subscriber.</p>
+                <a href="#/tasks/kQn2r" class="c-row-link" aria-label="Open task kQn2r"></a>
+              </article>
+
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <span class="c-actor-card__notes">3 notes</span>
+                  <time>45m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">bioJK</span>
+                  <h4 class="c-actor-card__title">Broadcaster</h4>
+                </div>
+                <p class="c-actor-card__desc">Pub-sub primitive: Subscribe() returns &lt;-chan Event; Close() drains. Used by /events and view-level live tails.</p>
+                <a href="#/tasks/bioJK" class="c-row-link" aria-label="Open task bioJK"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>1h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">xn1Kf</span>
+                  <h4 class="c-actor-card__title">/events SSE handler</h4>
+                </div>
+                <p class="c-actor-card__desc">text/event-stream handler with resumable Last-Event-ID. Retries replay from the requested event onward.</p>
+                <a href="#/tasks/xn1Kf" class="c-row-link" aria-label="Open task xn1Kf"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>2h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">JuFQE</span>
+                  <h4 class="c-actor-card__title">/events JSON replay</h4>
+                </div>
+                <p class="c-actor-card__desc">Non-streaming fallback for tooling: same params, JSON array, bounded by since/until.</p>
+                <a href="#/tasks/JuFQE" class="c-row-link" aria-label="Open task JuFQE"></a>
+              </article>
+            </div>
+          </section>
+
+          <!-- ================= eve (idle) ================= -->
+          <section class="c-actor-col c-actor-col--idle" aria-labelledby="a-eve">
+            <header class="c-actor-col__header">
+              <a href="actors-single.html" class="c-avatar c-avatar-lg" data-actor="eve" aria-label="Open eve"></a>
+              <div class="stack stack-gap-xs" style="min-width: 0">
+                <a id="a-eve" href="actors-single.html" class="c-actor-col__name" data-actor="eve">eve</a>
+                <span class="c-actor-col__status c-actor-col__status--idle">idle · last seen 42m ago</span>
+              </div>
+            </header>
+            <div class="c-actor-col__stream">
+              <!-- No active claims. All history. -->
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>42m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">L9mcH</span>
+                  <h4 class="c-actor-card__title">Migration runner</h4>
+                </div>
+                <p class="c-actor-card__desc">Checksum-guarded migrations with resumable state. Records current migration number in the db.</p>
+                <a href="#/tasks/L9mcH" class="c-row-link" aria-label="Open task L9mcH"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>3h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">mQz81</span>
+                  <h4 class="c-actor-card__title">Schema checksum guard</h4>
+                </div>
+                <p class="c-actor-card__desc">Rejects boot if the on-disk migration file hashes differ from what's recorded in the db.</p>
+                <a href="#/tasks/mQz81" class="c-row-link" aria-label="Open task mQz81"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>5h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">pvT4L</span>
+                  <h4 class="c-actor-card__title">Lock file semantics</h4>
+                </div>
+                <p class="c-actor-card__desc">Per-db flock during migration so concurrent starts don't race the schema writer.</p>
+                <a href="#/tasks/pvT4L" class="c-row-link" aria-label="Open task pvT4L"></a>
+              </article>
+            </div>
+          </section>
+
+          <!-- ================= carla ================= -->
+          <section class="c-actor-col" aria-labelledby="a-carla">
+            <header class="c-actor-col__header">
+              <a href="actors-single.html" class="c-avatar c-avatar-lg" data-actor="carla" aria-label="Open carla"></a>
+              <div class="stack stack-gap-xs" style="min-width: 0">
+                <a id="a-carla" href="actors-single.html" class="c-actor-col__name" data-actor="carla">carla</a>
+                <span class="c-actor-col__status">1 claim · last seen 7m ago</span>
+              </div>
+            </header>
+            <div class="c-actor-col__stream">
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>7m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">RcbTK</span>
+                  <h4 class="c-actor-card__title">Documentation sweep</h4>
+                </div>
+                <p class="c-actor-card__desc">Walk /docs and reconcile drift from the post-P1 refactor. Regenerate DocC, link check, README fix-ups.</p>
+                <a href="#/tasks/RcbTK" class="c-row-link" aria-label="Open task RcbTK"></a>
+              </article>
+
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>34m ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">bB2nx</span>
+                  <h4 class="c-actor-card__title">Docs sweep — initial pass</h4>
+                </div>
+                <p class="c-actor-card__desc">Normalized heading levels across /docs; fixed anchors that broke during the post-P1 refactor.</p>
+                <a href="#/tasks/bB2nx" class="c-row-link" aria-label="Open task bB2nx"></a>
+              </article>
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>2h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">doCx1</span>
+                  <h4 class="c-actor-card__title">README restructuring</h4>
+                </div>
+                <p class="c-actor-card__desc">Quickstart before architecture; moved old philosophy section into project/.</p>
+                <a href="#/tasks/doCx1" class="c-row-link" aria-label="Open task doCx1"></a>
+              </article>
+            </div>
+          </section>
+
+          <!-- ================= dmitri ================= -->
+          <section class="c-actor-col" aria-labelledby="a-dmitri">
+            <header class="c-actor-col__header">
+              <a href="actors-single.html" class="c-avatar c-avatar-lg" data-actor="dmitri" aria-label="Open dmitri"></a>
+              <div class="stack stack-gap-xs" style="min-width: 0">
+                <a id="a-dmitri" href="actors-single.html" class="c-actor-col__name" data-actor="dmitri">dmitri</a>
+                <span class="c-actor-col__status">1 claim · last seen 30s ago</span>
+              </div>
+            </header>
+            <div class="c-actor-col__stream">
+              <article class="c-actor-card c-actor-card--claimed">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+                  <time>42s ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">Wq7uV</span>
+                  <h4 class="c-actor-card__title">Actor column layout</h4>
+                </div>
+                <p class="c-actor-card__desc">Column-per-actor SSR handler. Consumes the actors view template; paginates history per column.</p>
+                <a href="#/tasks/Wq7uV" class="c-row-link" aria-label="Open task Wq7uV"></a>
+              </article>
+
+              <article class="c-actor-card c-actor-card--done">
+                <div class="c-actor-card__meta">
+                  <span class="c-log-row__verb c-log-row__verb--done">done</span>
+                  <time>1h ago</time>
+                </div>
+                <div class="c-actor-card__title-row">
+                  <span class="c-id-pill">x81Op</span>
+                  <h4 class="c-actor-card__title">GET /actors</h4>
+                </div>
+                <p class="c-actor-card__desc">Top-level actors handler; returns the column grid scoped by optional label filter.</p>
+                <a href="#/tasks/x81Op" class="c-row-link" aria-label="Open task x81Op"></a>
+              </article>
+            </div>
+          </section>
+
+        </div>
+      </main>
+
+      <!-- ===================== Footer ===================== -->
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">6</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">5</span><span class="c-footer__metric-label">WIP</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">142</span><span class="c-footer__metric-label">events / min</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">12.4</span><span class="c-footer__metric-label">tasks / hr</span></span>
+        <div class="grow"></div>
+        <button class="c-scrubber-pill" aria-label="Scrub through history">
+          <span class="c-scrubber-pill__dot"></span>
+          <span>Live</span>
+        </button>
+        <div class="grow"></div>
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>last event 4s ago</span>
+        </span>
+        <span class="c-footer__metric"><span>Connected</span></span>
+      </footer>
+    </div>
+
+    <script src="js/colors.js"></script>
+  </body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — Jobs (peek: hru6q)</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page">
+      <!-- ===================== Header ===================== -->
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab">Home</a>
+          <a href="plan.html" class="c-tab c-tab--active">Plan</a>
+          <a href="actors.html" class="c-tab">Actors</a>
+          <a href="log.html" class="c-tab">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <!-- ===================== Main (same as plan, trimmed) ===================== -->
+      <main class="main" role="main">
+        <div class="row row-gap-md" style="align-items: center">
+          <nav class="c-tabs" aria-label="Plan filter">
+            <a href="#" class="c-tab c-tab--active">Active</a>
+            <a href="#" class="c-tab">Archived</a>
+            <a href="#" class="c-tab">All</a>
+          </nav>
+          <span class="c-panel__title" style="margin-left: var(--space-xl)">Labels</span>
+          <span class="c-label-pill" data-label="web">web</span>
+          <span class="c-label-pill" data-label="dashboard">dashboard</span>
+        </div>
+
+        <section class="c-section" aria-labelledby="s-plan">
+          <div class="c-section__header">
+            <h1 id="s-plan" class="t-heading-lg">Web dashboard v1</h1>
+            <span class="t-muted t-body-sm">
+              <a href="#" class="c-id-pill">bYr6R</a> · 1 of 10 phases complete
+            </span>
+          </div>
+
+          <div class="stack stack-gap-xs">
+            <div class="c-plan-row c-plan-row--status-active">
+              <button class="c-plan-row__disclosure" aria-expanded="true" aria-label="Collapse">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </button>
+              <span class="c-plan-row__title">
+                <span class="c-plan-row__title-text t-heading-md">Phase 1 — Static HTML prototype</span>
+                <a href="#" class="c-id-pill">z0OoG</a>
+                <span class="c-label-pill" data-label="prototype">prototype</span>
+              </span>
+              <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+              <span class="c-status-pill c-status-pill--active">
+                <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>
+                Active
+              </span>
+              <span class="c-plan-row__timestamp">just now</span>
+            </div>
+
+            <div class="c-plan-subtree">
+              <!-- Selected — this is the task being peeked -->
+              <div class="c-plan-row c-plan-row--status-done c-plan-row--selected">
+                <span></span>
+                <span class="c-plan-row__title"><span class="c-plan-row__title-text">Home view prototype HTML</span><a href="#" class="c-id-pill">hru6q</a><span class="c-label-pill" data-label="prototype">prototype</span></span>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done">
+                  <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  Done
+                </span>
+                <span class="c-plan-row__timestamp">1m ago</span>
+              </div>
+
+              <div class="c-plan-row c-plan-row--status-done">
+                <span></span>
+                <span class="c-plan-row__title"><span class="c-plan-row__title-text">Plan view prototype HTML</span><a href="#" class="c-id-pill">P4gto</a><span class="c-label-pill" data-label="prototype">prototype</span></span>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--done">
+                  <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  Done
+                </span>
+                <span class="c-plan-row__timestamp">just now</span>
+              </div>
+
+              <div class="c-plan-row c-plan-row--status-active">
+                <span></span>
+                <span class="c-plan-row__title"><span class="c-plan-row__title-text">Peek sheet prototype HTML</span><a href="#" class="c-id-pill">PECgy</a><span class="c-label-pill" data-label="prototype">prototype</span></span>
+                <span class="c-plan-row__avatar-slot"><span class="c-avatar c-avatar-sm" data-actor="claude"></span></span>
+                <span class="c-status-pill c-status-pill--active">
+                  <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>
+                  Active
+                </span>
+                <span class="c-plan-row__timestamp">now</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ===================== Footer ===================== -->
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">6</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">5</span><span class="c-footer__metric-label">WIP</span></span>
+        <div class="grow"></div>
+        <button class="c-scrubber-pill" aria-label="Scrub through history">
+          <span class="c-scrubber-pill__dot"></span>
+          <span>Live</span>
+        </button>
+        <div class="grow"></div>
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>last event 2s ago</span>
+        </span>
+      </footer>
+    </div>
+
+    <!-- ===================== Peek sheet open ===================== -->
+    <div class="c-peek-underlay" aria-hidden="true"></div>
+
+    <aside
+      class="c-peek-sheet"
+      role="complementary"
+      aria-labelledby="peek-title"
+    >
+      <div class="c-peek-sheet__header">
+        <div class="stack stack-gap-xs" style="min-width: 0; flex: 1">
+          <div class="row row-gap-sm">
+            <a href="#" class="c-id-pill">hru6q</a>
+            <span class="c-status-pill c-status-pill--done">
+              <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Done
+            </span>
+          </div>
+          <h2 id="peek-title" class="c-peek-sheet__title">Home view prototype HTML</h2>
+        </div>
+        <div class="row row-gap-xs">
+          <button class="c-bell c-bell--active" aria-label="Notify on changes" title="Subscribed to completion">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" />
+              <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button class="c-peek-sheet__close" aria-label="Close peek">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Labels -->
+      <div class="c-peek-sheet__section">
+        <div class="c-peek-sheet__section-label">Labels</div>
+        <div class="row row-gap-xs" style="flex-wrap: wrap">
+          <span class="c-label-pill" data-label="prototype">prototype</span>
+          <span class="c-label-pill" data-label="web">web</span>
+        </div>
+      </div>
+
+      <!-- Parent -->
+      <div class="c-peek-sheet__section">
+        <div class="c-peek-sheet__section-label">Parent</div>
+        <div class="row row-gap-sm">
+          <a href="#" class="c-id-pill">z0OoG</a>
+          <span class="t-body-sm">Phase 1 — Static HTML prototype</span>
+        </div>
+      </div>
+
+      <!-- Blockers -->
+      <div class="c-peek-sheet__section">
+        <div class="c-peek-sheet__section-label">Blocks</div>
+        <div class="stack stack-gap-xs">
+          <div class="row row-gap-sm">
+            <a href="#" class="c-id-pill">WJFAK</a>
+            <span class="t-body-sm">Empty-state examples</span>
+            <span class="c-status-pill c-status-pill--blocked" style="margin-left: auto">
+              <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="3" y="2.5" width="1.5" height="5" />
+                <rect x="5.5" y="2.5" width="1.5" height="5" />
+              </svg>
+              Blocked
+            </span>
+          </div>
+          <div class="row row-gap-sm">
+            <a href="#" class="c-id-pill">9AWkj</a>
+            <span class="t-body-sm">Design review gate</span>
+            <span class="c-status-pill c-status-pill--blocked" style="margin-left: auto">
+              <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="3" y="2.5" width="1.5" height="5" />
+                <rect x="5.5" y="2.5" width="1.5" height="5" />
+              </svg>
+              Blocked
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes (rendered as code blocks per DESIGN.md §5.5) -->
+      <div class="c-peek-sheet__section">
+        <div class="c-peek-sheet__section-label">Notes</div>
+        <pre class="c-note">Wrote prototype/home.html. Header (brand, tabs with
+active state, search input, bell, theme toggle). Four
+signal cards (idle, newly blocked, longest claim,
+oldest todo) with ambient underline progress bars
+driven by --progress custom property. LTR mini-graph
+as inline SVG showing phase chain with done-check
+disks, active actor-colored hub, blocker arc (dashed
+amber), and +N topological collapse placeholders.
+Active claims + recent completions as data rows.
+Blocked strip. Footer metric strip with pulsing
+heartbeat dot and the collapsed ● Live scrubber pill.</pre>
+      </div>
+
+      <!-- Event history -->
+      <div class="c-peek-sheet__section">
+        <div class="c-peek-sheet__section-label">History</div>
+        <div class="stack stack-gap-sm">
+          <div class="row row-gap-sm t-body-sm">
+            <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+            <span class="t-body-sm">done by <strong>claude</strong></span>
+            <span class="t-dim t-data-id" style="margin-left: auto">1m ago</span>
+          </div>
+          <div class="row row-gap-sm t-body-sm">
+            <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+            <span class="t-body-sm">claimed by <strong>claude</strong></span>
+            <span class="t-dim t-data-id" style="margin-left: auto">9m ago</span>
+          </div>
+          <div class="row row-gap-sm t-body-sm">
+            <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+            <span class="t-body-sm">unblocked (P5JAV done, lPEW1 done)</span>
+            <span class="t-dim t-data-id" style="margin-left: auto">9m ago</span>
+          </div>
+          <div class="row row-gap-sm t-body-sm">
+            <span class="c-avatar c-avatar-sm" data-actor="ben"></span>
+            <span class="t-body-sm">added by <strong>ben</strong></span>
+            <span class="t-dim t-data-id" style="margin-left: auto">23m ago</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row row-gap-sm">
+        <a href="#" class="c-button c-button--primary">Open full page</a>
+        <span class="t-muted t-body-sm" style="margin-left: var(--space-sm)">⌘-click any task to skip the peek</span>
+      </div>
+    </aside>
+
+    <script src="js/colors.js"></script>
+  </body>
+</html>

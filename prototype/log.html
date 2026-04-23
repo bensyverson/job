@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log — Jobs</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page">
+      <!-- ===================== Header ===================== -->
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab">Home</a>
+          <a href="plan.html" class="c-tab">Plan</a>
+          <a href="actors.html" class="c-tab">Actors</a>
+          <a href="log.html" class="c-tab c-tab--active">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <!-- ===================== Main ===================== -->
+      <main class="main" role="main">
+        <!-- Filter bar — by event type, by actor, by label. -->
+        <section class="c-filter-bar" aria-label="Log filters">
+          <div class="c-filter-bar__group" role="group" aria-label="Event type">
+            <span class="c-filter-bar__label">Events</span>
+            <button type="button" class="c-filter-chip c-filter-chip--active">all</button>
+            <button type="button" class="c-filter-chip">created</button>
+            <button type="button" class="c-filter-chip">claimed</button>
+            <button type="button" class="c-filter-chip">done</button>
+            <button type="button" class="c-filter-chip">blocked</button>
+            <button type="button" class="c-filter-chip">unblocked</button>
+            <button type="button" class="c-filter-chip">noted</button>
+            <button type="button" class="c-filter-chip">released</button>
+            <button type="button" class="c-filter-chip">canceled</button>
+          </div>
+          <div class="c-filter-bar__group" role="group" aria-label="Actor">
+            <span class="c-filter-bar__label">Actor</span>
+            <button type="button" class="c-filter-chip c-filter-chip--active">any</button>
+            <button type="button" class="c-filter-chip">
+              <span class="c-avatar c-avatar-dot" data-actor="claude"></span>claude
+            </button>
+            <button type="button" class="c-filter-chip">
+              <span class="c-avatar c-avatar-dot" data-actor="alice"></span>alice
+            </button>
+            <button type="button" class="c-filter-chip">
+              <span class="c-avatar c-avatar-dot" data-actor="bob"></span>bob
+            </button>
+            <button type="button" class="c-filter-chip">
+              <span class="c-avatar c-avatar-dot" data-actor="carla"></span>carla
+            </button>
+            <button type="button" class="c-filter-chip">
+              <span class="c-avatar c-avatar-dot" data-actor="dmitri"></span>dmitri
+            </button>
+            <button type="button" class="c-filter-chip">
+              <span class="c-avatar c-avatar-dot" data-actor="eve"></span>eve
+            </button>
+          </div>
+          <div class="c-filter-bar__group" role="group" aria-label="Label">
+            <span class="c-filter-bar__label">Label</span>
+            <span class="c-label-pill" data-label="web">web</span>
+            <span class="c-label-pill" data-label="prototype">prototype</span>
+            <a href="#" class="t-muted t-body-sm" style="margin-left: var(--space-xs)">clear</a>
+          </div>
+        </section>
+
+        <!-- Live-tail indicator: new events slide in at the top. -->
+        <div class="c-log-live" aria-live="polite">
+          <span class="c-log-live__dot"></span>
+          <span>Streaming live · newest first</span>
+          <span class="grow"></span>
+          <span class="t-dim">showing 28 of 142 events</span>
+        </div>
+
+        <!-- Event feed -->
+        <div class="c-log" role="list">
+          <!-- Freshly arrived events carry --new class for the slide-in animation. -->
+          <div class="c-log-row c-log-row--claimed c-log-row--new" role="listitem">
+            <time class="c-log-row__time" datetime="2026-04-22T18:20:00">4s</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+            <span class="c-id-pill">mPubp</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Log view prototype HTML</span>
+            </span>
+            <a href="#/tasks/mPubp" class="c-row-link" aria-label="Open task mPubp"></a>
+          </div>
+          <div class="c-log-row c-log-row--done c-log-row--new" role="listitem">
+            <time class="c-log-row__time">18s</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">5aqpd</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Activity histogram signal card</span>
+              <span class="c-log-row__note">60-bar Activity Monitor style, stacked by event type</span>
+            </span>
+            <a href="#/tasks/5aqpd" class="c-row-link" aria-label="Open task 5aqpd"></a>
+          </div>
+          <div class="c-log-row c-log-row--noted" role="listitem">
+            <time class="c-log-row__time">42s</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--noted">noted</span>
+            <span class="c-id-pill">5aqpd</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__note">Follow-ups: legend nowrap units, past-tense verbs, histogram 64 → 40px</span>
+            </span>
+            <a href="#/tasks/5aqpd" class="c-row-link" aria-label="Open task 5aqpd"></a>
+          </div>
+          <div class="c-log-row c-log-row--blocked" role="listitem">
+            <time class="c-log-row__time">1m</time>
+            <a href="#/actors/alice" class="c-log-row__actor" data-actor="alice">
+              <span class="c-avatar c-avatar-sm" data-actor="alice"></span>
+              <span>alice</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--blocked">blocked</span>
+            <span class="c-id-pill">Pk2vQ</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Plan view SSR</span>
+              <span class="c-log-row__note">by <a href="#/tasks/NTG9Q" class="c-id-pill">NTG9Q</a></span>
+            </span>
+            <a href="#/tasks/Pk2vQ" class="c-row-link" aria-label="Open task Pk2vQ"></a>
+          </div>
+          <div class="c-log-row c-log-row--claimed" role="listitem">
+            <time class="c-log-row__time">2m</time>
+            <a href="#/actors/bob" class="c-log-row__actor" data-actor="bob">
+              <span class="c-avatar c-avatar-sm" data-actor="bob"></span>
+              <span>bob</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+            <span class="c-id-pill">kQn2r</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Broadcaster fan-out</span>
+            </span>
+            <a href="#/tasks/kQn2r" class="c-row-link" aria-label="Open task kQn2r"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">4m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">2YZO5</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Mini-graph interactivity and a11y</span>
+              <span class="c-log-row__note">Every node is an anchor, hover ring, centered ID labels</span>
+            </span>
+            <a href="#/tasks/2YZO5" class="c-row-link" aria-label="Open task 2YZO5"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">8m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">NTG9Q</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Home view v2</span>
+              <span class="c-log-row__note">Sticky chrome, stretched-link rows, reordered panels</span>
+            </span>
+            <a href="#/tasks/NTG9Q" class="c-row-link" aria-label="Open task NTG9Q"></a>
+          </div>
+          <div class="c-log-row c-log-row--claimed" role="listitem">
+            <time class="c-log-row__time">15m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+            <span class="c-id-pill">2YZO5</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Mini-graph interactivity and a11y</span>
+            </span>
+            <a href="#/tasks/2YZO5" class="c-row-link" aria-label="Open task 2YZO5"></a>
+          </div>
+          <div class="c-log-row c-log-row--released" role="listitem">
+            <time class="c-log-row__time">18m</time>
+            <a href="#/actors/alice" class="c-log-row__actor" data-actor="alice">
+              <span class="c-avatar c-avatar-sm" data-actor="alice"></span>
+              <span>alice</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--released">released</span>
+            <span class="c-id-pill">g7h8i</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">SSR fragment endpoint</span>
+              <span class="c-log-row__note">Stepping away to clear the blocker first</span>
+            </span>
+            <a href="#/tasks/g7h8i" class="c-row-link" aria-label="Open task g7h8i"></a>
+          </div>
+          <div class="c-log-row c-log-row--claimed" role="listitem">
+            <time class="c-log-row__time">22m</time>
+            <a href="#/actors/dmitri" class="c-log-row__actor" data-actor="dmitri">
+              <span class="c-avatar c-avatar-sm" data-actor="dmitri"></span>
+              <span>dmitri</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+            <span class="c-id-pill">Wq7uV</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Actor column layout</span>
+            </span>
+            <a href="#/tasks/Wq7uV" class="c-row-link" aria-label="Open task Wq7uV"></a>
+          </div>
+          <div class="c-log-row c-log-row--created" role="listitem">
+            <time class="c-log-row__time">25m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--created">created</span>
+            <span class="c-id-pill">6mrqO</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Expanded time-travel scrubber prototype</span>
+            </span>
+            <a href="#/tasks/6mrqO" class="c-row-link" aria-label="Open task 6mrqO"></a>
+          </div>
+          <div class="c-log-row c-log-row--created" role="listitem">
+            <time class="c-log-row__time">25m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--created">created</span>
+            <span class="c-id-pill">FySZM</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Actors view prototype HTML</span>
+            </span>
+            <a href="#/tasks/FySZM" class="c-row-link" aria-label="Open task FySZM"></a>
+          </div>
+          <div class="c-log-row c-log-row--created" role="listitem">
+            <time class="c-log-row__time">25m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--created">created</span>
+            <span class="c-id-pill">mPubp</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Log view prototype HTML</span>
+            </span>
+            <a href="#/tasks/mPubp" class="c-row-link" aria-label="Open task mPubp"></a>
+          </div>
+          <div class="c-log-row c-log-row--claimed" role="listitem">
+            <time class="c-log-row__time">28m</time>
+            <a href="#/actors/alice" class="c-log-row__actor" data-actor="alice">
+              <span class="c-avatar c-avatar-sm" data-actor="alice"></span>
+              <span>alice</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>
+            <span class="c-id-pill">g7h8i</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">SSR fragment endpoint</span>
+            </span>
+            <a href="#/tasks/g7h8i" class="c-row-link" aria-label="Open task g7h8i"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">34m</time>
+            <a href="#/actors/carla" class="c-log-row__actor" data-actor="carla">
+              <span class="c-avatar c-avatar-sm" data-actor="carla"></span>
+              <span>carla</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">bB2nx</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Docs sweep</span>
+              <span class="c-log-row__note">Normalized heading levels across /docs</span>
+            </span>
+            <a href="#/tasks/bB2nx" class="c-row-link" aria-label="Open task bB2nx"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">42m</time>
+            <a href="#/actors/eve" class="c-log-row__actor" data-actor="eve">
+              <span class="c-avatar c-avatar-sm" data-actor="eve"></span>
+              <span>eve</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">L9mcH</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Migration runner</span>
+              <span class="c-log-row__note">Checksum-guarded migrations with resumable state</span>
+            </span>
+            <a href="#/tasks/L9mcH" class="c-row-link" aria-label="Open task L9mcH"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">48m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">P4gto</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Plan prototype HTML (document mode)</span>
+            </span>
+            <a href="#/tasks/P4gto" class="c-row-link" aria-label="Open task P4gto"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">55m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">hru6q</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Home view prototype HTML</span>
+            </span>
+            <a href="#/tasks/hru6q" class="c-row-link" aria-label="Open task hru6q"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">58m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">lPEW1</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Deterministic color helpers (actors, labels)</span>
+              <span class="c-log-row__note">FNV-1a hashing → stable HSL per name</span>
+            </span>
+            <a href="#/tasks/lPEW1" class="c-row-link" aria-label="Open task lPEW1"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">1h</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">P5JAV</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Component stylesheet</span>
+            </span>
+            <a href="#/tasks/P5JAV" class="c-row-link" aria-label="Open task P5JAV"></a>
+          </div>
+          <div class="c-log-row c-log-row--unblocked" role="listitem">
+            <time class="c-log-row__time">1h</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--unblocked">unblocked</span>
+            <span class="c-id-pill">LGpqD</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Base stylesheet</span>
+              <span class="c-log-row__note">cleared by <a href="#/tasks/6rIG3" class="c-id-pill">6rIG3</a></span>
+            </span>
+            <a href="#/tasks/LGpqD" class="c-row-link" aria-label="Open task LGpqD"></a>
+          </div>
+          <div class="c-log-row c-log-row--done" role="listitem">
+            <time class="c-log-row__time">1h</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--done">done</span>
+            <span class="c-id-pill">6rIG3</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Translate DESIGN.md tokens to CSS custom properties</span>
+            </span>
+            <a href="#/tasks/6rIG3" class="c-row-link" aria-label="Open task 6rIG3"></a>
+          </div>
+          <div class="c-log-row c-log-row--created" role="listitem">
+            <time class="c-log-row__time">1h 5m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--created">created</span>
+            <span class="c-id-pill">z0OoG</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Phase 1 — Static HTML prototype</span>
+            </span>
+            <a href="#/tasks/z0OoG" class="c-row-link" aria-label="Open task z0OoG"></a>
+          </div>
+          <div class="c-log-row c-log-row--created" role="listitem">
+            <time class="c-log-row__time">1h 5m</time>
+            <a href="#/actors/claude" class="c-log-row__actor" data-actor="claude">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span>claude</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--created">created</span>
+            <span class="c-id-pill">bYr6R</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Web dashboard v1</span>
+              <span class="c-log-row__note">Root task from project/2026-04-21-web-dashboard-vision.md</span>
+            </span>
+            <a href="#/tasks/bYr6R" class="c-row-link" aria-label="Open task bYr6R"></a>
+          </div>
+          <div class="c-log-row c-log-row--canceled" role="listitem">
+            <time class="c-log-row__time">2h</time>
+            <a href="#/actors/ben" class="c-log-row__actor" data-actor="ben">
+              <span class="c-avatar c-avatar-sm" data-actor="ben"></span>
+              <span>ben</span>
+            </a>
+            <span class="c-log-row__verb c-log-row__verb--canceled">canceled</span>
+            <span class="c-id-pill">oLd01</span>
+            <span class="c-log-row__detail">
+              <span class="c-log-row__title">Old SPA skeleton</span>
+              <span class="c-log-row__note">Superseded by SSR approach</span>
+            </span>
+            <a href="#/tasks/oLd01" class="c-row-link" aria-label="Open task oLd01"></a>
+          </div>
+        </div>
+      </main>
+
+      <!-- ===================== Footer ===================== -->
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">6</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">5</span><span class="c-footer__metric-label">WIP</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">142</span><span class="c-footer__metric-label">events / min</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">12.4</span><span class="c-footer__metric-label">tasks / hr</span></span>
+        <div class="grow"></div>
+        <button class="c-scrubber-pill" aria-label="Scrub through history">
+          <span class="c-scrubber-pill__dot"></span>
+          <span>Live</span>
+        </button>
+        <div class="grow"></div>
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>last event 4s ago</span>
+        </span>
+        <span class="c-footer__metric"><span>Connected</span></span>
+      </footer>
+    </div>
+
+    <script src="js/colors.js"></script>
+  </body>
+</html>

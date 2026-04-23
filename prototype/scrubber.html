@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scrubber — Jobs</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page page--scrubbing">
+      <!-- ===================== Header ===================== -->
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab c-tab--active">Home</a>
+          <a href="plan.html" class="c-tab">Plan</a>
+          <a href="actors.html" class="c-tab">Actors</a>
+          <a href="log.html" class="c-tab">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <!-- History banner — tells the user they're looking at a past state
+           pinned to a specific event id via ?at=<event>. Amber tint
+           signals "not live". -->
+      <div class="c-history-banner" role="status" aria-live="polite">
+        <span class="c-history-banner__dot"></span>
+        <span>Viewing history</span>
+        <span class="c-history-banner__at">?at=evt_018f2c · 6h ago · 2026-04-22 12:11:47</span>
+        <span class="grow"></span>
+        <button type="button" class="c-history-banner__return">
+          <span class="c-history-banner__return-dot"></span>
+          Return to live
+        </button>
+      </div>
+
+      <!-- ===================== Main ===================== -->
+      <main class="main" role="main">
+        <!-- Signal cards — four at-a-glance signals -->
+        <section class="c-section" aria-labelledby="s-signals">
+          <h2 id="s-signals" class="sr-only">Signals</h2>
+          <div class="c-grid-signals">
+            <!-- Activity histogram — Activity Monitor style, 60 bars over
+                 the last hour, stacked by event type (done / claim / create /
+                 block). Bars use inline --h (percent of the max minute); each
+                 segment inside the bar uses flex:N where N is that minute's
+                 event count of that type. -->
+            <article class="c-signal-card c-signal-card--primary">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <rect x="2" y="9" width="2.25" height="5" rx="0.5" />
+                  <rect x="6.875" y="5" width="2.25" height="9" rx="0.5" />
+                  <rect x="11.75" y="2" width="2.25" height="12" rx="0.5" />
+                </svg>
+                <span class="c-signal-card__label">Activity · last 60m</span>
+              </div>
+              <div class="c-histogram" role="img" aria-label="617 events in the last hour, stacked by event type">
+                  <span class="c-histogram__bar" style="--h:16%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:11%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:21%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:21%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:21%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:32%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:32%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:37%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:16%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:37%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:32%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:26%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:32%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:37%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:32%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:47%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:47%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:42%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:3"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:58%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:53%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:58%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:53%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:63%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:53%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:58%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:74%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:68%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:68%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:7"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:68%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:7"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:7"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:3"></i></span>
+                  <span class="c-histogram__bar" style="--h:95%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:8"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:8"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:95%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:10"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i><i class="c-histogram__seg c-histogram__seg--block" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:79%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:9"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:74%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:9"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:10"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:11"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:79%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:9"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:8"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:95%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:11"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:6"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:84%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:10"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:100%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:12"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:95%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:12"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:1"></i></span>
+                  <span class="c-histogram__bar" style="--h:100%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:12"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:5"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+                  <span class="c-histogram__bar" style="--h:100%"><i class="c-histogram__seg c-histogram__seg--done" style="flex:13"></i><i class="c-histogram__seg c-histogram__seg--claim" style="flex:4"></i><i class="c-histogram__seg c-histogram__seg--create" style="flex:2"></i></span>
+              </div>
+              <div class="c-signal-card__context c-hist-legend">
+                <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--done"></span>270 done</span>
+                <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--claim"></span>223 claimed</span>
+                <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--create"></span>102 new</span>
+                <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--block"></span>22 blocked</span>
+              </div>
+            </article>
+
+            <article class="c-signal-card c-signal-card--warn" style="--progress: 30%">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+                  <path d="M5 5l6 6M11 5l-6 6" stroke-linecap="round" />
+                </svg>
+                <span class="c-signal-card__label">Newly blocked · 10m</span>
+              </div>
+              <div class="c-signal-card__value">1</div>
+              <div class="c-signal-card__context">
+                <a href="#" class="c-id-pill">g7h8i</a> waiting on
+                <a href="#" class="c-id-pill">kQn2r</a>
+              </div>
+            </article>
+
+            <article class="c-signal-card c-signal-card--primary" style="--progress: 42%">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M8 4.5v3.5h3" stroke-linecap="round" />
+                </svg>
+                <span class="c-signal-card__label">Longest active claim</span>
+              </div>
+              <div class="c-signal-card__value">8m 47s</div>
+              <div class="c-signal-card__context">
+                <span class="c-avatar c-avatar-dot" data-actor="alice"></span>
+                <strong class="t-muted">alice</strong> ·
+                <a href="#" class="c-id-pill">g7h8i</a>
+              </div>
+            </article>
+
+            <article class="c-signal-card c-signal-card--warn" style="--progress: 85%">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M8 2v12M2 8h12" stroke-linecap="round" />
+                </svg>
+                <span class="c-signal-card__label">Oldest todo</span>
+              </div>
+              <div class="c-signal-card__value">2d</div>
+              <div class="c-signal-card__context">
+                <a href="#" class="c-id-pill">mVc43</a> — Migrate config to sqlite
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Dependency graph — own full-width row -->
+        <section class="c-section" aria-labelledby="s-graph">
+          <div class="c-section__header">
+            <h2 id="s-graph" class="c-section__title">Dependency flow</h2>
+            <a href="#" class="t-label-caps t-muted">Open full graph →</a>
+          </div>
+          <div class="c-mini-graph">
+            <div class="c-graph-canvas" style="position: relative; width: 100%; max-width: 900px; height: 140px">
+              <!-- Edges (SVG underlay) -->
+              <svg
+                viewBox="0 0 900 140"
+                width="100%"
+                height="140"
+                style="position: absolute; inset: 0"
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M0 0 L10 5 L0 10 z" fill="#3b474d" />
+                  </marker>
+                </defs>
+                <!-- Horizontal hops stay as straight lines. -->
+                <path d="M88 70 L208 70" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <path d="M248 70 L368 70" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <path d="M570 30 L690 30" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <path d="M570 110 L690 110" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+
+                <!-- Diagonal hops use cubic béziers with control points half
+                     the horizontal distance out, both horizontal. This makes
+                     each curve leave the start node purely horizontal,
+                     gently S-curve, and arrive horizontal at the next node. -->
+                <path d="M408 70 C 469 70, 469 30, 530 30" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <path d="M408 70 C 469 70, 469 110, 530 110" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <path d="M730 30 C 790 30, 790 70, 850 70" stroke="#3b474d" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <path d="M730 110 C 790 110, 790 70, 850 70" stroke="#3b474d" stroke-width="1.5" fill="none" />
+
+                <!-- Blocker arc (dashed amber) — same tangent shape. -->
+                <path d="M570 30 C 630 30, 630 110, 690 110" stroke="#e8b14a" stroke-width="1.5" fill="none" stroke-dasharray="4 3" opacity="0.85" />
+              </svg>
+
+              <!-- Nodes (positioned absolutely over edges).
+                   Each node is a real anchor to its task. Bug avatars are
+                   anchors to the claiming actor. Collapse clusters (+N) link
+                   to the filtered task list. Node IDs are centered via
+                   transform: translate(-50%, 0) against the 32px disc. -->
+
+              <!-- Phase 1 — done -->
+              <a href="#/tasks/tPh1a" class="c-graph-node c-graph-node--done" data-task-id="tPh1a" title="tPh1a — Phase 1: foundations" aria-label="tPh1a — Phase 1: foundations (done)" style="position: absolute; left: 56px; top: 54px">
+                <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                  <path d="M4 8l3 3 5-6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </a>
+              <!-- Phase 2 — done -->
+              <a href="#/tasks/tPh2b" class="c-graph-node c-graph-node--done" data-task-id="tPh2b" title="tPh2b — Phase 2: server skeleton" aria-label="tPh2b — Phase 2: server skeleton (done)" style="position: absolute; left: 216px; top: 54px">
+                <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                  <path d="M4 8l3 3 5-6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </a>
+              <!-- Phase 3 — active hub, claimed by alice -->
+              <a href="#/tasks/z0OoG" class="c-graph-node c-graph-node--active" data-task-id="z0OoG" title="z0OoG — Phase 3: live updates (claimed by alice)" aria-label="z0OoG — Phase 3: live updates, claimed by alice" style="position: absolute; left: 376px; top: 54px">
+                <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="8" cy="8" r="3" />
+                </svg>
+              </a>
+              <a href="#/actors/alice" class="c-graph-node__bug c-graph-node__bug--detached" data-actor="alice" title="Claimed by alice" aria-label="Actor alice" style="position: absolute; left: 394px; top: 72px"></a>
+              <!-- Active child — claimed by bob -->
+              <a href="#/tasks/g7h8i" class="c-graph-node c-graph-node--active" data-task-id="g7h8i" title="g7h8i — SSR fragment endpoint (claimed by bob)" aria-label="g7h8i — SSR fragment endpoint, claimed by bob" style="position: absolute; left: 538px; top: 14px">
+                <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="8" cy="8" r="3" />
+                </svg>
+              </a>
+              <a href="#/actors/bob" class="c-graph-node__bug c-graph-node__bug--detached" data-actor="bob" title="Claimed by bob" aria-label="Actor bob" style="position: absolute; left: 556px; top: 32px"></a>
+              <!-- Blocked child — unclaimed -->
+              <a href="#/tasks/Rs82P" class="c-graph-node c-graph-node--blocked" data-task-id="Rs82P" title="Rs82P — Timeline strip (blocked on Wq7uV)" aria-label="Rs82P — Timeline strip, blocked" style="position: absolute; left: 538px; top: 94px">
+                <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <rect x="5" y="4" width="2" height="8" />
+                  <rect x="9" y="4" width="2" height="8" />
+                </svg>
+              </a>
+              <!-- Upcoming (+2) todo cluster -->
+              <a href="#/tasks?status=todo&amp;upstream=g7h8i" class="c-graph-node c-graph-node--todo" title="+2 upcoming: p2err, p4kbd" aria-label="2 upcoming tasks" style="position: absolute; left: 698px; top: 14px">
+                <span style="font-size: 10px">+2</span>
+              </a>
+              <a href="#/tasks?status=todo&amp;upstream=Rs82P" class="c-graph-node c-graph-node--todo" title="+3 upcoming: p5blk, p10dx, p10rc" aria-label="3 upcoming tasks" style="position: absolute; left: 698px; top: 94px">
+                <span style="font-size: 10px">+3</span>
+              </a>
+              <!-- Final — todo -->
+              <a href="#/tasks/tFin9" class="c-graph-node c-graph-node--todo" data-task-id="tFin9" title="tFin9 — Final phase: polish &amp; a11y" aria-label="tFin9 — Final phase, todo" style="position: absolute; left: 858px; top: 54px"></a>
+
+              <!-- Selection labels — centered on each node's 32px disc.
+                   left = node.left + 16 (node radius); transform translate(-50%) self-centers. -->
+              <span class="c-graph-label" style="left: 392px; top: 92px">z0OoG</span>
+              <span class="c-graph-label" style="left: 554px; top: 52px">g7h8i</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Four-panel row: Active Claims | Available | Recent completions | Blocked -->
+        <div class="c-grid-cols-4">
+          <section class="c-panel" aria-labelledby="p-recent">
+            <div class="c-panel__header">
+              <h2 id="p-recent" class="c-panel__title">Recent completions</h2>
+              <span class="c-panel__meta">last 10m</span>
+            </div>
+            <div class="c-panel__list">
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/claude" class="c-avatar c-avatar-sm" data-actor="claude" aria-label="Actor claude"></a>
+                <span class="c-id-pill">6rIG3</span>
+                <span class="c-panel-row__title">tokens.css</span>
+                <span class="c-panel-row__meta">12m</span>
+                <a href="#/tasks/6rIG3" class="c-row-link" aria-label="Open task 6rIG3"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/claude" class="c-avatar c-avatar-sm" data-actor="claude" aria-label="Actor claude"></a>
+                <span class="c-id-pill">LGpqD</span>
+                <span class="c-panel-row__title">base.css</span>
+                <span class="c-panel-row__meta">10m</span>
+                <a href="#/tasks/LGpqD" class="c-row-link" aria-label="Open task LGpqD"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/claude" class="c-avatar c-avatar-sm" data-actor="claude" aria-label="Actor claude"></a>
+                <span class="c-id-pill">P5JAV</span>
+                <span class="c-panel-row__title">components.css</span>
+                <span class="c-panel-row__meta">7m</span>
+                <a href="#/tasks/P5JAV" class="c-row-link" aria-label="Open task P5JAV"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/eve" class="c-avatar c-avatar-sm" data-actor="eve" aria-label="Actor eve"></a>
+                <span class="c-id-pill">L9mcH</span>
+                <span class="c-panel-row__title">Migration runner</span>
+                <span class="c-panel-row__meta">5m</span>
+                <a href="#/tasks/L9mcH" class="c-row-link" aria-label="Open task L9mcH"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/carla" class="c-avatar c-avatar-sm" data-actor="carla" aria-label="Actor carla"></a>
+                <span class="c-id-pill">bB2nx</span>
+                <span class="c-panel-row__title">Docs sweep</span>
+                <span class="c-panel-row__meta">3m</span>
+                <a href="#/tasks/bB2nx" class="c-row-link" aria-label="Open task bB2nx"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/claude" class="c-avatar c-avatar-sm" data-actor="claude" aria-label="Actor claude"></a>
+                <span class="c-id-pill">hru6q</span>
+                <span class="c-panel-row__title">Home prototype HTML</span>
+                <span class="c-panel-row__meta">2m</span>
+                <a href="#/tasks/hru6q" class="c-row-link" aria-label="Open task hru6q"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/claude" class="c-avatar c-avatar-sm" data-actor="claude" aria-label="Actor claude"></a>
+                <span class="c-id-pill">P4gto</span>
+                <span class="c-panel-row__title">Plan prototype HTML</span>
+                <span class="c-panel-row__meta">1m</span>
+                <a href="#/tasks/P4gto" class="c-row-link" aria-label="Open task P4gto"></a>
+              </div>
+            </div>
+          </section>
+
+          <section class="c-panel" aria-labelledby="p-claims">
+            <div class="c-panel__header">
+              <h2 id="p-claims" class="c-panel__title">Active claims</h2>
+              <span class="c-panel__meta">5 in flight</span>
+            </div>
+            <div class="c-panel__list">
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/alice" class="c-avatar c-avatar-sm" data-actor="alice" aria-label="Actor alice"></a>
+                <span class="c-id-pill">g7h8i</span>
+                <span class="c-panel-row__title">SSR fragment endpoint</span>
+                <span class="c-panel-row__meta">8m 47s</span>
+                <a href="#/tasks/g7h8i" class="c-row-link" aria-label="Open task g7h8i"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/bob" class="c-avatar c-avatar-sm" data-actor="bob" aria-label="Actor bob"></a>
+                <span class="c-id-pill">kQn2r</span>
+                <span class="c-panel-row__title">Broadcaster fan-out</span>
+                <span class="c-panel-row__meta">3m 12s</span>
+                <a href="#/tasks/kQn2r" class="c-row-link" aria-label="Open task kQn2r"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/dmitri" class="c-avatar c-avatar-sm" data-actor="dmitri" aria-label="Actor dmitri"></a>
+                <span class="c-id-pill">Wq7uV</span>
+                <span class="c-panel-row__title">Actor column layout</span>
+                <span class="c-panel-row__meta">42s</span>
+                <a href="#/tasks/Wq7uV" class="c-row-link" aria-label="Open task Wq7uV"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/alice" class="c-avatar c-avatar-sm" data-actor="alice" aria-label="Actor alice"></a>
+                <span class="c-id-pill">Pk2vQ</span>
+                <span class="c-panel-row__title">Plan view SSR</span>
+                <span class="c-panel-row__meta">14s</span>
+                <a href="#/tasks/Pk2vQ" class="c-row-link" aria-label="Open task Pk2vQ"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+                <a href="#/actors/claude" class="c-avatar c-avatar-sm" data-actor="claude" aria-label="Actor claude"></a>
+                <span class="c-id-pill">NTG9Q</span>
+                <span class="c-panel-row__title">Home view v2</span>
+                <span class="c-panel-row__meta">4s</span>
+                <a href="#/tasks/NTG9Q" class="c-row-link" aria-label="Open task NTG9Q"></a>
+              </div>
+            </div>
+          </section>
+
+          <section class="c-panel" aria-labelledby="p-available">
+            <div class="c-panel__header">
+              <h2 id="p-available" class="c-panel__title">Available</h2>
+              <span class="c-panel__meta">unclaimed</span>
+            </div>
+            <div class="c-panel__list">
+              <div class="c-panel-row" style="--row-cols: 80px 1fr auto">
+                <span class="c-id-pill">p2err</span>
+                <span class="c-panel-row__title">404 / 500 pages</span>
+                <span class="c-panel-row__meta t-dim">web</span>
+                <a href="#/tasks/p2err" class="c-row-link" aria-label="Open task p2err"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: 80px 1fr auto">
+                <span class="c-id-pill">p4kbd</span>
+                <span class="c-panel-row__title">Plan keyboard nav</span>
+                <span class="c-panel-row__meta t-dim">a11y</span>
+                <a href="#/tasks/p4kbd" class="c-row-link" aria-label="Open task p4kbd"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: 80px 1fr auto">
+                <span class="c-id-pill">p5blk</span>
+                <span class="c-panel-row__title">Home blocked strip</span>
+                <span class="c-panel-row__meta t-dim">home</span>
+                <a href="#/tasks/p5blk" class="c-row-link" aria-label="Open task p5blk"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: 80px 1fr auto">
+                <span class="c-id-pill">p10dx</span>
+                <span class="c-panel-row__title">Documentation sweep</span>
+                <span class="c-panel-row__meta t-dim">docs</span>
+                <a href="#/tasks/p10dx" class="c-row-link" aria-label="Open task p10dx"></a>
+              </div>
+              <div class="c-panel-row" style="--row-cols: 80px 1fr auto">
+                <span class="c-id-pill">p10rc</span>
+                <span class="c-panel-row__title">Connection recovery</span>
+                <span class="c-panel-row__meta t-dim">polish</span>
+                <a href="#/tasks/p10rc" class="c-row-link" aria-label="Open task p10rc"></a>
+              </div>
+            </div>
+          </section>
+
+          <section class="c-panel" aria-labelledby="p-blocked">
+            <div class="c-panel__header">
+              <h2 id="p-blocked" class="c-panel__title">Blocked</h2>
+              <span class="c-panel__meta">3 waiting</span>
+            </div>
+            <div class="c-panel__list">
+              <div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">
+                <span class="c-id-pill">Rs82P</span>
+                <div class="stack stack-gap-xs">
+                  <span class="c-panel-row__title">Timeline strip</span>
+                  <span class="c-panel-row__meta">waiting on <a href="#/tasks/Wq7uV" class="c-id-pill">Wq7uV</a></span>
+                </div>
+                <a href="#/tasks/Rs82P" class="c-row-link" aria-label="Open task Rs82P"></a>
+              </div>
+              <div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">
+                <span class="c-id-pill">x4Kz1</span>
+                <div class="stack stack-gap-xs">
+                  <span class="c-panel-row__title">Schema migration</span>
+                  <span class="c-panel-row__meta">waiting on <a href="#/tasks/L9mcH" class="c-id-pill">L9mcH</a></span>
+                </div>
+                <a href="#/tasks/x4Kz1" class="c-row-link" aria-label="Open task x4Kz1"></a>
+              </div>
+              <div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">
+                <span class="c-id-pill">P9spw</span>
+                <div class="stack stack-gap-xs">
+                  <span class="c-panel-row__title">Error page styling</span>
+                  <span class="c-panel-row__meta">waiting on <a href="#/tasks/Pk2vQ" class="c-id-pill">Pk2vQ</a></span>
+                </div>
+                <a href="#/tasks/P9spw" class="c-row-link" aria-label="Open task P9spw"></a>
+              </div>
+              <div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">
+                <span class="c-id-pill">9AWkj</span>
+                <div class="stack stack-gap-xs">
+                  <span class="c-panel-row__title">Design review gate</span>
+                  <span class="c-panel-row__meta">waiting on <a href="#/tasks/NTG9Q" class="c-id-pill">NTG9Q</a>, <a href="#/tasks/2YZO5" class="c-id-pill">2YZO5</a>, <a href="#/tasks/5aqpd" class="c-id-pill">5aqpd</a>, <a href="#/tasks/mPubp" class="c-id-pill">mPubp</a>, <a href="#/tasks/FySZM" class="c-id-pill">FySZM</a>, <a href="#/tasks/6mrqO" class="c-id-pill">6mrqO</a></span>
+                </div>
+                <a href="#/tasks/9AWkj" class="c-row-link" aria-label="Open task 9AWkj"></a>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <section class="c-scrubber-strip" style="--x: 75%" aria-label="Scrubber">
+        <div class="c-scrubber-strip__meta">
+          <span>Scrubbing</span>
+          <span class="c-scrubber-strip__meta-at">6h ago &middot; evt_018f2c</span>
+          <span class="t-dim" style="text-transform: none; letter-spacing: 0; font-weight: 400">Drag the cursor or &larr;/&rarr; to step. &#8984;-scroll to zoom the timeline.</span>
+          <span class="grow"></span>
+          <button type="button" class="c-scrubber-strip__return">
+            <span class="c-scrubber-strip__return-dot"></span>
+            Return to live
+          </button>
+        </div>
+        <div class="c-scrubber-strip__track">
+          <div class="c-scrubber-strip__bars">
+              <span class="c-scrubber-strip__bar" style="--h:8%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:11%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:11%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:13%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:7%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:8%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:7%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:8%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:12%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:7%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:10%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:8%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:8%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:9%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:13%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:11%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:6%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:8%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:7%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:13%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:12%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:12%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:13%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:12%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:20%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:18%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:11%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:21%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:17%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:22%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:20%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:19%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:19%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:21%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:20%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:19%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:30%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:31%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:35%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:31%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:30%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:34%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:26%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:35%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:33%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:30%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:31%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:37%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:52%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:60%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:66%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:63%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:58%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:69%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:65%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:67%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:68%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:74%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:68%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:85%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:94%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:81%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:91%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:97%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:76%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:80%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:97%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:99%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:95%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:83%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:90%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:100%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:100%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:100%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:85%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:100%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:88%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:96%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:81%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:100%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:91%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:93%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:79%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:88%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:85%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:84%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:77%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:84%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:73%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:70%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:65%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:64%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:48%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:38%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:26%"></span>
+              <span class="c-scrubber-strip__bar" style="--h:21%"></span>
+          </div>
+          <div class="c-scrubber-strip__tooltip" role="tooltip">
+            <div class="c-scrubber-strip__tooltip-head">
+              <span>2026-04-22 12:11:47</span>
+              <span>&middot;</span>
+              <span>6h ago</span>
+            </div>
+            <div class="c-scrubber-strip__tooltip-body">
+              <span class="c-avatar c-avatar-sm" data-actor="claude"></span>
+              <span class="c-log-row__verb c-log-row__verb--done">done</span>
+              <span class="c-id-pill">hru6q</span>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">Home view prototype HTML</span>
+            </div>
+          </div>
+          <div class="c-scrubber-strip__cursor" aria-label="Cursor"></div>
+        </div>
+        <div class="c-scrubber-strip__axis" aria-hidden="true">
+          <span style="left: 0%">24h</span>
+          <span style="left: 25%">18h</span>
+          <span style="left: 50%">12h</span>
+          <span style="left: 75%">6h</span>
+          <span style="left: 100%">now</span>
+        </div>
+      </section>
+
+      <!-- ===================== Footer ===================== -->
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">6</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">5</span><span class="c-footer__metric-label">WIP</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">142</span><span class="c-footer__metric-label">events / min</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">12.4</span><span class="c-footer__metric-label">tasks / hr</span></span>
+        <div class="grow"></div>
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>last event 3s ago</span>
+        </span>
+        <span class="c-footer__metric"><span>Connected</span></span>
+      </footer>
+    </div>
+
+    <script src="js/colors.js"></script>
+  </body>
+</html>

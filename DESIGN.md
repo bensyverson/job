@@ -312,7 +312,9 @@ Never render an actor as a naked name; always include at least the dot form.
 
 **Status pills.** Icon (inline SVG) + short text ("Active", "Blocked", "Done", "Todo") + a 10%-opacity fill tinted by the status color and a 1px border of the same color at full opacity. Typography is `label-caps`. Used on every task row, task card, and task detail.
 
-**Signal card.** The three home-page cards (idle, blocked, longest-claim, oldest-todo). Internal layout: icon + uppercase label + `display` value + `body-sm` context line. A 2px colored underline (`signal-card-underline`) sits at the bottom of the card, tinted by the card's signal color (`signal-warn`, `signal-alert`, or `primary`). The underline is also a progress bar: it fills as the metric approaches its threshold. Ambient — you don't notice it on first read — but it adds a second dimension of information without chrome.
+**Signal card.** The four home-page cards (activity histogram, newly-blocked, longest-claim, oldest-todo). Internal layout: icon + uppercase label + `display` value + `body-sm` context line, with the context line pinned to the bottom so cards align flush across the grid regardless of value height. A 2px colored underline (`signal-card-underline`) sits at the bottom of the card, tinted by the card's signal color (`signal-warn`, `signal-alert`, or `primary`). The underline is also a progress bar: it fills as the metric approaches its threshold. Ambient — you don't notice it on first read — but it adds a second dimension of information without chrome.
+
+**Activity histogram.** Occupies the first signal card (replaced "Idle actors" — idleness isn't meaningful when agents come and go). 60 bars, one per minute over the last hour, each stacked by event type (`created` / `claimed` / `done` / `blocked`) using the status palette. Bar height is the minute's total event count normalized to the max minute in the window; segments within each bar are `flex: N` weighted by per-type count. The card's context line carries a swatch-keyed legend, each legend item a no-wrap unit so swatch and label never break mid-phrase. Empty state: a single flat 1px rule and "No events in the last hour."
 
 **Graph node.** The 32px avatar disk reused as a graph node. Two independent axes:
 
@@ -323,7 +325,11 @@ Edges: solid curves for parent/child, dashed curves for blocker relationships (o
 
 **Peek sheet.** Slides from the right at 440px wide at Level 3 elevation. URL state: `?preview=<task-id>`. Reloading the URL reopens the sheet. Escape key or clicking the dimmed overlay closes. The sheet contains the task's status, labels, notes (as code blocks), blockers, blocked-by, event history, and a notification bell. A prominent "Open full page" link navigates to `/tasks/<id>` for the full view.
 
-**Scrubber pill.** Collapsed by default as a small `full`-radius pill in the footer showing `● Live` (small green dot + label). Clicking expands it into a horizontal bar with play/pause, ±1 event arrows, and a draggable cursor over an event-density minimap. When scrubbing, the main viewport dims to 0.85 opacity and a banner appears: *"Viewing history — return to live."*
+**Scrubber pill.** Collapsed by default as a small `full`-radius pill in the footer showing `● Live` (small `status-active` dot + label). Clicking expands it into the full scrubber strip (see below), and the `?at=<event>` URL parameter pins the view to that event.
+
+**Scrubber strip (expanded).** Full-width bar above the footer. Contains a meta line (`Scrubbing` + `?at=` event id + `Ns ago` + a hint on gestures), a 24-hour density track (one bar per 15-minute bucket, height proportional to event count, bar color `outline-strong`), a time axis (24h / 18h / 12h / 6h / now), and a `signal-warn` cursor line with a round grip positioned via `--x`. A Level-3 popover tooltip above the cursor shows wall-clock + `N ago` + actor avatar + verb + id-pill + title for the event at the cursor. **The cursor is the only selection** — a scrubbed view is always a single point in time; zoom is purely a viewport gesture (⌘-scroll / keyboard) and does not create a range. A small `status-active` outline pill labelled `● Return to live` floats right in both the strip's meta line and the history banner, keeping the escape hatch in eye-view at both ends of the screen.
+
+**History banner.** One-line amber strip below the header whenever `?at=` is set. `signal-warn` pulse dot + `Viewing history` (label-caps) + `?at=<event> · N ago · wall-clock` in mono + spacer + the `● Return to live` pill at the right edge. The banner is the "you are not live" affordance; the strip is how you navigate within history.
 
 **Buttons.** Two variants only.
 
@@ -336,6 +342,12 @@ No tertiary, no destructive, no large/small variants unless a view genuinely nee
 
 **Data rows.** 36px tall, 12px horizontal padding. Monospace (`data-sm`) for IDs, timestamps, and numeric values; sans (`body-sm`) for titles, actor names, and labels. Hover state uses `surface-raised`. Selected rows carry a 3px vertical `primary` bar on the far left.
 
+**Log row.** Single-column chronological event row for the Log view. Grid columns: time (mono, right-aligned) · actor (avatar + name) · verb · id-pill · title + optional note. Verb is `label-caps` colored by event type — `created` uses primary, `claimed` / `unblocked` use `status-active`, `done` / `released` / `canceled` use `text-done`, `blocked` uses `status-blocked`, `noted` uses `on-surface-dim`. The row also takes a `c-log-row--<verb>` modifier that tints the *row's* title + id-pill using the same text-state tokens as Plan mode — so a glance down the feed reads as the task's state-change history without having to parse each verb. Actor column is tight (90–120px) so the verb sits close to the actor label. Most-recent rows carry a `c-log-row--new` modifier with a slide-in keyframe.
+
+**Filter bar + filter chip.** Stacked rows of chips above a list view. Each row is one filter axis (Events / Actor / Label) with a right-aligned `label-caps` label at a fixed min-width so axis labels align vertically. Chips are small `full`-radius pills — transparent fill, hairline `outline` border, `label-caps` text. Active state uses a 1px `primary` border + 10% primary fill + `primary` text. Label chips can carry an actor dot (inline `avatar-dot`) for per-actor filter rows. Chips wrap within their row; whole axes never break across rows.
+
+**Row-link (stretched link).** Pattern used across Home panel rows, Log rows, and Actor cards: one anchor element (`c-row-link`) positioned `inset: 0` at `z-index: 1` turns the entire row/card into a single link to the task without nested `<a>`. Any interactive child (actor avatar, blocker pill) bumps to `z-index: 2` so it keeps its own click target. Cmd/middle/right-click all work because the overlay is a real anchor. Text selection is the known tradeoff — the row is a *navigation surface*, not a readable transcript.
+
 **ID pill.** A compact monospace chip used wherever a 5-character task ID appears. `surface-raised` background, `data-id` typography, `sm` radius. Auto-links to the task via the peek sheet.
 
 **Label/tag pill.** Same shape as the ID pill but with `body-sm` typography. Deterministically colored per the label-identity rule in §Colors: a 15%-opacity fill and a full-chroma 1px outline in the label's hashed hue. Lower saturation than actor avatars so labels read as supporting metadata, not identity.
@@ -346,7 +358,13 @@ No tertiary, no destructive, no large/small variants unless a view genuinely nee
 
 **Favicon.** Dynamic and readable at 16px. Idle = monochrome dot on background. Active = `primary` pulse. Stuck = `signal-warn` tint. Supports the pinned-tab use case.
 
-**Timeline strip.** Swimlane visualization beneath the Actors view. One row per actor, time as x-axis, bars for claim→done spans colored by actor. Tied to the scrubber: dragging the scrubber moves the cursor along the timeline.
+**Actor board (Actors view).** Horizontally-scrolling board of fixed-width actor columns (~320px). Each column is a tonal card with a non-scrolling header (`avatar-lg` + name + one-line status: claim count + last-seen) and a vertically-scrolling stream below. `flex-direction: column-reverse` on the stream anchors the viewport to the bottom: current claims dock at the bottom, history scrolls up off-screen. Idle actors (`c-actor-col--idle`) fade to 0.72 opacity. The board scrolls horizontally with `scroll-snap-type: x proximity` when there are more actors than columns fit.
+
+**Actor card (Trello-style task card).** One card per `(actor, task)` pair — **not** per event. The card's tint + verb reflect the latest *state-changing* event for that actor on that task; notes collapse into an inline `· N notes` badge on the parent card rather than duplicating it. Card tints: `claimed` / `blocked` use the status tokens and add a matching tinted border; `created` uses a `primary` 35% tint for net-new tasks; `done` / `released` / `canceled` / `noted` use the default `on-surface` so completion cards read as real content rather than faded noise. Layout: meta row (verb + optional notes badge + timestamp, timestamp right-aligned via `margin-left: auto`), title row (id-pill + task title, title truncates with ellipsis), 2-line clamped description.
+
+Each column is the actor's own little world — the same task can appear in two columns if two actors have touched it, each showing its own relationship to the task. Not an event log; the Log view owns that.
+
+**Timeline strip (single-actor view).** Per-lane event-density visualization on the expanded single-actor view. Five lanes (created / claimed / done / blocked / noted), each a 14px track; colored marks at `--x` percent of the 24h window. Complements the scrubber's cross-actor density strip with a per-actor read.
 
 **Tabs (top nav).** `label-caps` typography. Active tab shows a 2px `primary` underline with a `full`-radius cap. Inactive tabs use `on-surface-muted` text; hover brings them to `on-surface`.
 

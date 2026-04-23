@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Home (empty) — Jobs</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="c-header" role="banner">
+        <span class="c-header__brand">Jobs</span>
+        <nav class="c-tabs" aria-label="Primary">
+          <a href="home.html" class="c-tab c-tab--active">Home</a>
+          <a href="plan.html" class="c-tab">Plan</a>
+          <a href="actors.html" class="c-tab">Actors</a>
+          <a href="log.html" class="c-tab">Log</a>
+        </nav>
+        <div class="grow"></div>
+        <label class="c-header__search row row-gap-sm">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+          </svg>
+          <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" />
+        </label>
+        <button class="c-bell" aria-label="Notifications">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+            <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="c-button c-button--ghost c-button--icon" aria-label="Toggle theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12.5 9.5a5 5 0 1 1-6-6 4 4 0 0 0 6 6z" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <main class="main" role="main">
+        <!-- Signal cards — at-rest state: primary-tinted underlines, low values, calm copy -->
+        <section class="c-section" aria-labelledby="s-signals">
+          <h2 id="s-signals" class="sr-only">Signals</h2>
+          <div class="c-grid-signals">
+            <article class="c-signal-card c-signal-card--primary">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <rect x="2" y="9" width="2.25" height="5" rx="0.5" />
+                  <rect x="6.875" y="5" width="2.25" height="9" rx="0.5" />
+                  <rect x="11.75" y="2" width="2.25" height="12" rx="0.5" />
+                </svg>
+                <span class="c-signal-card__label">Activity · last 60m</span>
+              </div>
+              <div class="c-histogram" role="img" aria-label="No events in the last hour">
+                <span class="c-histogram__bar c-histogram__bar--empty" style="--h:1%"></span>
+              </div>
+              <div class="c-signal-card__context t-dim">No events in the last hour.</div>
+            </article>
+
+            <article class="c-signal-card c-signal-card--primary" style="--progress: 0%">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+                  <path d="M5 5l6 6M11 5l-6 6" stroke-linecap="round" />
+                </svg>
+                <span class="c-signal-card__label">Newly blocked · 10m</span>
+              </div>
+              <div class="c-signal-card__value">0</div>
+              <div class="c-signal-card__context t-dim">Nothing is blocked.</div>
+            </article>
+
+            <article class="c-signal-card c-signal-card--primary" style="--progress: 0%">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M8 4.5v3.5h3" stroke-linecap="round" />
+                </svg>
+                <span class="c-signal-card__label">Longest active claim</span>
+              </div>
+              <div class="c-signal-card__value t-dim">—</div>
+              <div class="c-signal-card__context t-dim">No active claims.</div>
+            </article>
+
+            <article class="c-signal-card c-signal-card--primary" style="--progress: 0%">
+              <div class="c-signal-card__header">
+                <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M8 2v12M2 8h12" stroke-linecap="round" />
+                </svg>
+                <span class="c-signal-card__label">Oldest todo</span>
+              </div>
+              <div class="c-signal-card__value t-dim">—</div>
+              <div class="c-signal-card__context t-dim">No todos.</div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Mini-graph + Blocked -->
+        <div class="c-grid-cols-2">
+          <section class="c-section" aria-labelledby="s-graph">
+            <div class="c-section__header">
+              <h2 id="s-graph" class="c-section__title">Dependency flow</h2>
+              <a href="#" class="t-label-caps t-muted">Open full graph →</a>
+            </div>
+            <div class="c-mini-graph">
+              <p class="c-empty">No tasks in the store yet.</p>
+            </div>
+          </section>
+
+          <section class="c-section" aria-labelledby="s-blocked">
+            <h2 id="s-blocked" class="c-section__title">Blocked</h2>
+            <p class="c-empty">Nothing blocked.</p>
+          </section>
+        </div>
+
+        <!-- Active claims + Recent completions -->
+        <div class="c-grid-cols-2">
+          <section class="c-section surface" aria-labelledby="s-claims">
+            <div class="c-section__header" style="padding: var(--space-md) var(--space-lg) 0">
+              <h2 id="s-claims" class="c-section__title">Active claims</h2>
+            </div>
+            <p class="c-empty" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
+              No claims in flight.
+            </p>
+          </section>
+
+          <section class="c-section surface" aria-labelledby="s-recent">
+            <div class="c-section__header" style="padding: var(--space-md) var(--space-lg) 0">
+              <h2 id="s-recent" class="c-section__title">Recent completions</h2>
+            </div>
+            <p class="c-empty" style="padding: var(--space-md) var(--space-lg) var(--space-lg)">
+              Nothing completed in the last 10 minutes.
+            </p>
+          </section>
+        </div>
+      </main>
+
+      <footer class="c-footer" role="contentinfo">
+        <span class="c-footer__metric"><span class="c-footer__metric-value">0</span><span class="c-footer__metric-label">actors</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">0</span><span class="c-footer__metric-label">WIP</span></span>
+        <span class="c-footer__metric"><span class="c-footer__metric-value">0</span><span class="c-footer__metric-label">events / min</span></span>
+        <div class="grow"></div>
+        <button class="c-scrubber-pill" aria-label="Scrub through history">
+          <span class="c-scrubber-pill__dot"></span>
+          <span>Live</span>
+        </button>
+        <div class="grow"></div>
+        <span class="c-footer__heartbeat">
+          <span class="c-footer__heartbeat-dot"></span>
+          <span>waiting for first event</span>
+        </span>
+      </footer>
+    </div>
+    <script src="js/colors.js"></script>
+  </body>
+</html>

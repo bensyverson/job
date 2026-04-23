@@ -1,0 +1,299 @@
+/*
+  Base stylesheet — layout primitives, surfaces, typography defaults,
+  focus rules, scrollbar styling. Pairs with tokens.css.
+*/
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-ui);
+  font-size: var(--font-body-md-size);
+  font-weight: var(--font-body-md-weight);
+  line-height: var(--font-body-md-line-height);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  color: var(--color-on-surface);
+}
+
+/* ---------- Headings ---------- */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--color-on-surface);
+}
+
+h1,
+.t-display {
+  font-size: var(--font-display-size);
+  font-weight: var(--font-display-weight);
+  line-height: var(--font-display-line-height);
+  letter-spacing: var(--font-display-letter-spacing);
+}
+
+h2,
+.t-heading-lg {
+  font-size: var(--font-heading-lg-size);
+  font-weight: var(--font-heading-lg-weight);
+  line-height: var(--font-heading-lg-line-height);
+  letter-spacing: var(--font-heading-lg-letter-spacing);
+}
+
+h3,
+.t-heading-md {
+  font-size: var(--font-heading-md-size);
+  font-weight: var(--font-heading-md-weight);
+  line-height: var(--font-heading-md-line-height);
+}
+
+.t-body-md {
+  font-size: var(--font-body-md-size);
+  font-weight: var(--font-body-md-weight);
+  line-height: var(--font-body-md-line-height);
+}
+
+.t-body-sm {
+  font-size: var(--font-body-sm-size);
+  font-weight: var(--font-body-sm-weight);
+  line-height: var(--font-body-sm-line-height);
+}
+
+/* label-caps is letter-spaced sentence case, not uppercase. Use .t-anchor
+   for the rare full-uppercase single-word anchor labels. */
+.t-label-caps {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  line-height: var(--font-label-caps-line-height);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+}
+
+.t-anchor {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  line-height: var(--font-label-caps-line-height);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+}
+
+.t-data-md {
+  font-family: var(--font-mono);
+  font-size: var(--font-data-md-size);
+  font-weight: var(--font-data-md-weight);
+  line-height: var(--font-data-md-line-height);
+}
+
+.t-data-sm {
+  font-family: var(--font-mono);
+  font-size: var(--font-data-sm-size);
+  font-weight: var(--font-data-sm-weight);
+  line-height: var(--font-data-sm-line-height);
+}
+
+.t-data-id {
+  font-family: var(--font-mono);
+  font-size: var(--font-data-id-size);
+  font-weight: var(--font-data-id-weight);
+  line-height: var(--font-data-id-line-height);
+}
+
+.t-muted {
+  color: var(--color-on-surface-muted);
+}
+
+.t-dim {
+  color: var(--color-on-surface-dim);
+}
+
+/* ---------- Surfaces ---------- */
+
+.surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-md);
+}
+
+.surface-raised {
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-md);
+}
+
+.surface-popover {
+  background: var(--color-surface-popover);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-level-3-shadow);
+}
+
+.hairline {
+  border-bottom: 1px solid var(--color-outline);
+}
+
+/* ---------- Focus ---------- */
+
+/* Remove default outlines so we can apply our own consistent ring. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--focus-ring-outer-color);
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- Links ---------- */
+
+a {
+  color: var(--color-on-surface);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+a:hover {
+  border-bottom-color: var(--color-outline-strong);
+}
+
+a.t-muted:hover {
+  color: var(--color-on-surface);
+}
+
+/* ---------- Scrollbars (dark-mode tuned) ---------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-outline-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-outline-strong);
+  border: 2px solid var(--color-background);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-on-surface-dim);
+}
+
+/* ---------- Page scaffold ---------- */
+
+.page {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  min-height: 0;
+}
+
+.main {
+  padding: var(--space-container-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Utilities used broadly across views. */
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.row-gap-xs {
+  gap: var(--space-xs);
+}
+
+.row-gap-sm {
+  gap: var(--space-sm);
+}
+
+.row-gap-md {
+  gap: var(--space-md);
+}
+
+.row-gap-lg {
+  gap: var(--space-lg);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.stack-gap-xs {
+  gap: var(--space-xs);
+}
+
+.stack-gap-sm {
+  gap: var(--space-sm);
+}
+
+.stack-gap-md {
+  gap: var(--space-md);
+}
+
+.stack-gap-lg {
+  gap: var(--space-lg);
+}
+
+.stack-gap-xl {
+  gap: var(--space-xl);
+}
+
+.grow {
+  flex: 1 1 auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

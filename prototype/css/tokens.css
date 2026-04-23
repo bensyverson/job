@@ -1,0 +1,157 @@
+/*
+  Design tokens translated from DESIGN.md (version: alpha).
+  Source of truth is DESIGN.md — keep this file in sync with it.
+*/
+
+:root {
+  /* ---------- Colors ---------- */
+
+  /* Surface tiers — tonal layering, not shadows */
+  --color-background: #0b1113;
+  --color-surface: #11181a;
+  --color-surface-raised: #171f21;
+  --color-surface-popover: #1d262a;
+  --color-outline: #2a3438;
+  --color-outline-strong: #3b474d;
+
+  /* Text */
+  --color-on-surface: #e6ecea;
+  --color-on-surface-muted: #a8b4b2;
+  --color-on-surface-dim: #6f7b79;
+
+  /* Primary accent — chrome only (tabs, focus, primary buttons, heartbeat) */
+  --color-primary: #3cddc7;
+  --color-primary-dim: #1fa997;
+  --color-on-primary: #00201c;
+
+  /* Status — semantic; always paired with icon + text */
+  --color-status-todo: #8b9a97;
+  --color-status-active: #3dd280;
+  --color-status-blocked: #e8b14a;
+  --color-status-done: #5a6967;
+
+  /* Signals — aging / stuck warnings; distinct from status-blocked */
+  --color-signal-warn: #e8865c;
+  --color-signal-alert: #e84d4d;
+
+  /* Error — validation, connection loss */
+  --color-error: #ff9b94;
+  --color-on-error: #3e0000;
+
+  /* ---------- Typography ---------- */
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+
+  /* display */
+  --font-display-size: 28px;
+  --font-display-weight: 600;
+  --font-display-line-height: 1.2;
+  --font-display-letter-spacing: -0.02em;
+
+  /* heading-lg */
+  --font-heading-lg-size: 20px;
+  --font-heading-lg-weight: 600;
+  --font-heading-lg-line-height: 1.3;
+  --font-heading-lg-letter-spacing: -0.01em;
+
+  /* heading-md */
+  --font-heading-md-size: 15px;
+  --font-heading-md-weight: 600;
+  --font-heading-md-line-height: 1.3;
+  --font-heading-md-letter-spacing: 0;
+
+  /* body-md */
+  --font-body-md-size: 14px;
+  --font-body-md-weight: 400;
+  --font-body-md-line-height: 1.5;
+
+  /* body-sm */
+  --font-body-sm-size: 13px;
+  --font-body-sm-weight: 400;
+  --font-body-sm-line-height: 1.4;
+
+  /* label-caps — letter-spaced sentence case, not shouty all-caps */
+  --font-label-caps-size: 11px;
+  --font-label-caps-weight: 600;
+  --font-label-caps-line-height: 1.3;
+  --font-label-caps-letter-spacing: 0.06em;
+
+  /* data-md */
+  --font-data-md-size: 13px;
+  --font-data-md-weight: 400;
+  --font-data-md-line-height: 1.5;
+
+  /* data-sm */
+  --font-data-sm-size: 12px;
+  --font-data-sm-weight: 400;
+  --font-data-sm-line-height: 1.4;
+
+  /* data-id — monospace short IDs */
+  --font-data-id-size: 11px;
+  --font-data-id-weight: 500;
+  --font-data-id-line-height: 1.3;
+
+  /* ---------- Radii ---------- */
+
+  --radius-none: 0;
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ---------- Spacing ---------- */
+
+  --space-unit: 4px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 40px;
+
+  --space-gutter: 16px;
+  --space-container-padding: 24px;
+
+  /* ---------- Motion ---------- */
+
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 200ms;
+  --motion-duration-slow: 320ms;
+  --motion-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------- Elevation ---------- */
+
+  /* Level 3 is the only tier with a shadow; Levels 1–2 use tonal surfaces. */
+  --elevation-level-3-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  /* ---------- Component sizes ---------- */
+
+  --avatar-dot-size: 6px;
+  --avatar-sm-size: 20px;
+  --avatar-md-size: 24px;
+  --avatar-lg-size: 32px;
+
+  --graph-node-size: 32px;
+  --peek-sheet-width: 440px;
+  --data-row-height: 36px;
+  --metric-strip-height: 36px;
+
+  /* ---------- Focus ring ---------- */
+
+  --focus-ring-width: 2px;
+  --focus-ring-color: var(--color-primary);
+  --focus-ring-outer-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+
+  /* ---------- Row-state text tints ----------
+     Reinforce status pills with a light color wash on the row text.
+     Todo uses the default on-surface; done uses the existing dim.
+     Active and blocked mix toward white with a tint of the status hue.
+  */
+  --color-text-active: color-mix(in srgb, var(--color-status-active) 35%, #ffffff);
+  --color-text-blocked: color-mix(in srgb, var(--color-status-blocked) 55%, #ffffff);
+  --color-text-done: var(--color-on-surface-muted);
+  --color-text-todo: var(--color-on-surface);
+}

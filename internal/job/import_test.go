@@ -451,3 +451,182 @@ func TestImport_NoTasksBlock_Errors(t *testing.T) {
 		t.Errorf("error:\n  got:  %q\n  want: %q", err.Error(), want)
 	}
 }
+
+// Imported siblings must receive distinct, ascending sort_order values so
+// findNextSibling's `SortOrder > closed.SortOrder` filter can pick them
+// apart. Historically every imported task was written with sort_order=0,
+// breaking Next: hints for any imported umbrella.
+func TestImport_AssignsSequentialSortOrderPerParent(t *testing.T) {
+	db := SetupTestDB(t)
+
+	body := "```yaml\n" +
+		"tasks:\n" +
+		"  - title: Umbrella\n" +
+		"    children:\n" +
+		"      - title: A\n" +
+		"      - title: B\n" +
+		"      - title: C\n" +
+		"      - title: D\n" +
+		"```\n"
+
+	path := writeTempPlan(t, body)
+	if _, err := RunImport(db, path, "", false, "alice"); err != nil {
+		t.Fatalf("RunImport: %v", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT t.title, t.sort_order
+		FROM tasks t
+		JOIN tasks p ON t.parent_id = p.id
+		WHERE p.title = 'Umbrella'
+		ORDER BY t.id
+	`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+
+	var got []struct {
+		title string
+		order int64
+	}
+	for rows.Next() {
+		var r struct {
+			title string
+			order int64
+		}
+		if err := rows.Scan(&r.title, &r.order); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, r)
+	}
+
+	if len(got) != 4 {
+		t.Fatalf("got %d children, want 4", len(got))
+	}
+	want := []struct {
+		title string
+		order int64
+	}{
+		{"A", 0},
+		{"B", 1},
+		{"C", 2},
+		{"D", 3},
+	}
+	for i, w := range want {
+		if got[i].title != w.title || got[i].order != w.order {
+			t.Errorf("child %d: got (%q, %d), want (%q, %d)",
+				i, got[i].title, got[i].order, w.title, w.order)
+		}
+	}
+}
+
+// Import's own root siblings (the top-level entries of the `tasks:`
+// list) also need distinct sort_order values.
+func TestImport_AssignsSequentialSortOrderToRoots(t *testing.T) {
+	db := SetupTestDB(t)
+
+	body := "```yaml\n" +
+		"tasks:\n" +
+		"  - title: First\n" +
+		"  - title: Second\n" +
+		"  - title: Third\n" +
+		"```\n"
+
+	path := writeTempPlan(t, body)
+	if _, err := RunImport(db, path, "", false, "alice"); err != nil {
+		t.Fatalf("RunImport: %v", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT title, sort_order FROM tasks WHERE parent_id IS NULL ORDER BY id
+	`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+
+	i := int64(0)
+	for rows.Next() {
+		var title string
+		var order int64
+		if err := rows.Scan(&title, &order); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if order != i {
+			t.Errorf("root %q: sort_order=%d, want %d", title, order, i)
+		}
+		i++
+	}
+	if i != 3 {
+		t.Fatalf("got %d roots, want 3", i)
+	}
+}
+
+// When importing under an existing parent that already has children,
+// the imported roots must continue the sort_order sequence (max existing
+// + 1, + 2, …) rather than colliding at 0 or restarting.
+func TestImport_NestedUnderExistingParent_ContinuesSortOrderSequence(t *testing.T) {
+	db := SetupTestDB(t)
+
+	parentShort := MustAdd(t, db, "", "Parent")
+	MustAdd(t, db, parentShort, "existing-A") // sort_order 0
+	MustAdd(t, db, parentShort, "existing-B") // sort_order 1
+
+	body := "```yaml\n" +
+		"tasks:\n" +
+		"  - title: imported-X\n" +
+		"  - title: imported-Y\n" +
+		"```\n"
+
+	path := writeTempPlan(t, body)
+	if _, err := RunImport(db, path, parentShort, false, "alice"); err != nil {
+		t.Fatalf("RunImport: %v", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT t.title, t.sort_order
+		FROM tasks t
+		JOIN tasks p ON t.parent_id = p.id
+		WHERE p.title = 'Parent'
+		ORDER BY t.sort_order
+	`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+
+	var seq []struct {
+		title string
+		order int64
+	}
+	for rows.Next() {
+		var r struct {
+			title string
+			order int64
+		}
+		if err := rows.Scan(&r.title, &r.order); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		seq = append(seq, r)
+	}
+
+	want := []struct {
+		title string
+		order int64
+	}{
+		{"existing-A", 0},
+		{"existing-B", 1},
+		{"imported-X", 2},
+		{"imported-Y", 3},
+	}
+	if len(seq) != len(want) {
+		t.Fatalf("got %d rows, want %d", len(seq), len(want))
+	}
+	for i, w := range want {
+		if seq[i].title != w.title || seq[i].order != w.order {
+			t.Errorf("row %d: got (%q, %d), want (%q, %d)",
+				i, seq[i].title, seq[i].order, w.title, w.order)
+		}
+	}
+}

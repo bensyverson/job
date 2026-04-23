@@ -286,9 +286,11 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 	shortIDByParsed := make(map[*parsedTask]string)
 	dbIDByParsed := make(map[*parsedTask]int64)
 
-	// Insert in pre-order DFS so parents exist before children.
-	var insert func(node *parsedTask, parentDBID *int64, parentShort string) error
-	insert = func(node *parsedTask, parentDBID *int64, parentShort string) error {
+	// Insert in pre-order DFS so parents exist before children. Each node
+	// receives an explicit sort_order so findNextSibling's strict-greater
+	// comparison can distinguish imported siblings.
+	var insert func(node *parsedTask, parentDBID *int64, parentShort string, sortOrder int64) error
+	insert = func(node *parsedTask, parentDBID *int64, parentShort string, sortOrder int64) error {
 		sid, err := generateShortID(tx)
 		if err != nil {
 			return err
@@ -297,9 +299,9 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 		var id int64
 		err = tx.QueryRow(`
 			INSERT INTO tasks (short_id, parent_id, title, description, status, sort_order, created_at, updated_at)
-			VALUES (?, ?, ?, ?, 'available', 0, ?, ?)
+			VALUES (?, ?, ?, ?, 'available', ?, ?, ?)
 			RETURNING id
-		`, sid, parentDBID, node.Title, node.Desc, now, now).Scan(&id)
+		`, sid, parentDBID, node.Title, node.Desc, sortOrder, now, now).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -310,7 +312,7 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 			"parent_id":   parentShort,
 			"title":       node.Title,
 			"description": node.Desc,
-			"sort_order":  0,
+			"sort_order":  sortOrder,
 		}); err != nil {
 			return err
 		}
@@ -336,9 +338,11 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 			Parent: parentShort,
 		})
 
-		for _, child := range node.Children {
+		// Children of this just-inserted node have no pre-existing
+		// siblings in the DB, so they start at sort_order 0.
+		for i, child := range node.Children {
 			cid := id
-			if err := insert(child, &cid, sid); err != nil {
+			if err := insert(child, &cid, sid, int64(i)); err != nil {
 				return err
 			}
 		}
@@ -352,8 +356,16 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 		rootParentDBID = &pid
 		rootParentShort = parentTask.ShortID
 	}
-	for _, root := range tree {
-		if err := insert(root, rootParentDBID, rootParentShort); err != nil {
+
+	// Offset the import's roots by any pre-existing siblings so we don't
+	// collide with existing tasks under the target parent (or at DB root
+	// when --parent is omitted).
+	rootSortOffset, err := nextSortOrderForParent(tx, rootParentDBID)
+	if err != nil {
+		return nil, err
+	}
+	for i, root := range tree {
+		if err := insert(root, rootParentDBID, rootParentShort, rootSortOffset+int64(i)); err != nil {
 			return nil, err
 		}
 	}
@@ -394,6 +406,31 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 		return nil, err
 	}
 	return result, nil
+}
+
+// nextSortOrderForParent returns one past the current max sort_order
+// among live children of parentDBID (or root-level tasks when nil).
+// Used by RunImport to avoid collisions with pre-existing siblings.
+func nextSortOrderForParent(tx dbtx, parentDBID *int64) (int64, error) {
+	var maxSort sql.NullInt64
+	var err error
+	if parentDBID == nil {
+		err = tx.QueryRow(
+			"SELECT MAX(sort_order) FROM tasks WHERE parent_id IS NULL AND deleted_at IS NULL",
+		).Scan(&maxSort)
+	} else {
+		err = tx.QueryRow(
+			"SELECT MAX(sort_order) FROM tasks WHERE parent_id = ? AND deleted_at IS NULL",
+			*parentDBID,
+		).Scan(&maxSort)
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if !maxSort.Valid {
+		return 0, nil
+	}
+	return maxSort.Int64 + 1, nil
 }
 
 // buildParsedTree converts the raw YAML tree into parsed tasks, assigning YAML-path

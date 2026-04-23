@@ -82,6 +82,11 @@ func BuildRollup(db *sql.DB, target *Task) (*Summary, error) {
 		if err != nil {
 			return nil, err
 		}
+		// In forest scope, hide root tasks that are fully closed with no open
+		// descendants — they add noise without actionable signal.
+		if target == nil && cr.Open == 0 && (cr.Status == "done" || cr.Status == "canceled") {
+			continue
+		}
 		childRollups = append(childRollups, cr)
 	}
 

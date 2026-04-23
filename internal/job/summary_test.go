@@ -103,6 +103,48 @@ func TestRunSummary_NotFound(t *testing.T) {
 // Forest scope: BuildRollup(db, nil) aggregates the whole DB. Target
 // is nil (there's no single anchor); Children are the top-level tasks,
 // each carrying its own subtree counts.
+// Forest scope must hide root tasks that are fully closed (done or canceled
+// with no open descendants).
+func TestBuildRollup_ForestScope_HidesClosedRoots(t *testing.T) {
+	db := SetupTestDB(t)
+
+	// open root — must appear
+	open := MustAdd(t, db, "", "OpenRoot")
+	MustAdd(t, db, open, "Child")
+
+	// done root with no open children — must NOT appear
+	finished := MustAdd(t, db, "", "DoneRoot")
+	child := MustAdd(t, db, finished, "FinishedChild")
+	MustDone(t, db, child)
+	MustDone(t, db, finished)
+
+	// canceled root — must NOT appear
+	canceled := MustAdd(t, db, "", "CanceledRoot")
+	if _, _, _, err := RunCancel(db, []string{canceled}, "obsolete", false, false, true, ""); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	rollup, err := BuildRollup(db, nil)
+	if err != nil {
+		t.Fatalf("BuildRollup: %v", err)
+	}
+
+	ids := make(map[string]bool)
+	for _, c := range rollup.DirectChildren {
+		ids[c.ShortID] = true
+	}
+
+	if !ids[open] {
+		t.Errorf("open root %q must appear in forest scope", open)
+	}
+	if ids[finished] {
+		t.Errorf("done root with no open children %q must not appear in forest scope", finished)
+	}
+	if ids[canceled] {
+		t.Errorf("canceled root %q must not appear in forest scope", canceled)
+	}
+}
+
 func TestBuildRollup_ForestScope_ReturnsRootsAsChildren(t *testing.T) {
 	db := SetupTestDB(t)
 	r1 := MustAdd(t, db, "", "Root1")

@@ -216,7 +216,6 @@ func TestBroadcaster_Fanout_ManySubscribersManyEvents(t *testing.T) {
 	wg.Add(subs)
 
 	for i := range subs {
-		i := i
 		sub := b.Subscribe()
 		go func() {
 			defer wg.Done()

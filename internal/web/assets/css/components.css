@@ -435,7 +435,37 @@ a.c-id-pill:hover {
   background: var(--color-surface);
   border: 1px solid var(--color-outline);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* The .main flex column already constrains us inside a 100vh grid;
+     flex: 1 + min-height: 0 lets us claim the remaining vertical space
+     without shoving the filter bar off-screen, and overflow: auto
+     scrolls just the rows when they exceed it. */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Bottom-edge "Load older" affordance — sticks to the inner edge of
+   the scrolled .c-log container so it's reachable at the end of the
+   visible page without scrolling past the rows. Quiet text-link
+   register, not a chip, since it's a navigation move not a filter. */
+.c-log-more {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-outline);
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: lowercase;
+}
+.c-log-more:hover {
+  color: var(--color-on-surface);
 }
 
 .c-log-row {

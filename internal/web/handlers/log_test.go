@@ -138,7 +138,7 @@ func TestLog_LabelStripCapsToTopTenByOpenTaskFrequency(t *testing.T) {
 	// keep top 10 (a–j) and drop k, l. The "any" chip is always present.
 	for i, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"} {
 		count := 12 - i
-		for n := 0; n < count; n++ {
+		for n := range count {
 			if _, err := job.RunAdd(db, "", name+"-"+strconv.Itoa(n), "", "", []string{name}, "alice"); err != nil {
 				t.Fatalf("RunAdd: %v", err)
 			}
@@ -165,7 +165,7 @@ func TestLog_LabelStripIncludesActiveLabelEvenIfBelowCap(t *testing.T) {
 	db := setupLogTestDB(t)
 	for i, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"} {
 		count := 12 - i
-		for n := 0; n < count; n++ {
+		for n := range count {
 			if _, err := job.RunAdd(db, "", name+"-"+strconv.Itoa(n), "", "", []string{name}, "alice"); err != nil {
 				t.Fatalf("RunAdd: %v", err)
 			}
@@ -178,6 +178,70 @@ func TestLog_LabelStripIncludesActiveLabelEvenIfBelowCap(t *testing.T) {
 	bar := extractFilterBar(t, body)
 	if !strings.Contains(bar, `data-label="k"`) {
 		t.Errorf("strip should include the active label %q even when below the cap", "k")
+	}
+}
+
+func TestLog_PaginationCapsInitialRender(t *testing.T) {
+	db := setupLogTestDB(t)
+	// 12 events (creation only), explicit limit of 5.
+	for i := 0; i < 12; i++ {
+		mustAdd(t, db, "alice", "task-"+strconv.Itoa(i), nil, nil)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "limit=5")
+
+	// Row count: count occurrences of c-log-row__time (one per row).
+	rows := strings.Count(body, `class="c-log-row__time"`)
+	if rows != 5 {
+		t.Errorf("?limit=5 should render 5 rows, got %d", rows)
+	}
+	// HasMore affordance present.
+	mustContain(t, body, `c-log-more`)
+}
+
+func TestLog_PaginationLoadMoreFiltersOlderEvents(t *testing.T) {
+	db := setupLogTestDB(t)
+	for i := 0; i < 12; i++ {
+		mustAdd(t, db, "alice", "task-"+strconv.Itoa(i), nil, nil)
+	}
+
+	deps := newLogDeps(t, db)
+
+	// Page 1 (newest 5): record the oldest id from the more-link.
+	body := fetchLog(t, deps, "limit=5")
+	// The href encodes "before=<oldestID>".
+	idx := strings.Index(body, `?before=`)
+	if idx == -1 {
+		t.Fatalf("expected before=<id> in the more-link href:\n%s", body)
+	}
+	rest := body[idx+len(`?before=`):]
+	end := strings.IndexAny(rest, `"&`)
+	beforeID := rest[:end]
+
+	// Page 2 (next 5 older): should include strictly fewer events.
+	body = fetchLog(t, deps, "limit=5&before="+beforeID)
+	rows := strings.Count(body, `class="c-log-row__time"`)
+	if rows != 5 {
+		t.Errorf("page 2 should render 5 rows, got %d", rows)
+	}
+	// Page 1's newest task should not appear on page 2.
+	if strings.Contains(body, "task-11") {
+		t.Errorf("page 2 should not include the newest task")
+	}
+}
+
+func TestLog_PaginationOmitsLoadMoreWhenAllEventsFit(t *testing.T) {
+	db := setupLogTestDB(t)
+	for i := 0; i < 3; i++ {
+		mustAdd(t, db, "alice", "task-"+strconv.Itoa(i), nil, nil)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "limit=10")
+
+	if strings.Contains(body, `c-log-more`) {
+		t.Errorf("with no more events to fetch, the load-more affordance should not render")
 	}
 }
 

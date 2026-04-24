@@ -58,5 +58,6 @@
     <span class="t-muted">No events match the current filters.</span>
   </div>
   {{end}}
+  {{if .HasMore}}<a class="c-log-more" href="{{.MoreURL}}">load older →</a>{{end}}
 </div>
 {{end}}

@@ -24,6 +24,13 @@ type LogFilters struct {
 	Label string
 	Type  string
 	Since time.Time // zero means "no since floor"
+	// Before is an event-id cursor: only events with id < Before are
+	// returned. Zero means "no cursor"; pagination starts from the
+	// newest event.
+	Before int64
+	// Limit caps the number of rows returned. <=0 means "use the
+	// default" (defaultLogLimit).
+	Limit int
 }
 
 // LogChip is one clickable chip in the log-view filter bar. HRef is a
@@ -70,7 +77,18 @@ type LogPageData struct {
 	// filter query params as the page itself, so the live tail only
 	// delivers events that match the current filter state.
 	EventsURL string
+	// HasMore is true when there are older events beyond what was
+	// rendered. Drives the "Load older" affordance at the bottom.
+	HasMore bool
+	// MoreURL is /log?…&before=<oldestEventID>, preserving every
+	// other filter so the next page lands on the same view.
+	MoreURL string
 }
+
+// defaultLogLimit caps the initial render so a 50k-event database
+// doesn't render every row in one shot. The "Load older" affordance
+// at the bottom navigates to the next page.
+const defaultLogLimit = 200
 
 // knownEventTypes is the canonical ordered set of event types surfaced
 // in the filter bar. Order matches the prototype so users see the
@@ -86,7 +104,7 @@ func Log(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		filters := ParseLogFilters(r.URL.Query())
 
-		events, totalEvents, err := loadLogEvents(deps.DB, filters)
+		events, totalEvents, hasMore, err := loadLogEvents(deps.DB, filters)
 		if err != nil {
 			InternalError(deps, w, "log query", err)
 			return
@@ -114,16 +132,47 @@ func Log(deps Deps) http.Handler {
 			TotalShown:  len(events),
 			TotalEvents: totalEvents,
 			EventsURL:   eventsURL(filters),
+			HasMore:     hasMore,
+		}
+		if hasMore && len(events) > 0 {
+			data.MoreURL = moreURL(filters, events[len(events)-1].EventID)
 		}
 		renderPage(deps, w, "log", data)
 	})
+}
+
+// moreURL returns /log?…&before=<oldestID>, preserving every other
+// filter so paging through to older events keeps the same view.
+func moreURL(f LogFilters, oldestID int64) string {
+	q := url.Values{}
+	if f.Actor != "" {
+		q.Set("actor", f.Actor)
+	}
+	if f.Task != "" {
+		q.Set("task", f.Task)
+	}
+	if f.Label != "" {
+		q.Set("label", f.Label)
+	}
+	if f.Type != "" {
+		q.Set("type", f.Type)
+	}
+	if !f.Since.IsZero() {
+		q.Set("since", f.Since.UTC().Format(time.RFC3339))
+	}
+	if f.Limit > 0 {
+		q.Set("limit", strconv.Itoa(f.Limit))
+	}
+	q.Set("before", strconv.FormatInt(oldestID, 10))
+	return "/log?" + q.Encode()
 }
 
 // ParseLogFilters reads a /log query string into a LogFilters value.
 // Unknown keys are ignored; "since" accepts RFC3339 first, then a
 // fallback of a unix-seconds integer. Malformed since values are
 // silently dropped — we'd rather render with a zero since than return
-// a 400 for a bookmarked URL that drifted.
+// a 400 for a bookmarked URL that drifted. Same forgiveness applies
+// to before and limit: garbage parses to zero / default.
 func ParseLogFilters(q url.Values) LogFilters {
 	f := LogFilters{
 		Actor: q.Get("actor"),
@@ -138,17 +187,30 @@ func ParseLogFilters(q url.Values) LogFilters {
 			f.Since = time.Unix(sec, 0)
 		}
 	}
+	if raw := q.Get("before"); raw != "" {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil && id > 0 {
+			f.Before = id
+		}
+	}
+	if raw := q.Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			f.Limit = n
+		}
+	}
 	return f
 }
 
 // loadLogEvents fetches events scoped to the task filter (or globally
-// if unset), then applies actor/type/label/since filters in memory.
-// v1 accepts the simplicity tax; a real SQL push-down comes when the
-// event table grows beyond "fits in RAM."
-func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, err error) {
+// if unset), then applies actor/type/label/since filters in memory,
+// then sorts newest-first and pages by Before/Limit. v1 accepts the
+// simplicity tax of loading all events from SQL; a real cursor
+// push-down comes when the event table grows beyond "fits in RAM."
+// hasMore reports whether there are older events beyond what we
+// returned, so the template can render the "Load older" affordance.
+func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, hasMore bool, err error) {
 	raw, err := job.GetEventsForTaskTree(db, f.Task)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	total = len(raw)
 
@@ -157,7 +219,7 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, err
 	if f.Label != "" {
 		ids, err := taskIDsWithLabel(db, f.Label)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 		labelTaskIDs = make(map[int64]bool, len(ids))
 		for _, id := range ids {
@@ -179,10 +241,36 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, err
 		if labelTaskIDs != nil && !labelTaskIDs[e.TaskID] {
 			continue
 		}
+		if f.Before > 0 && e.ID >= f.Before {
+			continue
+		}
 		filtered = append(filtered, e)
 	}
 
-	// Titles: one batched lookup for the tasks still in view.
+	// Reverse-chrono (newest first) for display; DB returns ascending
+	// by created_at. Tiebreak on event id descending so events sharing
+	// a timestamp (common for batched test fixtures and rapid CLI
+	// activity) are still ordered deterministically newest-first.
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if filtered[i].CreatedAt != filtered[j].CreatedAt {
+			return filtered[i].CreatedAt > filtered[j].CreatedAt
+		}
+		return filtered[i].ID > filtered[j].ID
+	})
+
+	// Pagination: cap to limit (defaultLogLimit if unset). hasMore
+	// true iff there were strictly more rows after applying filters.
+	limit := f.Limit
+	if limit <= 0 {
+		limit = defaultLogLimit
+	}
+	if len(filtered) > limit {
+		filtered = filtered[:limit]
+		hasMore = true
+	}
+
+	// Titles: one batched lookup for the tasks still in view (after
+	// pagination, so we only fetch what we'll render).
 	ids := make([]int64, 0, len(filtered))
 	seen := make(map[int64]bool, len(filtered))
 	for _, e := range filtered {
@@ -194,14 +282,8 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, err
 	}
 	titles, err := job.TaskTitlesByID(db, ids)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
-
-	// Reverse-chrono (newest first) for display; DB returns ascending
-	// by created_at.
-	sort.SliceStable(filtered, func(i, j int) bool {
-		return filtered[i].CreatedAt > filtered[j].CreatedAt
-	})
 
 	now := time.Now()
 	rows = make([]LogEventRow, len(filtered))
@@ -220,7 +302,7 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, err
 			ActorURL:  "/actors/" + url.PathEscape(e.Actor),
 		}
 	}
-	return rows, total, nil
+	return rows, total, hasMore, nil
 }
 
 // notePreviewFromDetail extracts the free-text body from the JSON

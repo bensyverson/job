@@ -1643,7 +1643,9 @@ a.c-log-row__actor {
   flex: none;
 }
 
-/* Anchor form — every task node links to its task (peek). */
+/* Anchor form — every task node links to its task (peek). The
+   global a:hover underline is scoped out of graph nodes in
+   base.css so we don't have to override border-bottom here. */
 a.c-graph-node {
   text-decoration: none;
   cursor: pointer;
@@ -1663,16 +1665,22 @@ a.c-graph-node:focus-visible {
     0 0 0 6px var(--focus-ring-outer-color);
 }
 
-/* Node ID label — centered under (or over) the node circle. */
+/* Node label — centered under the disc. Shows the task title
+   (truncated with an ellipsis when it overflows the column).
+   The ShortID lives on the node's title attribute for hover. */
 .c-graph-label {
   position: absolute;
   transform: translate(-50%, 0);
-  font-family: var(--font-mono);
   font-size: 11px;
-  line-height: 1;
+  line-height: 1.2;
   color: var(--color-on-surface-muted);
-  white-space: nowrap;
   pointer-events: none;
+  display: inline-block;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 /* Actor avatar overlaid as a "bug" in the bottom-right quadrant.
@@ -2095,6 +2103,18 @@ a.c-graph-node__bug:focus-visible {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-lg);
+  /* Claim remaining vertical space in the .main flex column so
+     the Home panels row fills the viewport the same way Log's
+     rows do. Panels inside stretch via grid-cell alignment. */
+  flex: 1;
+  min-height: 0;
+}
+
+/* Within the home-view panels row, let the scrollable list grow
+   to fill its panel instead of capping at 280px — the grid cell
+   already clamps total height to the viewport. */
+.c-grid-cols-4 .c-panel__list {
+  max-height: none;
 }
 
 /* Panel — a sectioned surface used in Home's four-column row. */
@@ -2266,6 +2286,43 @@ a.c-graph-node__bug:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Mini-graph edges (SVG paths under the node discs). Base is the
+   solid "flow" stroke used for sibling + parent/child hops; cousin
+   drops opacity for cross-parent-boundary hops; blocker swaps to
+   amber + dashed. */
+.c-graph-edge {
+  stroke: var(--color-outline-strong);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.c-graph-edge--cousin {
+  opacity: 0.5;
+}
+
+.c-graph-edge--blocker {
+  stroke: var(--color-status-blocked);
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+
+/* "+N" pill hanging off a parent node whose unshown direct
+   children are being rolled up at a phase boundary. */
+.c-graph-node__pill {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-on-surface-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-full);
+  padding: 0 4px;
+  line-height: 1.4;
 }
 
 /* ---------- Empty states ---------- */

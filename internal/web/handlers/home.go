@@ -25,6 +25,7 @@ type HomePageData struct {
 	ActiveClaims      ActiveClaimsPanel
 	RecentCompletions RecentCompletionsPanel
 	Blocked           BlockedStripPanel
+	Graph             render.MiniGraphView
 }
 
 // ActivityCard carries the 60-bucket histogram and the per-type
@@ -190,6 +191,12 @@ func Home(deps Deps) http.Handler {
 			return
 		}
 
+		mg, err := signals.ComputeMiniGraph(r.Context(), deps.DB, now)
+		if err != nil {
+			InternalError(deps, w, "home mini-graph", err)
+			return
+		}
+
 		data := HomePageData{
 			Chrome:            templates.Chrome{ActiveTab: "home"},
 			Activity:          buildActivityCard(sig.Activity),
@@ -199,6 +206,7 @@ func Home(deps Deps) http.Handler {
 			ActiveClaims:      claims,
 			RecentCompletions: recent,
 			Blocked:           blocked,
+			Graph:             render.LayoutMiniGraph(mg),
 		}
 		renderPage(deps, w, "home", data)
 	})

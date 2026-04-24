@@ -111,7 +111,99 @@
   </div>
 </section>
 
+{{/* Dependency flow — mini-graph thumbnail. Answers "what is
+     happening now, and how is it all related?" for every active
+     claim; falls back to the globally-next task when nothing is
+     claimed. Snapshot-per-request; data-home-graph is the hook
+     a later task can subscribe to for live updates. */}}
+<section class="c-section" aria-labelledby="s-graph" data-home-graph>
+  <div class="c-section__header">
+    <h2 id="s-graph" class="c-section__title">Dependency flow</h2>
+    <a href="/plan" class="t-label-caps t-muted">Open full graph →</a>
+  </div>
+  <div class="c-mini-graph">
+    {{- if .Graph.Empty -}}
+      <div class="c-empty">No active claims or upcoming work</div>
+    {{- else -}}
+      <div class="c-graph-canvas" style="position: relative; width: {{.Graph.CanvasW}}px; max-width: 100%; height: {{.Graph.CanvasH}}px">
+        <svg viewBox="0 0 {{.Graph.CanvasW}} {{.Graph.CanvasH}}" width="100%" height="{{.Graph.CanvasH}}"
+             style="position: absolute; inset: 0; color: var(--color-outline-strong)" aria-hidden="true">
+          <defs>
+            <marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+          {{- range .Graph.Edges -}}
+            {{- if .IsBlocker -}}
+              <path class="{{.CSSClass}}" d="{{.PathD}}" />
+            {{- else -}}
+              <path class="{{.CSSClass}}" d="{{.PathD}}" marker-end="url(#graph-arrow)" />
+            {{- end -}}
+          {{- end -}}
+        </svg>
+        {{- range .Graph.Nodes -}}
+          <a href="{{.URL}}" class="c-graph-node {{.StateClass}}"
+             style="position: absolute; left: {{.Left}}px; top: {{.Top}}px"
+             data-task-id="{{.ShortID}}"
+             title="{{.ShortID}} — {{.Title}}"
+             aria-label="{{.ShortID}} — {{.Title}}">
+            {{- if .IsDone -}}
+              <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                <path d="M4 8l3 3 5-6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            {{- else if .IsActive -}}
+              <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <circle cx="8" cy="8" r="3" />
+              </svg>
+            {{- else if .IsBlocked -}}
+              <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <rect x="5" y="4" width="2" height="8" />
+                <rect x="9" y="4" width="2" height="8" />
+              </svg>
+            {{- end -}}
+            {{- if gt .ChildrenNotShown 0 -}}
+              <span class="c-graph-node__pill">+{{.ChildrenNotShown}}</span>
+            {{- end -}}
+          </a>
+          {{- with .Bug -}}
+            <a href="{{.ActorURL}}" class="c-graph-node__bug c-graph-node__bug--detached"
+               style="position: absolute; left: {{.Left}}px; top: {{.Top}}px; --actor-color: {{.Color}}"
+               data-actor="{{.Actor}}"
+               title="Claimed by {{.Actor}}"
+               aria-label="Actor {{.Actor}}">{{.Letter}}</a>
+          {{- end -}}
+          <span class="c-graph-label" style="left: {{.LabelLeft}}px; top: {{.LabelTop}}px">{{.Title}}</span>
+        {{- end -}}
+      </div>
+    {{- end -}}
+  </div>
+</section>
+
 <div class="c-grid-cols-4">
+
+  <section class="c-panel" aria-labelledby="p-recent" data-home-recent>
+    <div class="c-panel__header">
+      <h2 id="p-recent" class="c-panel__title">Recent completions</h2>
+      <span class="c-panel__meta">last {{.RecentCompletions.Count}}</span>
+    </div>
+    <div class="c-panel__list">
+      {{- if .RecentCompletions.Rows -}}
+        {{- range .RecentCompletions.Rows -}}
+          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+            <a href="{{.ActorURL}}" class="c-avatar c-avatar-sm" data-actor="{{.Actor}}" aria-label="Actor {{.Actor}}"></a>
+            <span class="c-id-pill">{{.TaskShortID}}</span>
+            <span class="c-panel-row__title">{{.TaskTitle}}</span>
+            <span class="c-panel-row__meta">{{.AgeText}}</span>
+            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+          </div>
+        {{- end -}}
+      {{- else -}}
+        <div class="c-panel-row" style="--row-cols: 1fr">
+          <span class="c-panel-row__title t-muted">No recent completions</span>
+        </div>
+      {{- end -}}
+    </div>
+  </section>
 
   <section class="c-panel" aria-labelledby="p-claims" data-home-claims>
     <div class="c-panel__header">
@@ -137,29 +229,9 @@
     </div>
   </section>
 
-  <section class="c-panel" aria-labelledby="p-recent" data-home-recent>
-    <div class="c-panel__header">
-      <h2 id="p-recent" class="c-panel__title">Recent completions</h2>
-      <span class="c-panel__meta">last {{.RecentCompletions.Count}}</span>
-    </div>
-    <div class="c-panel__list">
-      {{- if .RecentCompletions.Rows -}}
-        {{- range .RecentCompletions.Rows -}}
-          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
-            <a href="{{.ActorURL}}" class="c-avatar c-avatar-sm" data-actor="{{.Actor}}" aria-label="Actor {{.Actor}}"></a>
-            <span class="c-id-pill">{{.TaskShortID}}</span>
-            <span class="c-panel-row__title">{{.TaskTitle}}</span>
-            <span class="c-panel-row__meta">{{.AgeText}}</span>
-            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
-          </div>
-        {{- end -}}
-      {{- else -}}
-        <div class="c-panel-row" style="--row-cols: 1fr">
-          <span class="c-panel-row__title t-muted">No recent completions</span>
-        </div>
-      {{- end -}}
-    </div>
-  </section>
+  {{/* Upcoming panel — the claimable frontier beyond "Next:": any
+       available, unblocked leaf. Data wiring arrives in its own
+       Phase 5 child task. */}}
 
   <section class="c-panel" aria-labelledby="p-blocked" data-home-blocked>
     <div class="c-panel__header">

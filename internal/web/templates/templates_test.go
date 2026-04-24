@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bensyverson/jobs/internal/web/assets"
+	"github.com/bensyverson/jobs/internal/web/render"
 	"github.com/bensyverson/jobs/internal/web/templates"
 )
 
@@ -35,6 +36,7 @@ type homeTemplateData struct {
 	ActiveClaims      homeActiveClaims
 	RecentCompletions homeRecentCompletions
 	Blocked           homeBlocked
+	Graph             render.MiniGraphView
 }
 
 type homeBlocked struct {

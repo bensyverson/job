@@ -619,6 +619,71 @@ func TestHome_Blocked_MultipleBlockersRenderAsMultipleLinks(t *testing.T) {
 	mustContain(t, body, `href="/tasks/three"`)
 }
 
+// TestHome_Graph_EmptyWhenNoTasks verifies the mini-graph section
+// renders its "no active work" empty state rather than silently
+// disappearing when the database is empty.
+func TestHome_Graph_EmptyWhenNoTasks(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	body := fetchHome(t, deps)
+
+	mustContain(t, body, `data-home-graph`)
+	mustContain(t, body, `Dependency flow`)
+	mustContain(t, body, `No active claims or upcoming work`)
+}
+
+// TestHome_Graph_RendersSpineForActiveClaim seeds a simple tree
+// with a claimed mid-sibling, then asserts the graph renders the
+// focal node, its actor bug, and at least one flow edge.
+func TestHome_Graph_RendersSpineForActiveClaim(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	// Phase 2 (done root) + Phase 3 (root) with three steps.
+	created := now.Add(-1 * time.Hour)
+	_, err := db.Exec(`
+		INSERT INTO tasks (short_id, title, description, status, parent_id, sort_order, created_at, updated_at)
+		VALUES
+		  ('ph2', 'Phase 2', '', 'done',      NULL, 1, ?, ?),
+		  ('ph3', 'Phase 3', '', 'available', NULL, 2, ?, ?)
+	`, created.Unix(), created.Unix(), created.Unix(), created.Unix())
+	if err != nil {
+		t.Fatalf("seed roots: %v", err)
+	}
+	var ph3 int64
+	if err := db.QueryRow(`SELECT id FROM tasks WHERE short_id='ph3'`).Scan(&ph3); err != nil {
+		t.Fatalf("lookup ph3: %v", err)
+	}
+	_, err = db.Exec(`
+		INSERT INTO tasks (short_id, title, description, status, parent_id, sort_order, created_at, updated_at)
+		VALUES
+		  ('st1', 'Step 1', '', 'done',      ?, 1, ?, ?),
+		  ('st2', 'Step 2', '', 'available', ?, 2, ?, ?),
+		  ('st3', 'Step 3', '', 'available', ?, 3, ?, ?)
+	`, ph3, created.Unix(), created.Unix(),
+		ph3, created.Unix(), created.Unix(),
+		ph3, created.Unix(), created.Unix())
+	if err != nil {
+		t.Fatalf("seed steps: %v", err)
+	}
+	var st2 int64
+	if err := db.QueryRow(`SELECT id FROM tasks WHERE short_id='st2'`).Scan(&st2); err != nil {
+		t.Fatalf("lookup st2: %v", err)
+	}
+	homeSeedClaim(t, db, st2, "alice", now.Add(-10*time.Minute))
+
+	body := fetchHome(t, deps)
+
+	mustContain(t, body, `data-home-graph`)
+	mustContain(t, body, `c-graph-canvas`)
+	mustContain(t, body, `c-graph-node--active`)
+	mustContain(t, body, `data-task-id="st2"`)
+	mustContain(t, body, `data-actor="alice"`)
+	mustContain(t, body, `c-graph-edge`)
+}
+
 // bodyExcerpt returns `n` chars around the first occurrence of `anchor`
 // for a more helpful test diff.
 func bodyExcerpt(body, anchor string, n int) string {

@@ -182,7 +182,11 @@ a {
     color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
-a:hover {
+/* Graph-node anchors are circular discs, not text links; if the
+   global hover-underline repaints their border-bottom-color, the
+   disc's bottom slices off-tone. Exclude them from the hover
+   rule so their state-based border-color stays uniform. */
+a:not(.c-graph-node):not(.c-graph-node__bug):hover {
   border-bottom-color: var(--color-outline-strong);
 }
 

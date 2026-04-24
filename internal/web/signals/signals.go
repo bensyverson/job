@@ -282,10 +282,7 @@ func computeLongestClaim(ctx context.Context, db *sql.DB, now time.Time) (Longes
 	lc.TaskShortID = shortID
 	lc.TaskTitle = title
 	lc.Actor = actor
-	lc.DurationSeconds = now.Unix() - claimedAt
-	if lc.DurationSeconds < 0 {
-		lc.DurationSeconds = 0
-	}
+	lc.DurationSeconds = max(now.Unix()-claimedAt, 0)
 	lc.Progress = saturate(float64(lc.DurationSeconds) / float64(lc.ThresholdSeconds))
 	return lc, nil
 }
@@ -319,10 +316,7 @@ func computeOldestTodo(ctx context.Context, db *sql.DB, now time.Time) (OldestTo
 	ot.Present = true
 	ot.TaskShortID = shortID
 	ot.Title = title
-	ot.AgeSeconds = now.Unix() - createdAt
-	if ot.AgeSeconds < 0 {
-		ot.AgeSeconds = 0
-	}
+	ot.AgeSeconds = max(now.Unix()-createdAt, 0)
 	ot.Progress = saturate(float64(ot.AgeSeconds) / float64(ot.ThresholdSeconds))
 	return ot, nil
 }

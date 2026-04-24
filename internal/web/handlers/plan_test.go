@@ -716,11 +716,11 @@ func rowHasDisclosure(t *testing.T, body, shortID string) bool {
 	// Bracket the row's opening tag and its title-line; the disclosure
 	// is the row's first child if present.
 	tail := body[idx:]
-	end := strings.Index(tail, `<div class="c-plan-row__title">`)
-	if end == -1 {
+	before, _, ok := strings.Cut(tail, `<div class="c-plan-row__title">`)
+	if !ok {
 		return false
 	}
-	return strings.Contains(tail[:end], `c-plan-row__disclosure`)
+	return strings.Contains(before, `c-plan-row__disclosure`)
 }
 
 // extractFilterBar returns just the markup inside the plan view's

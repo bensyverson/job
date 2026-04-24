@@ -65,4 +65,4 @@ At moments when significant work has been completed and accepted by the user, of
 
 ## Golang-specific
 
-- Prior to commiting changes, you must run `go fix` and `go fmt` to correctly format your code, and you must run the tests related to any features you added or changed. Auto-formatting and unit tests with both be run as pre-commit hooks, so this will allow you to catch problems before attempting a commit.
+- Prior to commiting changes, you MUST run `go fix` and `gofmt` to correctly format your code, and you must run the tests related to any features you added or changed. `go fix`, `gofmt` and unit tests with all be run as pre-commit hooks, so this will allow you to catch problems before attempting a commit.

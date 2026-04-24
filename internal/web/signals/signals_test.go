@@ -228,7 +228,7 @@ func TestNewlyBlocked_ProgressSaturatesAtThreshold(t *testing.T) {
 
 	rootID := seedTask(t, db, "r", "r", "available", base.Add(-1*time.Hour))
 	count := NewlyBlockedThreshold + 1
-	for i := 0; i < count; i++ {
+	for i := range count {
 		sid := string(rune('A' + i))
 		id := seedTask(t, db, sid, sid, "available", base.Add(-1*time.Hour))
 		seedBlock(t, db, id, rootID, base.Add(-2*time.Minute))

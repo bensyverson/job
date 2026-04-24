@@ -465,7 +465,7 @@ func TestHome_RecentCompletions_CapsToLimitKeepingNewest(t *testing.T) {
 
 	now := time.Now()
 	// Seed 12 completions; only the 10 newest should appear.
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		sid := "t" + strconv.Itoa(i)
 		tID := homeSeedTask(t, db, sid, sid, "done", now.Add(-2*time.Hour))
 		// i=0 is oldest (completed 12m ago); i=11 is newest (1m ago).
@@ -629,13 +629,7 @@ func bodyExcerpt(body, anchor string, n int) string {
 		}
 		return body[:n]
 	}
-	start := idx - n/2
-	if start < 0 {
-		start = 0
-	}
-	end := start + n
-	if end > len(body) {
-		end = len(body)
-	}
+	start := max(idx-n/2, 0)
+	end := min(start+n, len(body))
 	return body[start:end]
 }

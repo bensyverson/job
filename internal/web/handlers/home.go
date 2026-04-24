@@ -355,10 +355,7 @@ func loadActiveClaims(ctx context.Context, db *sql.DB, now time.Time) (ActiveCla
 		if err := rows.Scan(&shortID, &title, &actor, &claimedAt); err != nil {
 			return panel, err
 		}
-		age := now.Unix() - claimedAt
-		if age < 0 {
-			age = 0
-		}
+		age := max(now.Unix()-claimedAt, 0)
 		panel.Rows = append(panel.Rows, ActiveClaimRow{
 			Actor:         actor,
 			ActorURL:      "/actors/" + actor,

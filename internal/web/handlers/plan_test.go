@@ -594,6 +594,135 @@ func TestPlan_ShowFilter_LabelPillPreservesShowParam(t *testing.T) {
 	}
 }
 
+// TestPlan_FilterComposition is the broad table-driven check that
+// ?label= and ?show= compose correctly. Each case names the visible
+// roots (short IDs) it expects to find in the body and asserts every
+// other root is absent. Catches regressions where a future filter
+// short-circuits the wrong branch in the chain. (?at= time-travel
+// composition lands with p8 and adds rows to this table.)
+func TestPlan_FilterComposition(t *testing.T) {
+	db := setupPlanTestDB(t)
+	rootA := mustAdd(t, db, "claude", "Root A active web", nil, []string{"web"})
+	_ = mustAdd(t, db, "claude", "Child A1 css", &rootA, []string{"css"})
+	rootB := mustAdd(t, db, "claude", "Root B archived web", nil, []string{"web"})
+	if _, _, err := job.RunDone(db, []string{rootB}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone B: %v", err)
+	}
+	rootC := mustAdd(t, db, "claude", "Root C active other", nil, []string{"other"})
+
+	all := []string{rootA, rootB, rootC}
+
+	deps := newPlanDeps(t, db)
+
+	cases := []struct {
+		name    string
+		query   string
+		visible []string
+	}{
+		{"default active", "", []string{rootA, rootC}},
+		{"show=archived", "show=archived", []string{rootB}},
+		{"show=all", "show=all", []string{rootA, rootB, rootC}},
+		{"label=web (default active)", "label=web", []string{rootA}},
+		{"label=web + show=archived", "label=web&show=archived", []string{rootB}},
+		{"label=web + show=all", "label=web&show=all", []string{rootA, rootB}},
+		{"label=other (default active)", "label=other", []string{rootC}},
+		{"label=other + show=archived", "label=other&show=archived", nil},
+		{"label=web,other (default active)", "label=web,other", []string{rootA, rootC}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			body := fetchPlan(t, deps, c.query)
+			present := make(map[string]bool)
+			for _, id := range all {
+				if strings.Contains(body, `id="task-`+id+`"`) {
+					present[id] = true
+				}
+			}
+			wantSet := make(map[string]bool)
+			for _, id := range c.visible {
+				wantSet[id] = true
+				if !present[id] {
+					t.Errorf("expected %q visible, was absent", id)
+				}
+			}
+			for _, id := range all {
+				if !wantSet[id] && present[id] {
+					t.Errorf("expected %q absent, was visible", id)
+				}
+			}
+		})
+	}
+}
+
+// TestPlan_RecursiveRenderingStructure exercises depth-3 nesting and
+// confirms the recursive plan-node template produces matching nested
+// c-plan-subtree wrappers, indentation-correct ids, and a per-row
+// disclosure where (and only where) it has a purpose.
+func TestPlan_RecursiveRenderingStructure(t *testing.T) {
+	db := setupPlanTestDB(t)
+	root := mustAddWithDesc(t, db, "claude", "Depth 0 root", "with description", nil, nil)
+	child := mustAddWithDesc(t, db, "claude", "Depth 1 child", "", &root, nil)
+	grand := mustAddWithDesc(t, db, "claude", "Depth 2 leaf", "", &child, nil)
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "")
+
+	// Three rows.
+	for _, id := range []string{root, child, grand} {
+		mustContain(t, body, `id="task-`+id+`"`)
+	}
+	// Two nested c-plan-subtree wrappers (root→child, child→grand).
+	if got := strings.Count(body, `class="c-plan-subtree"`); got != 2 {
+		t.Errorf("expected 2 c-plan-subtree wrappers (root→child, child→grand), got %d", got)
+	}
+	// Root is collapsible (description) → has disclosure button. Child
+	// is collapsible (has children) → also has disclosure. Grand is a
+	// bare leaf → no disclosure.
+	rootHas := rowHasDisclosure(t, body, root)
+	childHas := rowHasDisclosure(t, body, child)
+	grandHas := rowHasDisclosure(t, body, grand)
+	if !rootHas {
+		t.Error("root should have a disclosure button (description present)")
+	}
+	if !childHas {
+		t.Error("child should have a disclosure button (has children)")
+	}
+	if grandHas {
+		t.Error("grand-leaf should not have a disclosure button (no children, no description)")
+	}
+	// Heading levels: depth-0 → t-heading-lg, depth-1 → t-heading-md,
+	// deeper rows use default body weight.
+	mustContain(t, body, `t-heading-lg">Depth 0 root`)
+	mustContain(t, body, `t-heading-md">Depth 1 child`)
+	if strings.Contains(body, `t-heading">Depth 2 leaf`) ||
+		strings.Contains(body, `t-heading-lg">Depth 2 leaf`) ||
+		strings.Contains(body, `t-heading-md">Depth 2 leaf`) {
+		t.Errorf("depth-2 leaf should not carry a heading-class modifier")
+	}
+}
+
+// rowHasDisclosure returns whether the row tagged with the given
+// short id renders a c-plan-row__disclosure button. Scoped to just
+// the row's outer markup so a sibling's disclosure doesn't pollute
+// the result.
+func rowHasDisclosure(t *testing.T, body, shortID string) bool {
+	t.Helper()
+	marker := `id="task-` + shortID + `"`
+	idx := strings.Index(body, marker)
+	if idx == -1 {
+		t.Fatalf("row %q not found", shortID)
+	}
+	// Bracket the row's opening tag and its title-line; the disclosure
+	// is the row's first child if present.
+	tail := body[idx:]
+	end := strings.Index(tail, `<div class="c-plan-row__title">`)
+	if end == -1 {
+		return false
+	}
+	return strings.Contains(tail[:end], `c-plan-row__disclosure`)
+}
+
 // extractFilterBar returns just the markup inside the plan view's
 // <section class="c-filter-bar">…</section>. Lets strip-only tests
 // avoid matching the inline label pills that decorate task rows.

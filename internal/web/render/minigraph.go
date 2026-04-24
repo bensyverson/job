@@ -217,10 +217,7 @@ func assignRows(lanes []signals.Lane) (map[string]int, int) {
 				stackRow++
 			}
 		}
-		used := stackRow - 1
-		if used < focalRow {
-			used = focalRow
-		}
+		used := max(stackRow-1, focalRow)
 		if used > maxRow {
 			maxRow = used
 		}

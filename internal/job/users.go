@@ -3,11 +3,10 @@ package job
 import (
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 func createUser(db *sql.DB, name string) (*User, error) {
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 	result, err := db.Exec(
 		"INSERT INTO users (name, created_at) VALUES (?, ?)",
 		name, now,

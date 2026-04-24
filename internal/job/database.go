@@ -121,7 +121,7 @@ func recordEvent(tx dbtx, taskID int64, eventType, actor string, detail any) err
 	}
 	_, err := tx.Exec(
 		"INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (?, ?, ?, ?, ?)",
-		taskID, eventType, actor, detailJSON, time.Now().Unix(),
+		taskID, eventType, actor, detailJSON, CurrentNowFunc().Unix(),
 	)
 	return err
 }
@@ -140,7 +140,7 @@ func recordOrphanEvent(tx dbtx, eventType, actor string, detail any) error {
 	}
 	_, err := tx.Exec(
 		"INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (NULL, ?, ?, ?, ?)",
-		eventType, actor, detailJSON, time.Now().Unix(),
+		eventType, actor, detailJSON, CurrentNowFunc().Unix(),
 	)
 	return err
 }

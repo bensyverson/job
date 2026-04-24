@@ -9,10 +9,12 @@ import (
 	job "github.com/bensyverson/jobs/internal/job"
 )
 
-// Tests seed directly via SQL rather than going through the job
-// package's Run* helpers because those helpers record created_at via
-// time.Now(), not a hookable clock. Writing rows directly lets each
-// test control timestamps precisely.
+// Tests seed directly via SQL for two reasons: (1) each test can pin
+// exact created_at values without racing the clock, and (2) we can
+// drop tasks into arbitrary statuses ('done', 'canceled', …) without
+// going through the job package's full state-transition flow.
+// CurrentNowFunc is hookable for timestamps the job package writes,
+// but raw SQL keeps these tests independent of that plumbing.
 
 func seedTask(t *testing.T, db *sql.DB, shortID, title, status string, createdAt time.Time) int64 {
 	t.Helper()

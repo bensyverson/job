@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 )
 
 type ClosedResult struct {
@@ -102,7 +101,7 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string, labels
 		}
 	}
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 	var taskID int64
 	err = tx.QueryRow(`
 		INSERT INTO tasks (short_id, parent_id, title, description, status, sort_order, created_at, updated_at)
@@ -462,7 +461,7 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 		plans = append(plans, plan{target: tgt, cascadeTasks: cTasks, cascadeShorts: cShorts})
 	}
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 
 	var noteVal any
 	if note != "" {
@@ -606,7 +605,7 @@ func RunReopen(db *sql.DB, shortID string, cascade bool, actor string) ([]string
 	}
 	fromStatus := task.Status
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 
 	var reopenedChildren []string
 	if cascade {
@@ -676,7 +675,7 @@ func RunEdit(db *sql.DB, shortID string, newTitle, newDesc *string, actor string
 		return fmt.Errorf("task %q not found", shortID)
 	}
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 	detail := map[string]any{}
 
 	if newTitle != nil && *newTitle != task.Title {
@@ -751,14 +750,14 @@ func RunNote(db *sql.DB, shortID, text string, result json.RawMessage, actor str
 	}
 
 	var newDesc string
-	timestamp := time.Now().Format("2006-01-02 15:04")
+	timestamp := CurrentNowFunc().Format("2006-01-02 15:04")
 	if task.Description == "" {
 		newDesc = text
 	} else {
 		newDesc = task.Description + "\n\n[" + timestamp + "] " + text
 	}
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 	if _, err := tx.Exec(
 		"UPDATE tasks SET description = ?, updated_at = ? WHERE id = ?",
 		newDesc, now, task.ID,
@@ -862,7 +861,7 @@ func RunMove(db *sql.DB, shortID, direction, relativeToShortID, actor string) er
 		}
 	}
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 	if _, err := tx.Exec(
 		"UPDATE tasks SET sort_order = ?, updated_at = ? WHERE id = ?",
 		newSortOrder, now, task.ID,

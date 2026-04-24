@@ -3,7 +3,6 @@ package job
 import (
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 type CanceledResult struct {
@@ -139,7 +138,7 @@ func executeCancel(
 		plans = append(plans, plan{target: tgt, cascadeTasks: cTasks, cascadeShorts: cShorts})
 	}
 
-	now := time.Now().Unix()
+	now := CurrentNowFunc().Unix()
 
 	for _, p := range plans {
 		// Cancel cascaded descendants first.

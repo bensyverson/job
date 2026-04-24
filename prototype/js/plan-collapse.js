@@ -175,4 +175,12 @@
   } else {
     init();
   }
+
+  // Exposed for plan-live.js to re-apply localStorage state to a
+  // freshly-swapped fragment. Idempotent — safe to call repeatedly.
+  window.JobsPlanCollapse = {
+    applyStored: function () {
+      applyState(loadStorage());
+    },
+  };
 })();

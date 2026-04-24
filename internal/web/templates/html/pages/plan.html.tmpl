@@ -8,9 +8,7 @@
 {{define "content"}}
 <div class="row row-gap-md" style="align-items: center">
   <nav class="c-tabs" aria-label="Plan filter">
-    <a href="/plan" class="c-tab c-tab--active">Active</a>
-    <a href="/plan" class="c-tab" aria-disabled="true">Archived</a>
-    <a href="/plan" class="c-tab" aria-disabled="true">All</a>
+    {{range .ShowTabs}}<a href="{{.URL}}" class="c-tab{{if .Active}} c-tab--active{{end}}">{{.Label}}</a>{{end}}
   </nav>
 </div>
 <section class="c-filter-bar" aria-label="Plan filters">

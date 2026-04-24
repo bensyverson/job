@@ -184,7 +184,7 @@ func TestLog_LabelStripIncludesActiveLabelEvenIfBelowCap(t *testing.T) {
 func TestLog_PaginationCapsInitialRender(t *testing.T) {
 	db := setupLogTestDB(t)
 	// 12 events (creation only), explicit limit of 5.
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		mustAdd(t, db, "alice", "task-"+strconv.Itoa(i), nil, nil)
 	}
 
@@ -202,7 +202,7 @@ func TestLog_PaginationCapsInitialRender(t *testing.T) {
 
 func TestLog_PaginationLoadMoreFiltersOlderEvents(t *testing.T) {
 	db := setupLogTestDB(t)
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		mustAdd(t, db, "alice", "task-"+strconv.Itoa(i), nil, nil)
 	}
 
@@ -233,7 +233,7 @@ func TestLog_PaginationLoadMoreFiltersOlderEvents(t *testing.T) {
 
 func TestLog_PaginationOmitsLoadMoreWhenAllEventsFit(t *testing.T) {
 	db := setupLogTestDB(t)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		mustAdd(t, db, "alice", "task-"+strconv.Itoa(i), nil, nil)
 	}
 

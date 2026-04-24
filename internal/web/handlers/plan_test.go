@@ -91,6 +91,14 @@ func TestPlan_RendersTreeWithRootAndChildren(t *testing.T) {
 	mustContain(t, body, `href="/tasks/`+root+`"`)
 }
 
+// Helper: most tests pre-date the archive filter and seed their DBs
+// with done/canceled roots that would be hidden by default. They use
+// fetchPlanAll to bypass the archive partition and assert against the
+// full forest.
+func fetchPlanAll(t *testing.T, deps handlers.Deps) string {
+	return fetchPlan(t, deps, "show=all")
+}
+
 func TestPlan_StatusPillsReflectTaskState(t *testing.T) {
 	db := setupPlanTestDB(t)
 	// available (todo) root
@@ -106,7 +114,7 @@ func TestPlan_StatusPillsReflectTaskState(t *testing.T) {
 	}
 
 	deps := newPlanDeps(t, db)
-	body := fetchPlan(t, deps, "")
+	body := fetchPlanAll(t, deps)
 
 	mustContain(t, body, `c-status-pill--todo`)
 	mustContain(t, body, `c-status-pill--active`)
@@ -163,7 +171,7 @@ func TestPlan_AutoCollapsesFullyDoneSubtree(t *testing.T) {
 	}
 
 	deps := newPlanDeps(t, db)
-	body := fetchPlan(t, deps, "")
+	body := fetchPlanAll(t, deps)
 
 	// Active root's subtree is expanded by default.
 	mustContain(t, body, `data-plan-task="`+activeRoot+`" data-collapsed="false"`)
@@ -246,7 +254,7 @@ func TestPlan_LeafWithDescriptionIsCollapsible(t *testing.T) {
 	}
 
 	deps := newPlanDeps(t, db)
-	body := fetchPlan(t, deps, "")
+	body := fetchPlanAll(t, deps)
 
 	// Active leaf with a description: collapsible but expanded.
 	mustContain(t, body, `data-plan-task="`+active+`" data-collapsed="false"`)
@@ -472,6 +480,118 @@ func TestPlan_LabelFilter_UnknownLabelShowsEmptyState(t *testing.T) {
 	body := fetchPlan(t, deps, "label=nonesuch")
 
 	mustContain(t, body, `c-plan-empty`)
+}
+
+func TestPlan_ShowFilter_ActiveIsDefaultAndHidesArchivedRoots(t *testing.T) {
+	db := setupPlanTestDB(t)
+	activeRoot := mustAdd(t, db, "claude", "Active root", nil, nil)
+	_ = mustAdd(t, db, "claude", "Open child", &activeRoot, nil)
+
+	archivedRoot := mustAdd(t, db, "claude", "Archived root", nil, nil)
+	child := mustAdd(t, db, "claude", "Done child", &archivedRoot, nil)
+	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone child: %v", err)
+	}
+	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone root: %v", err)
+	}
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "") // default = show=active
+
+	mustContain(t, body, `id="task-`+activeRoot+`"`)
+	if strings.Contains(body, `id="task-`+archivedRoot+`"`) {
+		t.Errorf("default ?show=active should hide fully-done root %q", archivedRoot)
+	}
+}
+
+func TestPlan_ShowFilter_ArchivedShowsOnlyArchivedRoots(t *testing.T) {
+	db := setupPlanTestDB(t)
+	activeRoot := mustAdd(t, db, "claude", "Active root", nil, nil)
+	_ = mustAdd(t, db, "claude", "Open child", &activeRoot, nil)
+
+	archivedRoot := mustAdd(t, db, "claude", "Archived root", nil, nil)
+	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "show=archived")
+
+	mustContain(t, body, `id="task-`+archivedRoot+`"`)
+	if strings.Contains(body, `id="task-`+activeRoot+`"`) {
+		t.Errorf("?show=archived should hide open root %q", activeRoot)
+	}
+}
+
+func TestPlan_ShowFilter_AllShowsBoth(t *testing.T) {
+	db := setupPlanTestDB(t)
+	activeRoot := mustAdd(t, db, "claude", "Active root", nil, nil)
+	archivedRoot := mustAdd(t, db, "claude", "Archived root", nil, nil)
+	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "show=all")
+
+	mustContain(t, body, `id="task-`+activeRoot+`"`)
+	mustContain(t, body, `id="task-`+archivedRoot+`"`)
+}
+
+func TestPlan_ShowFilter_TabsAreWiredAndMarkTheActiveMode(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, nil)
+
+	deps := newPlanDeps(t, db)
+
+	// Default (active): Active tab is active, others are plain.
+	body := fetchPlan(t, deps, "")
+	mustContain(t, body, `<a href="/plan" class="c-tab c-tab--active">Active</a>`)
+	mustContain(t, body, `<a href="/plan?show=archived" class="c-tab">Archived</a>`)
+	mustContain(t, body, `<a href="/plan?show=all" class="c-tab">All</a>`)
+
+	// ?show=archived: Archived is active.
+	body = fetchPlan(t, deps, "show=archived")
+	mustContain(t, body, `<a href="/plan" class="c-tab">Active</a>`)
+	mustContain(t, body, `<a href="/plan?show=archived" class="c-tab c-tab--active">Archived</a>`)
+
+	// ?show=all: All is active.
+	body = fetchPlan(t, deps, "show=all")
+	mustContain(t, body, `<a href="/plan?show=all" class="c-tab c-tab--active">All</a>`)
+}
+
+func TestPlan_ShowFilter_PreservesLabelSelectionOnTabSwitch(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "label=web")
+
+	// Switching to archived should keep ?label=web; switching to active
+	// clears ?show= (since active is the default).
+	mustContain(t, body, `<a href="/plan?label=web&amp;show=archived" class="c-tab">Archived</a>`)
+	mustContain(t, body, `<a href="/plan?label=web&amp;show=all" class="c-tab">All</a>`)
+}
+
+func TestPlan_ShowFilter_LabelPillPreservesShowParam(t *testing.T) {
+	db := setupPlanTestDB(t)
+	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
+	doneID := mustAdd(t, db, "claude", "B", nil, []string{"other"})
+	if _, _, err := job.RunDone(db, []string{doneID}, false, "", nil, "claude"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newPlanDeps(t, db)
+	body := fetchPlan(t, deps, "show=all")
+
+	// The "any" pill on show=all should link to /plan?show=all (clears
+	// labels, keeps show). Other label pills should carry show=all too.
+	mustContain(t, body, `<a href="/plan?show=all" class="c-label-pill c-label-pill--all c-label-pill--active">any</a>`)
+	// A label pill should propagate show=all in its toggle URL.
+	if !strings.Contains(body, `?label=web&amp;show=all`) && !strings.Contains(body, `?label=other&amp;show=all`) {
+		t.Errorf("label pill toggle URL should preserve show=all")
+	}
 }
 
 // extractFilterBar returns just the markup inside the plan view's

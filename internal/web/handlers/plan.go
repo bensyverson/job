@@ -23,7 +23,25 @@ type PlanPageData struct {
 	Labels    []PlanLabelChip
 	AllURL    string
 	AllActive bool
+	// ShowTabs carries the three Active/Archived/All tabs with their
+	// href + active state already computed; template just iterates.
+	ShowTabs []PlanShowTab
 }
+
+// PlanShowTab is one of the Active/Archived/All tabs. URL preserves
+// the current label selection; Active reflects the current ?show=.
+type PlanShowTab struct {
+	Label  string
+	URL    string
+	Active bool
+}
+
+// showMode is the ?show= value, normalized. "active" is the default.
+const (
+	showActive   = "active"
+	showArchived = "archived"
+	showAll      = "all"
+)
 
 // PlanLabelChip is one label pill in the plan filter bar. URL is the
 // toggle URL — clicking adds the label if absent, removes if present.
@@ -101,6 +119,7 @@ type PlanBlockerRef struct {
 func Plan(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		selected := parseLabelParam(r.URL.Query().Get("label"))
+		show := parseShowParam(r.URL.Query().Get("show"))
 
 		// Load the unfiltered forest first so the labels strip reflects
 		// what's actually present in the document; the strip needs to
@@ -122,7 +141,11 @@ func Plan(deps Deps) http.Handler {
 			return
 		}
 
-		stripNames := pickStripLabels(roots, labels, selected, 5)
+		// Apply the archive filter first so subsequent strip and label
+		// calculations reflect what's actually in view.
+		roots = filterRootsByShow(roots, show)
+
+		stripNames := pickStripLabels(roots, labels, selected, show, 5)
 		if len(selected) > 0 {
 			roots = filterForestByLabels(roots, labels, selected)
 		}
@@ -147,19 +170,85 @@ func Plan(deps Deps) http.Handler {
 		}
 
 		now := time.Now()
-		addLabelURLs := buildAddLabelURLs(roots, labels, selected)
+		addLabelURLs := buildAddLabelURLs(roots, labels, selected, show)
 		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, titlesByShortID, addLabelURLs, now, 0)
 
 		data := PlanPageData{
 			Chrome:    templates.Chrome{ActiveTab: "plan"},
 			Roots:     planRoots,
 			HasTasks:  len(planRoots) > 0,
-			Labels:    buildPlanLabelChips(stripNames, selected),
-			AllURL:    "/plan",
+			Labels:    buildPlanLabelChips(stripNames, selected, show),
+			AllURL:    planURL(nil, show),
 			AllActive: len(selected) == 0,
+			ShowTabs:  buildShowTabs(selected, show),
 		}
 		renderPage(deps, w, "plan", data)
 	})
+}
+
+// parseShowParam normalizes the ?show= value. Unknown or empty inputs
+// collapse to the default (active).
+func parseShowParam(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case showArchived:
+		return showArchived
+	case showAll:
+		return showAll
+	default:
+		return showActive
+	}
+}
+
+// isArchivedSubtree is true when a task and every descendant are
+// closed (done or canceled). Used as the archive classifier at the
+// root level — a partially-done tree is still "active" because it
+// carries open work.
+func isArchivedSubtree(n *job.TaskNode) bool {
+	if n.Task.Status != "done" && n.Task.Status != "canceled" {
+		return false
+	}
+	for _, c := range n.Children {
+		if !isArchivedSubtree(c) {
+			return false
+		}
+	}
+	return true
+}
+
+// filterRootsByShow partitions roots into active/archived per the
+// ?show= mode. archive classification is per-root: a whole subtree
+// is archived iff every node in it is closed. Non-root nodes stay
+// in view because a root's subtree is either shown or hidden as a
+// unit — partial closure is normal within an active subtree.
+func filterRootsByShow(roots []*job.TaskNode, show string) []*job.TaskNode {
+	if show == showAll {
+		return roots
+	}
+	out := make([]*job.TaskNode, 0, len(roots))
+	for _, r := range roots {
+		archived := isArchivedSubtree(r)
+		if show == showArchived {
+			if archived {
+				out = append(out, r)
+			}
+		} else { // active
+			if !archived {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}
+
+// buildShowTabs returns the three Active/Archived/All tabs for the
+// filter row. Each tab's URL preserves the current label selection
+// so switching archive mode doesn't drop the user's label filter.
+func buildShowTabs(selected []string, show string) []PlanShowTab {
+	return []PlanShowTab{
+		{Label: "Active", URL: planURL(selected, showActive), Active: show == showActive},
+		{Label: "Archived", URL: planURL(selected, showArchived), Active: show == showArchived},
+		{Label: "All", URL: planURL(selected, showAll), Active: show == showAll},
+	}
 }
 
 // parseLabelParam splits a comma-separated ?label= value into a sorted,
@@ -171,7 +260,7 @@ func parseLabelParam(raw string) []string {
 		return nil
 	}
 	seen := make(map[string]struct{})
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		s := strings.TrimSpace(part)
 		if s == "" {
 			continue
@@ -189,15 +278,27 @@ func parseLabelParam(raw string) []string {
 	return out
 }
 
-// labelFreqsOnOpenTasks counts how many open tasks (not done/canceled)
-// in the forest carry each label. A label is only useful as a filter
-// when at least one open task wears it.
-func labelFreqsOnOpenTasks(roots []*job.TaskNode, labels map[int64][]string) map[string]int {
+// labelFreqsByView counts label occurrences restricted to the tasks
+// that match the current ?show= mode. For active view, labels on open
+// tasks. For archived, labels on done/canceled tasks in archived
+// subtrees. For all, labels on any task. The filter strip then reads
+// "labels you can pick right now" in the current view.
+func labelFreqsByView(roots []*job.TaskNode, labels map[int64][]string, show string) map[string]int {
 	out := make(map[string]int)
+	include := func(n *job.TaskNode) bool {
+		switch show {
+		case showArchived:
+			return n.Task.Status == "done" || n.Task.Status == "canceled"
+		case showAll:
+			return true
+		default:
+			return n.Task.Status != "done" && n.Task.Status != "canceled"
+		}
+	}
 	var walk func([]*job.TaskNode)
 	walk = func(ns []*job.TaskNode) {
 		for _, n := range ns {
-			if n.Task.Status != "done" && n.Task.Status != "canceled" {
+			if include(n) {
 				for _, name := range labels[n.Task.ID] {
 					out[name]++
 				}
@@ -210,11 +311,12 @@ func labelFreqsOnOpenTasks(roots []*job.TaskNode, labels map[int64][]string) map
 }
 
 // pickStripLabels returns the labels that appear in the filter strip:
-// top-N most frequent labels on open tasks, plus any currently-selected
-// labels not in the top-N (so a selection never orphans). Top-N first
-// (frequency desc, name asc tiebreak), then extras in name order.
-func pickStripLabels(roots []*job.TaskNode, labels map[int64][]string, selected []string, n int) []string {
-	freqs := labelFreqsOnOpenTasks(roots, labels)
+// top-N most frequent labels in the current view, plus any currently-
+// selected labels not in the top-N (so a selection never orphans).
+// Top-N first (frequency desc, name asc tiebreak), then extras in
+// name order.
+func pickStripLabels(roots []*job.TaskNode, labels map[int64][]string, selected []string, show string, n int) []string {
+	freqs := labelFreqsByView(roots, labels, show)
 	type entry struct {
 		name  string
 		count int
@@ -284,8 +386,8 @@ func filterForestByLabels(nodes []*job.TaskNode, labels map[int64][]string, sele
 }
 
 // buildPlanLabelChips renders the strip pills. URL toggles the label
-// in/out of the current selection; Active reflects current membership.
-func buildPlanLabelChips(stripNames []string, selected []string) []PlanLabelChip {
+// in/out of the current selection and preserves the show mode.
+func buildPlanLabelChips(stripNames []string, selected []string, show string) []PlanLabelChip {
 	selSet := make(map[string]struct{}, len(selected))
 	for _, s := range selected {
 		selSet[s] = struct{}{}
@@ -295,7 +397,7 @@ func buildPlanLabelChips(stripNames []string, selected []string) []PlanLabelChip
 		_, isSel := selSet[name]
 		out = append(out, PlanLabelChip{
 			Name:   name,
-			URL:    planLabelURL(toggleLabel(selected, name)),
+			URL:    planURL(toggleLabel(selected, name), show),
 			Active: isSel,
 		})
 	}
@@ -304,9 +406,9 @@ func buildPlanLabelChips(stripNames []string, selected []string) []PlanLabelChip
 
 // buildAddLabelURLs maps each label name encountered in the forest to
 // its enable-URL — the URL that adds the label to the current
-// selection (no-op if already present). Used by inline pills on task
-// rows; one shared map across rows keeps the per-row work tiny.
-func buildAddLabelURLs(roots []*job.TaskNode, labels map[int64][]string, selected []string) map[string]string {
+// selection (no-op if already present). Preserves the show mode so
+// inline pill clicks don't reset the archive tab.
+func buildAddLabelURLs(roots []*job.TaskNode, labels map[int64][]string, selected []string, show string) map[string]string {
 	out := make(map[string]string)
 	var walk func([]*job.TaskNode)
 	walk = func(ns []*job.TaskNode) {
@@ -315,7 +417,7 @@ func buildAddLabelURLs(roots []*job.TaskNode, labels map[int64][]string, selecte
 				if _, ok := out[name]; ok {
 					continue
 				}
-				out[name] = planLabelURL(addLabel(selected, name))
+				out[name] = planURL(addLabel(selected, name), show)
 			}
 			walk(n.Children)
 		}
@@ -354,20 +456,57 @@ func addLabel(selected []string, name string) []string {
 	return out
 }
 
-// planLabelURL composes the /plan URL for a given selection. Empty
-// selection → /plan (clear-filter URL). Each label is QueryEscape'd
-// individually so an exotic label name still survives a round-trip,
-// but the joining commas stay raw — they're URL-safe in query values
-// and a literal comma is what parseLabelParam splits on.
-func planLabelURL(selected []string) string {
-	if len(selected) == 0 {
+// planURL composes the /plan URL for a given label selection and show
+// mode. Each label is QueryEscape'd individually so exotic label
+// names survive a round-trip, but the joining commas stay raw —
+// they're URL-safe in query values and a literal comma is what
+// parseLabelParam splits on. show=active is the default and is
+// omitted from the URL to keep the default view's URL clean.
+func planURL(selected []string, show string) string {
+	params := url.Values{}
+	if len(selected) > 0 {
+		parts := make([]string, len(selected))
+		for i, s := range selected {
+			parts[i] = url.QueryEscape(s)
+		}
+		// Set via raw join — url.Values.Set would double-escape commas.
+		params["label"] = []string{strings.Join(parts, ",")}
+	}
+	if show != "" && show != showActive {
+		params.Set("show", show)
+	}
+	if len(params) == 0 {
 		return "/plan"
 	}
-	parts := make([]string, len(selected))
-	for i, s := range selected {
-		parts[i] = url.QueryEscape(s)
+	// Serialize manually so the pre-joined label value isn't re-escaped.
+	q := planURLParams(params)
+	return "/plan?" + q
+}
+
+// planURLParams serializes url.Values with keys in alphabetical order
+// so emitted URLs are canonical across calls. label is a pre-escaped
+// comma-joined string; other keys are plain and get standard escaping.
+func planURLParams(v url.Values) string {
+	keys := make([]string, 0, len(v))
+	for k := range v {
+		keys = append(keys, k)
 	}
-	return "/plan?label=" + strings.Join(parts, ",")
+	sort.Strings(keys)
+	var b strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteString("&")
+		}
+		b.WriteString(url.QueryEscape(k))
+		b.WriteString("=")
+		if k == "label" {
+			// Already escaped per-segment; preserve the raw commas.
+			b.WriteString(v[k][0])
+		} else {
+			b.WriteString(url.QueryEscape(v[k][0]))
+		}
+	}
+	return b.String()
 }
 
 // collectTaskIDs walks a task forest in pre-order and returns every

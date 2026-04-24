@@ -44,7 +44,18 @@ func TestListen_BindError(t *testing.T) {
 }
 
 func TestServe_RespondsToRequests(t *testing.T) {
-	srv, ln, err := server.Listen(context.Background(), server.Config{Addr: "127.0.0.1:0"})
+	// Home queries the DB for signal cards, so the server test needs
+	// a real, migrated database — not a nil handle.
+	db, err := job.CreateDB(filepath.Join(t.TempDir(), "serve.db"))
+	if err != nil {
+		t.Fatalf("CreateDB: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	srv, ln, err := server.Listen(context.Background(), server.Config{
+		Addr: "127.0.0.1:0",
+		DB:   db,
+	})
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}

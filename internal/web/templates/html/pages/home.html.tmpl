@@ -1,10 +1,190 @@
-{{- /* Home ("Now") page. Signal cards + mini-graph ship in a later task;
-     this file is the page template that mounts the shared chrome and
-     a placeholder body so the route returns real HTML. */ -}}
+{{- /* Home ("Now") view. First pass ships the four signal cards
+     (activity histogram + three alarm cards). Active claims table,
+     recent completions, blocked strip, and mini-graph follow in later
+     Phase 5 tasks; for now they aren't rendered at all so the empty
+     state reads as "waiting for signal data." */ -}}
 {{define "title"}}Home · Jobs{{end}}
 {{define "content"}}
-<section class="stack stack-gap-md">
-  <h1>Jobs</h1>
-  <p class="t-muted">The dashboard is under construction. Signal cards and the live graph arrive with the Home view task.</p>
+<section class="c-section" aria-labelledby="s-signals">
+  <h2 id="s-signals" class="sr-only">Signals</h2>
+  <div class="c-grid-signals">
+
+    {{/* Activity histogram — 60 per-minute bars + legend. */}}
+    <article class="c-signal-card c-signal-card--primary">
+      <div class="c-signal-card__header">
+        <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <rect x="2" y="9" width="2.25" height="5" rx="0.5" />
+          <rect x="6.875" y="5" width="2.25" height="9" rx="0.5" />
+          <rect x="11.75" y="2" width="2.25" height="12" rx="0.5" />
+        </svg>
+        <span class="c-signal-card__label">Activity · last 60m</span>
+      </div>
+      <div class="c-histogram" role="img" aria-label="{{.Activity.TotalEvents}} events in the last hour, stacked by event type">
+        {{- range .Activity.Bars -}}
+          {{- if .Empty -}}
+            <span class="c-histogram__bar c-histogram__bar--empty"></span>
+          {{- else -}}
+            <span class="c-histogram__bar" style="--h:{{.HeightPercent}}%">
+              {{- if gt .Done 0 -}}<i class="c-histogram__seg c-histogram__seg--done" style="flex:{{.Done}}"></i>{{- end -}}
+              {{- if gt .Claim 0 -}}<i class="c-histogram__seg c-histogram__seg--claim" style="flex:{{.Claim}}"></i>{{- end -}}
+              {{- if gt .Create 0 -}}<i class="c-histogram__seg c-histogram__seg--create" style="flex:{{.Create}}"></i>{{- end -}}
+              {{- if gt .Block 0 -}}<i class="c-histogram__seg c-histogram__seg--block" style="flex:{{.Block}}"></i>{{- end -}}
+            </span>
+          {{- end -}}
+        {{- end -}}
+      </div>
+      <div class="c-signal-card__context c-hist-legend">
+        <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--done"></span>{{.Activity.TotalDone}} done</span>
+        <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--claim"></span>{{.Activity.TotalClaim}} claimed</span>
+        <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--create"></span>{{.Activity.TotalCreate}} new</span>
+        <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--block"></span>{{.Activity.TotalBlock}} blocked</span>
+      </div>
+      <div class="c-signal-card__underline"></div>
+    </article>
+
+    {{/* Newly blocked — count of block edges in the last 10 minutes. */}}
+    <article class="c-signal-card c-signal-card--warn" style="--progress: {{.NewlyBlocked.ProgressPct}}%">
+      <div class="c-signal-card__header">
+        <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+          <path d="M5 5l6 6M11 5l-6 6" stroke-linecap="round" />
+        </svg>
+        <span class="c-signal-card__label">Newly blocked · 10m</span>
+      </div>
+      <div class="c-signal-card__value">{{.NewlyBlocked.Count}}</div>
+      <div class="c-signal-card__context">
+        {{- if .NewlyBlocked.Items -}}
+          {{- with index .NewlyBlocked.Items 0 -}}
+            <a href="{{.BlockedURL}}" class="c-id-pill">{{.BlockedShortID}}</a> waiting on
+            <a href="{{.WaitingOnURL}}" class="c-id-pill">{{.WaitingOnShortID}}</a>
+          {{- end -}}
+        {{- else -}}
+          <span class="t-muted">No new blocks</span>
+        {{- end -}}
+      </div>
+      <div class="c-signal-card__underline"></div>
+    </article>
+
+    {{/* Longest active claim. */}}
+    <article class="c-signal-card c-signal-card--primary" style="--progress: {{.LongestClaim.ProgressPct}}%">
+      <div class="c-signal-card__header">
+        <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 4.5v3.5h3" stroke-linecap="round" />
+        </svg>
+        <span class="c-signal-card__label">Longest active claim</span>
+      </div>
+      {{- if .LongestClaim.Present -}}
+        <div class="c-signal-card__value">{{.LongestClaim.DurationText}}</div>
+        <div class="c-signal-card__context">
+          <span class="c-avatar c-avatar-dot" data-actor="{{.LongestClaim.Actor}}"></span>
+          <a href="{{.LongestClaim.ActorURL}}"><strong class="t-muted">{{.LongestClaim.Actor}}</strong></a> ·
+          <a href="{{.LongestClaim.TaskURL}}" class="c-id-pill">{{.LongestClaim.TaskShortID}}</a>
+        </div>
+      {{- else -}}
+        <div class="c-signal-card__value">—</div>
+        <div class="c-signal-card__context"><span class="t-muted">No active claims</span></div>
+      {{- end -}}
+      <div class="c-signal-card__underline"></div>
+    </article>
+
+    {{/* Oldest available task. */}}
+    <article class="c-signal-card c-signal-card--warn" style="--progress: {{.OldestTodo.ProgressPct}}%">
+      <div class="c-signal-card__header">
+        <svg class="c-signal-card__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M8 2v12M2 8h12" stroke-linecap="round" />
+        </svg>
+        <span class="c-signal-card__label">Oldest todo</span>
+      </div>
+      {{- if .OldestTodo.Present -}}
+        <div class="c-signal-card__value">{{.OldestTodo.AgeText}}</div>
+        <div class="c-signal-card__context">
+          <a href="{{.OldestTodo.TaskURL}}" class="c-id-pill">{{.OldestTodo.TaskShortID}}</a> — {{.OldestTodo.Title}}
+        </div>
+      {{- else -}}
+        <div class="c-signal-card__value">—</div>
+        <div class="c-signal-card__context"><span class="t-muted">Nothing waiting</span></div>
+      {{- end -}}
+      <div class="c-signal-card__underline"></div>
+    </article>
+
+  </div>
 </section>
+
+<div class="c-grid-cols-4">
+
+  <section class="c-panel" aria-labelledby="p-claims" data-home-claims>
+    <div class="c-panel__header">
+      <h2 id="p-claims" class="c-panel__title">Active claims</h2>
+      <span class="c-panel__meta">{{.ActiveClaims.Count}} in flight</span>
+    </div>
+    <div class="c-panel__list">
+      {{- if .ActiveClaims.Rows -}}
+        {{- range .ActiveClaims.Rows -}}
+          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto" data-claimed-at="{{.ClaimedAtUnix}}">
+            <a href="{{.ActorURL}}" class="c-avatar c-avatar-sm" data-actor="{{.Actor}}" aria-label="Actor {{.Actor}}"></a>
+            <span class="c-id-pill">{{.TaskShortID}}</span>
+            <span class="c-panel-row__title">{{.TaskTitle}}</span>
+            <span class="c-panel-row__meta" data-claim-idle>{{.DurationText}}</span>
+            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+          </div>
+        {{- end -}}
+      {{- else -}}
+        <div class="c-panel-row" style="--row-cols: 1fr">
+          <span class="c-panel-row__title t-muted">No active claims</span>
+        </div>
+      {{- end -}}
+    </div>
+  </section>
+
+  <section class="c-panel" aria-labelledby="p-recent" data-home-recent>
+    <div class="c-panel__header">
+      <h2 id="p-recent" class="c-panel__title">Recent completions</h2>
+      <span class="c-panel__meta">last {{.RecentCompletions.Count}}</span>
+    </div>
+    <div class="c-panel__list">
+      {{- if .RecentCompletions.Rows -}}
+        {{- range .RecentCompletions.Rows -}}
+          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+            <a href="{{.ActorURL}}" class="c-avatar c-avatar-sm" data-actor="{{.Actor}}" aria-label="Actor {{.Actor}}"></a>
+            <span class="c-id-pill">{{.TaskShortID}}</span>
+            <span class="c-panel-row__title">{{.TaskTitle}}</span>
+            <span class="c-panel-row__meta">{{.AgeText}}</span>
+            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+          </div>
+        {{- end -}}
+      {{- else -}}
+        <div class="c-panel-row" style="--row-cols: 1fr">
+          <span class="c-panel-row__title t-muted">No recent completions</span>
+        </div>
+      {{- end -}}
+    </div>
+  </section>
+
+  <section class="c-panel" aria-labelledby="p-blocked" data-home-blocked>
+    <div class="c-panel__header">
+      <h2 id="p-blocked" class="c-panel__title">Blocked</h2>
+      <span class="c-panel__meta">{{.Blocked.Count}} waiting</span>
+    </div>
+    <div class="c-panel__list">
+      {{- if .Blocked.Rows -}}
+        {{- range .Blocked.Rows -}}
+          <div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">
+            <span class="c-id-pill">{{.TaskShortID}}</span>
+            <div class="stack stack-gap-xs">
+              <span class="c-panel-row__title">{{.TaskTitle}}</span>
+              <span class="c-panel-row__meta">waiting on {{range $i, $b := .Blockers}}{{if $i}}, {{end}}<a href="{{$b.URL}}" class="c-id-pill">{{$b.ShortID}}</a>{{end}}</span>
+            </div>
+            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+          </div>
+        {{- end -}}
+      {{- else -}}
+        <div class="c-panel-row" style="--row-cols: 1fr">
+          <span class="c-panel-row__title t-muted">No blocked tasks</span>
+        </div>
+      {{- end -}}
+    </div>
+  </section>
+
+</div>
 {{end}}

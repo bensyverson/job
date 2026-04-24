@@ -22,10 +22,94 @@ func newEngine(t *testing.T) *templates.Engine {
 	return e
 }
 
+// homeTemplateData mirrors the shape of handlers.HomePageData just
+// closely enough for the home template to render without missing-field
+// errors. Duplicated here rather than imported from handlers because
+// handlers already depends on templates; reversing that would cycle.
+type homeTemplateData struct {
+	templates.Chrome
+	Activity          homeActivity
+	NewlyBlocked      homeNewlyBlocked
+	LongestClaim      homeLongestClaim
+	OldestTodo        homeOldestTodo
+	ActiveClaims      homeActiveClaims
+	RecentCompletions homeRecentCompletions
+	Blocked           homeBlocked
+}
+
+type homeBlocked struct {
+	Count int
+	Rows  []homeBlockedRow
+}
+
+type homeBlockedRow struct {
+	TaskShortID, TaskURL, TaskTitle string
+	Blockers                        []homeBlockerLink
+}
+
+type homeBlockerLink struct {
+	ShortID, URL string
+}
+
+type homeRecentCompletions struct {
+	Count int
+	Rows  []homeRecentCompletionRow
+}
+
+type homeRecentCompletionRow struct {
+	Actor, ActorURL, TaskShortID, TaskURL, TaskTitle, AgeText string
+	CompletedAtUnix                                           int64
+}
+
+type homeActiveClaims struct {
+	Count int
+	Rows  []homeActiveClaimRow
+}
+
+type homeActiveClaimRow struct {
+	Actor, ActorURL, TaskShortID, TaskURL, TaskTitle, DurationText string
+	ClaimedAtUnix                                                  int64
+}
+
+type homeActivity struct {
+	Bars                                                        []homeBar
+	TotalDone, TotalClaim, TotalCreate, TotalBlock, TotalEvents int
+}
+
+type homeBar struct {
+	Empty                      bool
+	HeightPercent              int
+	Done, Claim, Create, Block int
+}
+
+type homeNewlyBlocked struct {
+	Count       int
+	ProgressPct int
+	Items       []homeBlockRef
+}
+
+type homeBlockRef struct {
+	BlockedShortID, BlockedURL, WaitingOnShortID, WaitingOnURL string
+}
+
+type homeLongestClaim struct {
+	Present                                          bool
+	Actor, ActorURL, TaskShortID, TaskURL, TaskTitle string
+	DurationText                                     string
+	ProgressPct                                      int
+}
+
+type homeOldestTodo struct {
+	Present                              bool
+	TaskShortID, TaskURL, Title, AgeText string
+	ProgressPct                          int
+}
+
 func renderHome(t *testing.T, e *templates.Engine) string {
 	t.Helper()
+	data := homeTemplateData{Chrome: templates.Chrome{ActiveTab: "home"}}
 	var buf bytes.Buffer
-	if err := e.Render(&buf, "home", templates.Chrome{ActiveTab: "home"}); err != nil {
+	if err := e.Render(&buf, "home", data); err != nil {
 		t.Fatalf("Render home: %v", err)
 	}
 	return buf.String()
@@ -93,7 +177,8 @@ func TestEngine_Render_UsesFingerprintedCSSURL(t *testing.T) {
 		t.Fatalf("templates.New: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := e.Render(&buf, "home", templates.Chrome{ActiveTab: "home"}); err != nil {
+	data := homeTemplateData{Chrome: templates.Chrome{ActiveTab: "home"}}
+	if err := e.Render(&buf, "home", data); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

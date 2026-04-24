@@ -122,6 +122,36 @@ func DistinctActors(db *sql.DB) ([]string, error) {
 	return out, rows.Err()
 }
 
+// OpenTaskLabelFreqs returns each label's count of open tasks
+// (status not in done/canceled, not soft-deleted). The dashboard's
+// filter strips use this to cap their chip rows to the most-used
+// labels currently in active circulation, matching what's actually
+// useful as a filter rather than every label ever recorded.
+func OpenTaskLabelFreqs(db *sql.DB) (map[string]int, error) {
+	rows, err := db.Query(`
+		SELECT tl.name, COUNT(DISTINCT tl.task_id)
+		FROM task_labels tl
+		JOIN tasks t ON t.id = tl.task_id
+		WHERE t.status NOT IN ('done', 'canceled')
+		  AND t.deleted_at IS NULL
+		GROUP BY tl.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var name string
+		var count int
+		if err := rows.Scan(&name, &count); err != nil {
+			return nil, err
+		}
+		out[name] = count
+	}
+	return out, rows.Err()
+}
+
 // DistinctLabels returns unique label names from task_labels, sorted
 // alphabetically. Used by the web dashboard's log view to populate
 // the Label filter chips.

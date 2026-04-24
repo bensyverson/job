@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -129,6 +130,55 @@ func TestLog_ChipsPreserveOtherFilters(t *testing.T) {
 	// With ?actor=alice, the type chips should encode &actor=alice.
 	body := fetchLog(t, deps, "actor=alice")
 	mustContain(t, body, `/log?actor=alice&amp;type=claimed`)
+}
+
+func TestLog_LabelStripCapsToTopTenByOpenTaskFrequency(t *testing.T) {
+	db := setupLogTestDB(t)
+	// 12 labels with descending counts: a×12 down to l×1. Strip should
+	// keep top 10 (a–j) and drop k, l. The "any" chip is always present.
+	for i, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"} {
+		count := 12 - i
+		for n := 0; n < count; n++ {
+			if _, err := job.RunAdd(db, "", name+"-"+strconv.Itoa(n), "", "", []string{name}, "alice"); err != nil {
+				t.Fatalf("RunAdd: %v", err)
+			}
+		}
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "")
+
+	bar := extractFilterBar(t, body)
+	for _, want := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"} {
+		if !strings.Contains(bar, `data-label="`+want+`"`) && !strings.Contains(bar, `>`+want+`<`) {
+			t.Errorf("strip should include top-10 label %q", want)
+		}
+	}
+	for _, drop := range []string{"k", "l"} {
+		if strings.Contains(bar, `data-label="`+drop+`"`) {
+			t.Errorf("strip should not include below-cap label %q", drop)
+		}
+	}
+}
+
+func TestLog_LabelStripIncludesActiveLabelEvenIfBelowCap(t *testing.T) {
+	db := setupLogTestDB(t)
+	for i, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"} {
+		count := 12 - i
+		for n := 0; n < count; n++ {
+			if _, err := job.RunAdd(db, "", name+"-"+strconv.Itoa(n), "", "", []string{name}, "alice"); err != nil {
+				t.Fatalf("RunAdd: %v", err)
+			}
+		}
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "label=k") // k is the 11th label, normally cut
+
+	bar := extractFilterBar(t, body)
+	if !strings.Contains(bar, `data-label="k"`) {
+		t.Errorf("strip should include the active label %q even when below the cap", "k")
+	}
 }
 
 // --- helpers ---

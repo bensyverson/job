@@ -97,11 +97,12 @@ func Log(deps Deps) http.Handler {
 			InternalError(deps, w, "actors query", err)
 			return
 		}
-		labels, err := job.DistinctLabels(deps.DB)
+		labelFreqs, err := job.OpenTaskLabelFreqs(deps.DB)
 		if err != nil {
-			InternalError(deps, w, "labels query", err)
+			InternalError(deps, w, "label freqs query", err)
 			return
 		}
+		labels := topLabelsByFreq(labelFreqs, filters.Label, 10)
 
 		data := LogPageData{
 			Chrome:      templates.Chrome{ActiveTab: "log"},
@@ -298,6 +299,37 @@ func buildActorChips(f LogFilters, actors []string) []LogChip {
 		})
 	}
 	return chips
+}
+
+// topLabelsByFreq returns the top-n labels by frequency (desc, name
+// asc tiebreak), with the active label always included even if it
+// would otherwise fall below the cap so the active selection is
+// never orphaned. Names only — caller decides chip presentation.
+func topLabelsByFreq(freqs map[string]int, active string, n int) []string {
+	type entry struct {
+		name  string
+		count int
+	}
+	all := make([]entry, 0, len(freqs))
+	for name, c := range freqs {
+		all = append(all, entry{name, c})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].count != all[j].count {
+			return all[i].count > all[j].count
+		}
+		return all[i].name < all[j].name
+	})
+	out := make([]string, 0, n+1)
+	inOut := make(map[string]bool)
+	for i := 0; i < len(all) && len(out) < n; i++ {
+		out = append(out, all[i].name)
+		inOut[all[i].name] = true
+	}
+	if active != "" && !inOut[active] {
+		out = append(out, active)
+	}
+	return out
 }
 
 func buildLabelChips(f LogFilters, labels []string) []LogChip {

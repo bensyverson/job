@@ -1,6 +1,186 @@
 package signals
 
-import "sort"
+import (
+	"context"
+	"database/sql"
+	"sort"
+	"time"
+)
+
+// Default windowing and lookahead values from the design doc
+// (project/2026-04-25-graph-clarification.md). Both tunable later as
+// part of Phase 4 — here as named constants so tests and callers
+// share the same numbers.
+const (
+	subwayLookahead = 2
+	subwayWindow    = 2
+)
+
+// BuildSubway loads the current task graph and produces the
+// topological Subway model: lines, optional fork, deduplicated
+// nodes, and typed edges. Snapshot-per-request; rendering and SVG
+// layout live downstream in the render package.
+//
+// `now` is reserved for future use (e.g. filtering stale claims) and
+// is currently unused, kept for signature symmetry with
+// ComputeMiniGraph.
+func BuildSubway(ctx context.Context, db *sql.DB, _ time.Time) (Subway, error) {
+	w, err := loadGraphWorld(ctx, db)
+	if err != nil {
+		return Subway{}, err
+	}
+	return buildSubway(w), nil
+}
+
+// buildSubway is the pure, world-driven core of BuildSubway. Tests
+// drive it directly with in-memory graphWorlds; the public entry
+// point is the DB shim above.
+func buildSubway(w *graphWorld) Subway {
+	focals := pickFocals(w)
+	if len(focals) == 0 {
+		return Subway{}
+	}
+	seeds := collectLines(w, focals, subwayLookahead)
+	if len(seeds) == 0 {
+		return Subway{}
+	}
+	fork := computeFork(seeds)
+
+	lines := make([]Line, len(seeds))
+	for i, seed := range seeds {
+		lines[i] = applyWindow(seed, subwayWindow)
+	}
+
+	// Render order: fork ancestors first, then for each line its
+	// anchor followed by its visible stops. Deduplicated by ShortID.
+	byShort := indexByShortID(w)
+	var nodes []SubwayNode
+	seen := map[string]bool{}
+	pushNode := func(t *graphTask) {
+		if t == nil || seen[t.shortID] {
+			return
+		}
+		seen[t.shortID] = true
+		nodes = append(nodes, SubwayNode{
+			ShortID: t.shortID,
+			Title:   t.title,
+			State:   subwayState(t),
+			Actor:   t.actor,
+			URL:     "/tasks/" + t.shortID,
+		})
+	}
+	if fork != nil {
+		for _, sid := range fork.AncestorChain {
+			pushNode(byShort[sid])
+		}
+	}
+	for i, seed := range seeds {
+		pushNode(seed.parent)
+		for _, item := range lines[i].Items {
+			if item.Kind == LineItemStop {
+				pushNode(byShort[item.ShortID])
+			}
+		}
+	}
+
+	// Edges. Order: branch edges (fork → each line anchor), then
+	// flow edges line by line, then explicit blocker edges.
+	var edges []SubwayEdge
+	anchorSet := map[string]bool{}
+	for _, seed := range seeds {
+		anchorSet[seed.parent.shortID] = true
+	}
+	if fork != nil {
+		divergence := fork.AncestorChain[len(fork.AncestorChain)-1]
+		for _, idx := range fork.LineIndices {
+			anchor := seeds[idx].parent
+			kind := SubwayEdgeBranch
+			if anchor.openBlockers > 0 {
+				kind = SubwayEdgeBranchClosed
+			}
+			edges = append(edges, SubwayEdge{
+				FromShortID: divergence,
+				ToShortID:   anchor.shortID,
+				Kind:        kind,
+			})
+		}
+	}
+	for _, line := range lines {
+		prev := line.AnchorShortID
+		for _, item := range line.Items {
+			if item.Kind != LineItemStop {
+				continue
+			}
+			edges = append(edges, SubwayEdge{
+				FromShortID: prev,
+				ToShortID:   item.ShortID,
+				Kind:        SubwayEdgeFlow,
+			})
+			prev = item.ShortID
+		}
+	}
+	// Explicit blocks between two rendered nodes. Skip pairs already
+	// represented by a BranchClosed ingress (handled above for line
+	// anchors); skip blockers that are done/canceled (historical, not
+	// a live constraint).
+	for _, n := range nodes {
+		if anchorSet[n.ShortID] {
+			continue
+		}
+		t := byShort[n.ShortID]
+		if t == nil {
+			continue
+		}
+		for _, blockerID := range t.blockerIDs {
+			blocker := w.byID[blockerID]
+			if blocker == nil {
+				continue
+			}
+			if blocker.status == "done" || blocker.status == "canceled" {
+				continue
+			}
+			if !seen[blocker.shortID] {
+				continue
+			}
+			edges = append(edges, SubwayEdge{
+				FromShortID: blocker.shortID,
+				ToShortID:   n.ShortID,
+				Kind:        SubwayEdgeBlocker,
+			})
+		}
+	}
+
+	return Subway{
+		Lines: lines,
+		Fork:  fork,
+		Nodes: nodes,
+		Edges: edges,
+	}
+}
+
+// indexByShortID returns a lookup table from short ID to graphTask
+// for every task in w. The Subway model addresses tasks by short ID,
+// so this map is built once per BuildSubway call.
+func indexByShortID(w *graphWorld) map[string]*graphTask {
+	out := make(map[string]*graphTask, len(w.byID))
+	for _, t := range w.byID {
+		out[t.shortID] = t
+	}
+	return out
+}
+
+// subwayState maps a task's status to its rendered Subway state.
+// Blocked is no longer a node state under the subway model: closure
+// lives on the ingress edge (BranchClosed) or as a Blocker edge.
+func subwayState(t *graphTask) SubwayNodeState {
+	switch t.status {
+	case "claimed":
+		return SubwayNodeActive
+	case "done", "canceled":
+		return SubwayNodeDone
+	}
+	return SubwayNodeTodo
+}
 
 // Subway is the topological model of the mini-graph under the
 // subway-system metaphor. See

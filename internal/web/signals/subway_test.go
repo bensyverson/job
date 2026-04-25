@@ -658,3 +658,395 @@ func TestApplyWindow_NoChildren(t *testing.T) {
 		t.Errorf("items: got %d, want 0", len(line.Items))
 	}
 }
+
+// ------------------------------------------------------------------
+// BuildSubway tests
+//
+// End-to-end composition of pickFocals + collectLines + computeFork +
+// applyWindow with Nodes/Edges assembly. Reference scenarios from
+// project/2026-04-25-graph-clarification.md, exercised through the
+// in-memory graphWorld (no DB).
+// ------------------------------------------------------------------
+
+func hasSubwayEdge(edges []SubwayEdge, from, to string, kind SubwayEdgeKind) bool {
+	for _, e := range edges {
+		if e.FromShortID == from && e.ToShortID == to && e.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func findSubwayNode(nodes []SubwayNode, short string) (SubwayNode, bool) {
+	for _, n := range nodes {
+		if n.ShortID == short {
+			return n, true
+		}
+	}
+	return SubwayNode{}, false
+}
+
+func subwayNodeShortIDs(nodes []SubwayNode) []string {
+	out := make([]string, len(nodes))
+	for i, n := range nodes {
+		out[i] = n.ShortID
+	}
+	return out
+}
+
+func edgeSummary(edges []SubwayEdge) string {
+	parts := make([]string, len(edges))
+	kindName := map[SubwayEdgeKind]string{
+		SubwayEdgeFlow:         "flow",
+		SubwayEdgeBranch:       "branch",
+		SubwayEdgeBranchClosed: "branch⊘",
+		SubwayEdgeBlocker:      "blocker",
+	}
+	for i, e := range edges {
+		parts[i] = fmt.Sprintf("%s→%s(%s)", e.FromShortID, e.ToShortID, kindName[e.Kind])
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// Empty world → empty Subway. No focals, nothing to render.
+func TestBuildSubway_NoFocals_EmptySubway(t *testing.T) {
+	w := newTestWorld(nil)
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 0 {
+		t.Errorf("Lines: got %d, want 0", len(got.Lines))
+	}
+	if got.Fork != nil {
+		t.Errorf("Fork: got %+v, want nil", got.Fork)
+	}
+	if len(got.Nodes) != 0 {
+		t.Errorf("Nodes: got %d, want 0", len(got.Nodes))
+	}
+	if len(got.Edges) != 0 {
+		t.Errorf("Edges: got %d, want 0", len(got.Edges))
+	}
+}
+
+// All work done → no claims, no available leaf, empty Subway.
+func TestBuildSubway_NothingActionable_EmptySubway(t *testing.T) {
+	statuses := map[string]string{}
+	for _, s := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"} {
+		statuses[s] = "done"
+	}
+	w := newTestWorld(referenceTree(statuses))
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 0 {
+		t.Errorf("expected empty Subway when nothing actionable, got %d lines", len(got.Lines))
+	}
+}
+
+// No claims but available leaf exists → falls back to globalNext.
+func TestBuildSubway_FallsBackToGlobalNext_WhenNoClaims(t *testing.T) {
+	w := newTestWorld(referenceTree(nil))
+
+	got := buildSubway(w)
+
+	// globalNext picks the first preorder available leaf with no
+	// blockers — that's C in the reference tree. C's parent is B,
+	// so the line anchors on B with anchors {C, D} (C focal + D from
+	// lookahead step 1; step 2 reaches E).
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1 (single fallback line)", len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "B" {
+		t.Errorf("Line anchor: got %q, want %q", got.Lines[0].AnchorShortID, "B")
+	}
+	if got.Fork != nil {
+		t.Errorf("Fork: got %+v, want nil for single line", got.Fork)
+	}
+}
+
+// Scenario 1 — D claimed (C done). One line on B, no fork.
+func TestBuildSubway_Scenario1_OneLine_NoFork(t *testing.T) {
+	w := newTestWorld(referenceTree(map[string]string{
+		"C": "done",
+		"D": "claimed",
+	}))
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
+	}
+	if got.Fork != nil {
+		t.Errorf("Fork: got %+v, want nil for single line", got.Fork)
+	}
+
+	// Nodes: anchor B + stops C, D, E, F.
+	wantShorts := []string{"B", "C", "D", "E", "F"}
+	for _, s := range wantShorts {
+		if _, ok := findSubwayNode(got.Nodes, s); !ok {
+			t.Errorf("node %q missing from Nodes %v", s, subwayNodeShortIDs(got.Nodes))
+		}
+	}
+
+	// Node states.
+	if n, _ := findSubwayNode(got.Nodes, "C"); n.State != SubwayNodeDone {
+		t.Errorf("C state: got %d, want Done", n.State)
+	}
+	if n, _ := findSubwayNode(got.Nodes, "D"); n.State != SubwayNodeActive {
+		t.Errorf("D state: got %d, want Active", n.State)
+	}
+	if n, _ := findSubwayNode(got.Nodes, "E"); n.State != SubwayNodeTodo {
+		t.Errorf("E state: got %d, want Todo", n.State)
+	}
+
+	// Flow edges: anchor → first stop, then stop → stop.
+	wantFlow := [][2]string{{"B", "C"}, {"C", "D"}, {"D", "E"}, {"E", "F"}}
+	for _, p := range wantFlow {
+		if !hasSubwayEdge(got.Edges, p[0], p[1], SubwayEdgeFlow) {
+			t.Errorf("missing Flow edge %s→%s in %s", p[0], p[1], edgeSummary(got.Edges))
+		}
+	}
+
+	// No Branch / BranchClosed without a fork.
+	for _, e := range got.Edges {
+		if e.Kind == SubwayEdgeBranch || e.Kind == SubwayEdgeBranchClosed {
+			t.Errorf("unexpected branch edge %s→%s without fork", e.FromShortID, e.ToShortID)
+		}
+	}
+}
+
+// Scenario 2 — D and E claimed; G blocked by B → BranchClosed ingress
+// to G's line. Two lines, fork at A.
+func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
+	w := newTestWorld(
+		referenceTree(map[string]string{
+			"C": "done",
+			"D": "claimed",
+			"E": "claimed",
+		}),
+		[2]string{"B", "G"},
+	)
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	if got.Fork == nil || len(got.Fork.AncestorChain) == 0 || got.Fork.AncestorChain[0] != "A" {
+		t.Fatalf("Fork: want chain=[A], got %+v", got.Fork)
+	}
+
+	// Fork ancestor A must be a rendered node.
+	if _, ok := findSubwayNode(got.Nodes, "A"); !ok {
+		t.Errorf("fork ancestor A missing from Nodes %v", subwayNodeShortIDs(got.Nodes))
+	}
+
+	// Branch edges: A → B (open), A → G (BranchClosed because G has
+	// open blocker B).
+	if !hasSubwayEdge(got.Edges, "A", "B", SubwayEdgeBranch) {
+		t.Errorf("missing Branch edge A→B in %s", edgeSummary(got.Edges))
+	}
+	if !hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranchClosed) {
+		t.Errorf("missing BranchClosed edge A→G in %s", edgeSummary(got.Edges))
+	}
+	// Negatives: A→G should not also be Branch.
+	if hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranch) {
+		t.Errorf("A→G should be BranchClosed, not Branch: %s", edgeSummary(got.Edges))
+	}
+
+	// Flow within G's line.
+	if !hasSubwayEdge(got.Edges, "G", "H", SubwayEdgeFlow) {
+		t.Errorf("missing Flow edge G→H in %s", edgeSummary(got.Edges))
+	}
+
+	// E is active.
+	if n, _ := findSubwayNode(got.Nodes, "E"); n.State != SubwayNodeActive {
+		t.Errorf("E state: got %d, want Active", n.State)
+	}
+	// G renders as Todo (Blocked is no longer a node state under the
+	// subway model — closure is on the ingress edge).
+	if n, _ := findSubwayNode(got.Nodes, "G"); n.State != SubwayNodeTodo {
+		t.Errorf("G state: got %d, want Todo (not Blocked)", n.State)
+	}
+}
+
+// Scenario 3 — D and F claimed, E done between. E renders inline as
+// Done (sits between two visible focals on B's line).
+func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
+	w := newTestWorld(
+		referenceTree(map[string]string{
+			"C": "done",
+			"D": "claimed",
+			"E": "done",
+			"F": "claimed",
+		}),
+		[2]string{"B", "G"},
+	)
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	if n, ok := findSubwayNode(got.Nodes, "E"); !ok {
+		t.Errorf("E missing from Nodes")
+	} else if n.State != SubwayNodeDone {
+		t.Errorf("E state: got %d, want Done", n.State)
+	}
+	// F is active.
+	if n, _ := findSubwayNode(got.Nodes, "F"); n.State != SubwayNodeActive {
+		t.Errorf("F state: got %d, want Active", n.State)
+	}
+	// G remains BranchClosed.
+	if !hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranchClosed) {
+		t.Errorf("missing BranchClosed A→G in %s", edgeSummary(got.Edges))
+	}
+}
+
+// Scenario 4 — D, H claimed (G unblocked). Three lines, fork at A,
+// all three branches open.
+func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
+	w := newTestWorld(referenceTree(map[string]string{
+		"C": "done",
+		"D": "claimed",
+		"H": "claimed",
+	}))
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 3 {
+		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	}
+	if got.Fork == nil || got.Fork.AncestorChain[0] != "A" {
+		t.Fatalf("Fork: want chain=[A], got %+v", got.Fork)
+	}
+	for _, anchor := range []string{"B", "G", "J"} {
+		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
+			t.Errorf("missing open Branch edge A→%s in %s", anchor, edgeSummary(got.Edges))
+		}
+	}
+	// Flow edges: J's line has J→K, K→L.
+	if !hasSubwayEdge(got.Edges, "J", "K", SubwayEdgeFlow) {
+		t.Errorf("missing Flow J→K in %s", edgeSummary(got.Edges))
+	}
+	if !hasSubwayEdge(got.Edges, "K", "L", SubwayEdgeFlow) {
+		t.Errorf("missing Flow K→L in %s", edgeSummary(got.Edges))
+	}
+}
+
+// Scenario 5 — D and K claimed; G has no claim and lookahead doesn't
+// reach it. Two lines (B and J), no G-line.
+func TestBuildSubway_Scenario5_GAbsent(t *testing.T) {
+	w := newTestWorld(referenceTree(map[string]string{
+		"C": "done",
+		"D": "claimed",
+		"K": "claimed",
+	}))
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	for _, s := range []string{"B", "J"} {
+		if _, ok := findSubwayNode(got.Nodes, s); !ok {
+			t.Errorf("expected anchor %q in Nodes, got %v", s, subwayNodeShortIDs(got.Nodes))
+		}
+	}
+	if _, ok := findSubwayNode(got.Nodes, "G"); ok {
+		t.Errorf("did not expect G in Nodes (no line on G), got %v", subwayNodeShortIDs(got.Nodes))
+	}
+	if hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranch) || hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranchClosed) {
+		t.Errorf("did not expect any A→G branch edge: %s", edgeSummary(got.Edges))
+	}
+}
+
+// Scenario 6 — H, K claimed, B's subtree fully done. B's line drops
+// out. Fork at A connects G and J.
+func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
+	w := newTestWorld(referenceTree(map[string]string{
+		"B": "done", "C": "done", "D": "done",
+		"E": "done", "F": "done",
+		"H": "claimed",
+		"K": "claimed",
+	}))
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	if _, ok := findSubwayNode(got.Nodes, "B"); ok {
+		t.Errorf("did not expect B in Nodes (subtree done), got %v", subwayNodeShortIDs(got.Nodes))
+	}
+	for _, anchor := range []string{"G", "J"} {
+		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
+			t.Errorf("missing open Branch A→%s in %s", anchor, edgeSummary(got.Edges))
+		}
+	}
+}
+
+// Node metadata: Title, Actor, URL come straight off the underlying
+// graphTask (URL is "/tasks/" + ShortID).
+func TestBuildSubway_NodeMetadata_TitleActorURL(t *testing.T) {
+	w := newTestWorld(referenceTree(map[string]string{
+		"C": "done",
+		"D": "claimed",
+	}))
+	d := mustTask(w, "D")
+	d.title = "Wire JS to front-end"
+	d.actor = "alice"
+
+	got := buildSubway(w)
+
+	n, ok := findSubwayNode(got.Nodes, "D")
+	if !ok {
+		t.Fatalf("D missing from Nodes")
+	}
+	if n.Title != "Wire JS to front-end" {
+		t.Errorf("Title: got %q, want %q", n.Title, "Wire JS to front-end")
+	}
+	if n.Actor != "alice" {
+		t.Errorf("Actor: got %q, want %q", n.Actor, "alice")
+	}
+	if n.URL != "/tasks/D" {
+		t.Errorf("URL: got %q, want %q", n.URL, "/tasks/D")
+	}
+}
+
+// Explicit blocks edge between two rendered stops (not line anchors)
+// → SubwayEdgeBlocker. Distinct from sequential-phase block, which is
+// covered by BranchClosed on the ingress edge.
+func TestBuildSubway_BlockerEdge_BetweenStops(t *testing.T) {
+	w := newTestWorld(
+		referenceTree(map[string]string{
+			"C": "done",
+			"D": "claimed",
+		}),
+		[2]string{"D", "F"}, // D explicitly blocks F (both stops on B)
+	)
+
+	got := buildSubway(w)
+
+	if !hasSubwayEdge(got.Edges, "D", "F", SubwayEdgeBlocker) {
+		t.Errorf("missing Blocker edge D→F in %s", edgeSummary(got.Edges))
+	}
+}
+
+// Done blockers don't earn a Blocker edge — historical, not a live
+// constraint.
+func TestBuildSubway_DoneBlocker_NoBlockerEdge(t *testing.T) {
+	w := newTestWorld(
+		referenceTree(map[string]string{
+			"C": "done",
+			"D": "claimed",
+		}),
+		[2]string{"C", "F"}, // C blocks F, but C is done
+	)
+
+	got := buildSubway(w)
+
+	if hasSubwayEdge(got.Edges, "C", "F", SubwayEdgeBlocker) {
+		t.Errorf("did not expect Blocker C→F (C done): %s", edgeSummary(got.Edges))
+	}
+}

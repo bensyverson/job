@@ -260,7 +260,7 @@ func loadBlockedStrip(ctx context.Context, db *sql.DB) (BlockedStripPanel, error
 		  AND t.status NOT IN ('done', 'canceled')
 		  AND bt.deleted_at IS NULL
 		  AND bt.status != 'done'
-		ORDER BY t.created_at DESC, t.id DESC, b.created_at ASC, bt.id ASC
+		ORDER BY t.created_at ASC, t.id ASC, b.created_at ASC, bt.id ASC
 	`)
 	if err != nil {
 		return panel, err

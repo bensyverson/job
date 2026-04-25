@@ -55,12 +55,22 @@ type LogEventRow struct {
 	ShortID   string
 	Actor     string
 	EventType string
-	Title     string
-	Note      string
-	RelTime   string
-	ISOTime   string
-	TaskURL   string
-	ActorURL  string
+	// VerbText is the human-readable verb shown in the row. Defaults
+	// to EventType, but some events get a friendlier label —
+	// claim_expired reads as "expired" so it renders as a clean
+	// "EXPIRED" after the CSS uppercase rather than the raw enum.
+	VerbText string
+	Title    string
+	Note     string
+	RelTime  string
+	ISOTime  string
+	TaskURL  string
+	ActorURL string
+	// IsSystem flags housekeeping events whose "actor" is the Jobs
+	// runtime, not a human or agent (e.g. claim_expired emitted by
+	// the expiration sweep). The template renders these without an
+	// avatar/link so the prior claimer isn't surfaced as the doer.
+	IsSystem bool
 }
 
 // LogPageData is the full payload the log template renders.
@@ -289,11 +299,12 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, has
 	rows = make([]LogEventRow, len(filtered))
 	for i, e := range filtered {
 		ts := time.Unix(e.CreatedAt, 0)
-		rows[i] = LogEventRow{
+		row := LogEventRow{
 			EventID:   e.ID,
 			ShortID:   e.ShortID,
 			Actor:     e.Actor,
 			EventType: e.EventType,
+			VerbText:  e.EventType,
 			Title:     titles[e.TaskID],
 			Note:      notePreviewFromDetail(e.EventType, e.Detail),
 			RelTime:   render.RelativeTime(now, ts),
@@ -301,6 +312,13 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, has
 			TaskURL:   "/tasks/" + e.ShortID,
 			ActorURL:  "/actors/" + url.PathEscape(e.Actor),
 		}
+		if e.EventType == "claim_expired" {
+			row.VerbText = "expired"
+			row.Actor = "Jobs"
+			row.ActorURL = ""
+			row.IsSystem = true
+		}
+		rows[i] = row
 	}
 	return rows, total, hasMore, nil
 }

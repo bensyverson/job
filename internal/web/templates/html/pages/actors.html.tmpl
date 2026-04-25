@@ -1,0 +1,47 @@
+{{- /* Actors view. Column-per-actor board: each column lists
+     (actor, task) cards rolled up from this actor's events on that
+     task. The latest state-changing event sets the verb tint; notes
+     collapse to a "N notes" badge. CSS uses column-reverse on the
+     stream, so DOM-first cards visually dock at the bottom — the
+     handler emits active claims first so the chat-style "freshest at
+     the bottom" reading lands on the current claim. */ -}}
+{{define "title"}}Actors · Jobs{{end}}
+{{define "content"}}
+<div class="c-actors-board" aria-label="Actors" data-actors-board>
+  {{- range .Columns -}}
+    <section class="c-actor-col{{if .Idle}} c-actor-col--idle{{end}}" aria-labelledby="a-{{.Name}}" data-actor="{{.Name}}">
+      <header class="c-actor-col__header">
+        <a href="{{.URL}}" class="c-avatar c-avatar-lg" data-actor="{{.Name}}" aria-label="Open {{.Name}}"></a>
+        <div class="stack stack-gap-xs" style="min-width: 0">
+          <a id="a-{{.Name}}" href="{{.URL}}" class="c-actor-col__name" data-actor="{{.Name}}">{{.Name}}</a>
+          <span class="c-actor-col__status{{if .Idle}} c-actor-col__status--idle{{end}}">{{.StatusText}}</span>
+        </div>
+      </header>
+      <div class="c-actor-col__stream">
+        {{- range .Cards -}}
+          <article class="c-actor-card {{.StateClass}}"
+                   data-actor-task="{{.CardKey}}"
+                   data-event-at="{{.EventAt}}"
+                   {{if .IsClaim}}data-claim="1"{{end}}>
+            <div class="c-actor-card__meta">
+              <span class="c-log-row__verb {{.VerbClass}}">{{.Verb}}</span>
+              {{- if .NoteText -}}
+                <span class="c-actor-card__notes" data-note-count="{{.NoteCount}}">{{.NoteText}}</span>
+              {{- end -}}
+              <time>{{.AgeText}}</time>
+            </div>
+            <div class="c-actor-card__title-row">
+              <span class="c-id-pill">{{.TaskShortID}}</span>
+              <h4 class="c-actor-card__title">{{.TaskTitle}}</h4>
+            </div>
+            {{- if .TaskDesc -}}
+              <p class="c-actor-card__desc">{{.TaskDesc}}</p>
+            {{- end -}}
+            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+          </article>
+        {{- end -}}
+      </div>
+    </section>
+  {{- end -}}
+</div>
+{{end}}

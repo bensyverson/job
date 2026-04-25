@@ -1,11 +1,274 @@
 package handlers
 
-import "net/http"
+import (
+	"context"
+	"database/sql"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"time"
 
-// Actors renders the per-actor column view and timeline strip. Also
-// serves /actors/{name}. See vision §3.3.
+	"github.com/bensyverson/jobs/internal/web/render"
+	"github.com/bensyverson/jobs/internal/web/templates"
+)
+
+// ActorsPageData is the template payload for the per-actor board view.
+type ActorsPageData struct {
+	templates.Chrome
+	Columns []ActorColumn
+}
+
+// ActorColumn is one column on the actors board: an actor plus the
+// (actor, task) cards rolled up from their event history. Cards are
+// pre-sorted in DOM order — claims first, then history newest-first
+// — so the template can range over them with no further logic.
+type ActorColumn struct {
+	Name       string
+	URL        string
+	Idle       bool
+	ClaimCount int
+	StatusText string
+	Cards      []ActorCard
+}
+
+// ActorCard is one (actor, task) card. The latest state-changing
+// event by this actor on this task sets the verb and tint. Notes by
+// the same actor on the same task are folded into NoteCount and
+// rendered as a badge instead of getting cards of their own.
+type ActorCard struct {
+	StateClass  string // matches c-actor-card--<state>
+	Verb        string // verb word for the meta line
+	VerbClass   string // matches c-log-row__verb--<verb>
+	AgeText     string
+	NoteCount   int
+	NoteText    string // "1 note" / "N notes" — empty when NoteCount==0
+	TaskShortID string
+	TaskURL     string
+	TaskTitle   string
+	TaskDesc    string
+	IsClaim     bool
+	EventAt     int64 // unix timestamp; rendered for live-update reconciliation
+	// CardKey identifies a card in the DOM as "{actor}:{shortID}" so
+	// the live script can find/update it without rebuilding by hand.
+	CardKey string
+}
+
+// ActorColumnCardLimit caps the number of cards rendered per column
+// so a long-lived actor doesn't drag the DOM into the thousands.
+// Active claims are always retained — only history is truncated when
+// the column overflows. Mirrors the spirit of the log view's 200-row
+// cap, halved because each column carries its own.
+const ActorColumnCardLimit = 100
+
+// stateChangingTypes are the event types that set the card's verb /
+// tint. Anything else (like noted) folds in as metadata.
+var stateChangingTypes = map[string]bool{
+	"created":   true,
+	"claimed":   true,
+	"done":      true,
+	"blocked":   true,
+	"unblocked": true,
+	"released":  true,
+	"canceled":  true,
+}
+
+// Actors renders the column-per-actor board view at /actors. Single-
+// actor /actors/{name} and live updates land in later phase tasks.
 func Actors(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "actors view not yet implemented", http.StatusNotImplemented)
+		now := time.Now()
+		cols, err := loadActorColumns(r.Context(), deps.DB, now)
+		if err != nil {
+			InternalError(deps, w, "actors columns", err)
+			return
+		}
+		data := ActorsPageData{
+			Chrome:  templates.Chrome{ActiveTab: "actors"},
+			Columns: cols,
+		}
+		renderPage(deps, w, "actors", data)
 	})
+}
+
+// loadActorColumns walks every event and rolls them up into per-actor
+// columns of (actor, task) cards. One pass over the event stream:
+//   - For each (actor, task) pair, keep the latest state-changing
+//     event (its type sets the card's verb/tint).
+//   - Count `noted` events separately as a notes badge.
+//   - Track each actor's most-recent event time for column ordering
+//     and "last seen" status text.
+//
+// A card is marked IsClaim when the task's current claimed_by matches
+// the actor — those cards dock to the visual bottom of the column
+// (DOM-first, since CSS uses column-reverse).
+func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time) ([]ActorColumn, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT e.actor, e.event_type, e.created_at,
+		       t.id, t.short_id, t.title, t.description,
+		       t.status, t.claimed_by
+		FROM events e
+		JOIN tasks t ON t.id = e.task_id
+		WHERE e.actor <> ''
+		  AND t.deleted_at IS NULL
+		ORDER BY e.created_at ASC, e.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type pairKey struct {
+		actor  string
+		taskID int64
+	}
+	type pairAccum struct {
+		card       ActorCard
+		hasState   bool
+		taskStatus string
+		claimedBy  sql.NullString
+	}
+	type actorAccum struct {
+		lastSeen   int64
+		claimCount int
+	}
+
+	pairs := make(map[pairKey]*pairAccum)
+	actors := make(map[string]*actorAccum)
+	pairOrder := make(map[string][]pairKey)
+	seenPair := make(map[pairKey]bool)
+
+	for rows.Next() {
+		var actor, eventType, shortID, title, desc, status string
+		var createdAt, taskID int64
+		var claimedBy sql.NullString
+		if err := rows.Scan(&actor, &eventType, &createdAt, &taskID, &shortID, &title, &desc, &status, &claimedBy); err != nil {
+			return nil, err
+		}
+		key := pairKey{actor: actor, taskID: taskID}
+		p, ok := pairs[key]
+		if !ok {
+			p = &pairAccum{
+				card: ActorCard{
+					TaskShortID: shortID,
+					TaskURL:     "/tasks/" + shortID,
+					TaskTitle:   title,
+					TaskDesc:    desc,
+				},
+			}
+			pairs[key] = p
+			if !seenPair[key] {
+				seenPair[key] = true
+				pairOrder[actor] = append(pairOrder[actor], key)
+			}
+		}
+		p.taskStatus = status
+		p.claimedBy = claimedBy
+
+		if eventType == "noted" {
+			p.card.NoteCount++
+		} else if stateChangingTypes[eventType] {
+			p.card.StateClass = "c-actor-card--" + eventType
+			p.card.Verb = eventType
+			p.card.VerbClass = "c-log-row__verb--" + eventType
+			p.card.EventAt = createdAt
+			p.hasState = true
+		}
+
+		a, ok := actors[actor]
+		if !ok {
+			a = &actorAccum{}
+			actors[actor] = a
+		}
+		if createdAt > a.lastSeen {
+			a.lastSeen = createdAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	cols := make([]ActorColumn, 0, len(actors))
+	for actorName, a := range actors {
+		var claimCards, historyCards []ActorCard
+		for _, key := range pairOrder[actorName] {
+			p := pairs[key]
+			if !p.hasState {
+				continue
+			}
+			card := p.card
+			if p.taskStatus == "claimed" && p.claimedBy.Valid && p.claimedBy.String == actorName {
+				card.IsClaim = true
+				a.claimCount++
+			}
+			card.AgeText = render.RelativeTime(now, time.Unix(card.EventAt, 0))
+			card.NoteText = noteCountLabel(card.NoteCount)
+			card.CardKey = actorName + ":" + card.TaskShortID
+			if card.IsClaim {
+				claimCards = append(claimCards, card)
+			} else {
+				historyCards = append(historyCards, card)
+			}
+		}
+		// Newest-first within each band. CSS column-reverse flips the
+		// stream visually, so DOM-first claims dock at the bottom.
+		sort.SliceStable(claimCards, func(i, j int) bool {
+			return claimCards[i].EventAt > claimCards[j].EventAt
+		})
+		sort.SliceStable(historyCards, func(i, j int) bool {
+			return historyCards[i].EventAt > historyCards[j].EventAt
+		})
+
+		// Apply the per-column cap. Claims always survive; history
+		// fills the remaining budget. If claims alone exceed the cap
+		// (extremely unlikely — an agent with 100+ open claims), keep
+		// them all rather than truncate live state.
+		if budget := ActorColumnCardLimit - len(claimCards); budget < len(historyCards) {
+			if budget < 0 {
+				budget = 0
+			}
+			historyCards = historyCards[:budget]
+		}
+
+		col := ActorColumn{
+			Name:       actorName,
+			URL:        "/actors/" + url.PathEscape(actorName),
+			ClaimCount: a.claimCount,
+			Idle:       a.claimCount == 0,
+			Cards:      append(claimCards, historyCards...),
+		}
+		col.StatusText = actorStatusText(col.ClaimCount, render.RelativeTime(now, time.Unix(a.lastSeen, 0)))
+		cols = append(cols, col)
+	}
+
+	sort.SliceStable(cols, func(i, j int) bool {
+		li := actors[cols[i].Name].lastSeen
+		lj := actors[cols[j].Name].lastSeen
+		if li != lj {
+			return li > lj
+		}
+		return cols[i].Name < cols[j].Name
+	})
+	return cols, nil
+}
+
+func noteCountLabel(n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return "1 note"
+	default:
+		return strconv.Itoa(n) + " notes"
+	}
+}
+
+func actorStatusText(claimCount int, lastSeen string) string {
+	if claimCount == 0 {
+		return "idle · last seen " + lastSeen
+	}
+	if claimCount == 1 {
+		return "1 claim · last seen " + lastSeen
+	}
+	return strconv.Itoa(claimCount) + " claims · last seen " + lastSeen
 }

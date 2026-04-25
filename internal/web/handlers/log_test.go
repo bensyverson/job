@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	job "github.com/bensyverson/jobs/internal/job"
 	"github.com/bensyverson/jobs/internal/web/assets"
@@ -245,6 +246,60 @@ func TestLog_PaginationOmitsLoadMoreWhenAllEventsFit(t *testing.T) {
 	}
 }
 
+func TestLog_ClaimExpiredRendersAsExpiredVerb(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "expired-task", nil, nil)
+	// Synthesize a claim_expired event directly. The expirer's actor
+	// in production is whoever triggered the sweep, but for display
+	// the row should read as a system event regardless.
+	taskID := taskIDForShortID(t, db, id)
+	if _, err := db.Exec(`INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (?, 'claim_expired', 'alice', '', ?)`, taskID, time.Now().Unix()); err != nil {
+		t.Fatalf("seed claim_expired: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "")
+
+	// The verb word is rendered lowercase (CSS uppercases), so the
+	// payload string is "expired".
+	mustContain(t, body, `<span class="c-log-row__verb c-log-row__verb--claim_expired">expired</span>`)
+	if strings.Contains(body, `claim_expired</span>`) {
+		t.Errorf("verb text should not include the raw event_type")
+	}
+}
+
+func TestLog_ClaimExpiredActorRendersAsSystemNotLink(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "expired-task", nil, nil)
+	taskID := taskIDForShortID(t, db, id)
+	if _, err := db.Exec(`INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (?, 'claim_expired', 'alice', '', ?)`, taskID, time.Now().Unix()); err != nil {
+		t.Fatalf("seed claim_expired: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "")
+
+	// "Jobs" appears as the system actor label, no anchor and no
+	// avatar dot tied to the original claimer.
+	mustContain(t, body, `c-log-row__actor--system`)
+	mustContain(t, body, `>Jobs<`)
+	// Confirm the row does not render a link to /actors/alice for the
+	// expired event. The other event for this task (the created
+	// event by alice) still does, so we narrow by isolating the
+	// claim_expired row's actor cell.
+	rows := splitLogRows(body)
+	for _, row := range rows {
+		if strings.Contains(row, `c-log-row__verb--claim_expired`) {
+			if strings.Contains(row, `href="/actors/`) {
+				t.Errorf("claim_expired row should not link the actor to /actors/*\n%s", row)
+			}
+			if strings.Contains(row, `data-actor="alice"`) {
+				t.Errorf("claim_expired row should not surface the prior claimer as the actor\n%s", row)
+			}
+		}
+	}
+}
+
 // --- helpers ---
 
 func mustAdd(t *testing.T, db *sql.DB, actor, title string, parent *string, labels []string) string {
@@ -265,6 +320,40 @@ func mustClaim(t *testing.T, db *sql.DB, shortID, actor string) {
 	if err := job.RunClaim(db, shortID, "30m", actor, false); err != nil {
 		t.Fatalf("RunClaim(%q, %q): %v", shortID, actor, err)
 	}
+}
+
+func taskIDForShortID(t *testing.T, db *sql.DB, shortID string) int64 {
+	t.Helper()
+	var id int64
+	if err := db.QueryRow(`SELECT id FROM tasks WHERE short_id = ?`, shortID).Scan(&id); err != nil {
+		t.Fatalf("taskIDForShortID(%q): %v", shortID, err)
+	}
+	return id
+}
+
+// splitLogRows returns the raw HTML for each c-log-row in body. Each
+// returned string starts at one row's opening tag and ends just
+// before the next row's tag (or the end of the log container). Used
+// by tests that need to assert behavior on a specific row without
+// false positives from sibling rows.
+func splitLogRows(body string) []string {
+	const marker = `<div class="c-log-row c-log-row--`
+	var out []string
+	for {
+		i := strings.Index(body, marker)
+		if i < 0 {
+			break
+		}
+		body = body[i:]
+		j := strings.Index(body[len(marker):], marker)
+		if j < 0 {
+			out = append(out, body)
+			break
+		}
+		out = append(out, body[:len(marker)+j])
+		body = body[len(marker)+j:]
+	}
+	return out
 }
 
 func mustContain(t *testing.T, body, needle string) {

@@ -1,0 +1,101 @@
+{{- /* Single-actor page. Hero + 24h timeline + event list. The event
+     list reuses the same row component as the Log view so visual
+     density and semantics match. Live updates and the timeline
+     scrubber land in later phase tasks. */ -}}
+{{define "title"}}{{.Name}} · Actors · Jobs{{end}}
+{{define "live-region-src"}}/events?actor={{.Name}}{{end}}
+{{define "content"}}
+<nav class="row row-gap-sm" aria-label="Breadcrumb">
+  <a href="{{.BackURL}}" class="t-label-caps t-muted">← All actors</a>
+</nav>
+
+<section class="c-actor-hero" aria-labelledby="a-name">
+  <span class="c-actor-hero__avatar" data-actor="{{.Name}}">{{.Initial}}</span>
+  <div class="stack stack-gap-xs">
+    <h1 id="a-name" class="c-actor-hero__name">{{.Name}}</h1>
+    <span class="c-actor-hero__status">{{.StatusText}}</span>
+  </div>
+  <div class="c-actor-hero__stats">
+    <div class="c-actor-stat">
+      <span class="c-actor-stat__value">{{.Stats.InFlight}}</span>
+      <span class="c-actor-stat__label">In flight</span>
+    </div>
+    <div class="c-actor-stat">
+      <span class="c-actor-stat__value">{{.Stats.Done1h}}</span>
+      <span class="c-actor-stat__label">Done 1h</span>
+    </div>
+    <div class="c-actor-stat">
+      <span class="c-actor-stat__value">{{.Stats.Done24h}}</span>
+      <span class="c-actor-stat__label">Done 24h</span>
+    </div>
+    <div class="c-actor-stat">
+      <span class="c-actor-stat__value">{{.Stats.Blocked}}</span>
+      <span class="c-actor-stat__label">Blocked</span>
+    </div>
+  </div>
+</section>
+
+<section class="c-actor-timeline" aria-labelledby="a-timeline">
+  <div class="c-actor-timeline__header">
+    <h2 id="a-timeline" class="t-heading-md">Timeline · 24 hours</h2>
+    <span class="t-dim t-body-sm">{{.Timeline.TotalEvents}} events</span>
+  </div>
+  <div class="c-actor-timeline__lanes">
+    {{- range $lane := .Timeline.Lanes -}}
+      <div class="c-actor-timeline__lane">
+        <span class="c-actor-timeline__lane-label">{{$lane.Verb}}</span>
+        <div class="c-actor-timeline__track">
+          {{- range $lane.Marks -}}
+            <span class="c-actor-timeline__mark {{$lane.LaneClass}}" style="--x:{{.XPercent}}%;--w:3px"></span>
+          {{- end -}}
+        </div>
+      </div>
+    {{- end -}}
+  </div>
+  <div class="c-actor-timeline__axis">
+    <span></span>
+    <div class="c-actor-timeline__axis-labels">
+      <span style="left: 0%">24h</span>
+      <span style="left: 25%">18h</span>
+      <span style="left: 50%">12h</span>
+      <span style="left: 75%">6h</span>
+      <span style="left: 100%">now</span>
+    </div>
+  </div>
+</section>
+
+<section class="c-section">
+  <div class="c-section__header">
+    <h2 class="c-section__title">Events</h2>
+    <a href="{{.LogURL}}" class="t-label-caps t-muted">View all in Log →</a>
+  </div>
+  <div class="c-log" role="list" data-actor-events="{{.Name}}">
+    {{- range .Events -}}
+      <div class="c-log-row c-log-row--{{.EventType}}" role="listitem" data-event-id="{{.EventID}}">
+        <time class="c-log-row__time" datetime="{{.ISOTime}}">{{.RelTime}}</time>
+        {{- if .IsSystem -}}
+          <span class="c-log-row__actor c-log-row__actor--system">
+            <span>{{.Actor}}</span>
+          </span>
+        {{- else -}}
+          <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
+            <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
+            <span>{{.Actor}}</span>
+          </a>
+        {{- end -}}
+        <span class="c-log-row__verb c-log-row__verb--{{.EventType}}">{{.VerbText}}</span>
+        <span class="c-id-pill">{{.ShortID}}</span>
+        <span class="c-log-row__detail">
+          {{if .Title}}<span class="c-log-row__title">{{.Title}}</span>{{end}}
+          {{if .Note}}<span class="c-log-row__note">{{.Note}}</span>{{end}}
+        </span>
+        <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.ShortID}}"></a>
+      </div>
+    {{- else -}}
+      <div class="c-log-row c-log-row--empty" role="listitem">
+        <span class="t-muted">No events recorded for this actor.</span>
+      </div>
+    {{- end -}}
+  </div>
+</section>
+{{end}}

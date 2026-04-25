@@ -1,0 +1,444 @@
+package handlers_test
+
+import (
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	job "github.com/bensyverson/jobs/internal/job"
+	"github.com/bensyverson/jobs/internal/web/handlers"
+)
+
+// countOuterCards counts <article> openings of c-actor-card. The
+// outer article carries `c-actor-card ` with a trailing space (state
+// modifier follows); BEM child classes like c-actor-card__meta lack
+// that trailing space, so this filters them out.
+func countOuterCards(body string) int {
+	return strings.Count(body, `<article class="c-actor-card `)
+}
+
+func fetchActors(t *testing.T, deps handlers.Deps) string {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/actors", nil)
+	w := httptest.NewRecorder()
+	handlers.Actors(deps).ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("GET /actors: status %d, body=%s", w.Code, w.Body.String())
+	}
+	return w.Body.String()
+}
+
+func TestActors_RendersOneColumnPerActor(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustAdd(t, db, "bob", "bob-task", nil, nil)
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	cols := strings.Count(body, `<section class="c-actor-col`)
+	if cols != 2 {
+		t.Errorf("c-actor-col count: got %d, want 2\n---\n%s", cols, body)
+	}
+}
+
+func TestActors_HeaderTabActorsActive(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `href="/actors" class="c-tab c-tab--active"`)
+}
+
+func TestActors_ColumnHeaderHasAvatarLgAndNameLink(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-task", nil, nil)
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `class="c-avatar c-avatar-lg"`)
+	mustContain(t, body, `data-actor="alice"`)
+	mustContain(t, body, `href="/actors/alice"`)
+}
+
+func TestActors_CollapsesActorTaskPairToLatestStateCard(t *testing.T) {
+	db := setupLogTestDB(t)
+	// alice creates → claims → releases. The card's verb tint should
+	// reflect the latest state-changing event (released), not the
+	// earlier created or claimed.
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustClaim(t, db, id, "alice")
+	if err := job.RunRelease(db, id, "alice"); err != nil {
+		t.Fatalf("RunRelease: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	// One card for the (alice, alice-task) pair.
+	cards := countOuterCards(body)
+	if cards != 1 {
+		t.Errorf("c-actor-card count: got %d, want 1", cards)
+	}
+	mustContain(t, body, `c-log-row__verb--released`)
+	if strings.Contains(body, `c-log-row__verb--claimed`) {
+		t.Errorf("collapsed card should not show the prior claimed verb")
+	}
+	if strings.Contains(body, `c-log-row__verb--created`) {
+		t.Errorf("collapsed card should not show the prior created verb")
+	}
+}
+
+func TestActors_NoteEventsCollapseToBadge(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	if err := job.RunNote(db, id, "first note", nil, "alice"); err != nil {
+		t.Fatalf("RunNote: %v", err)
+	}
+	if err := job.RunNote(db, id, "second note", nil, "alice"); err != nil {
+		t.Fatalf("RunNote: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	// One card (created), with a "2 notes" badge — not three cards.
+	cards := countOuterCards(body)
+	if cards != 1 {
+		t.Errorf("c-actor-card count: got %d, want 1", cards)
+	}
+	mustContain(t, body, `c-actor-card__notes`)
+	mustContain(t, body, `2 notes`)
+}
+
+func TestActors_NoteSingularGrammar(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	if err := job.RunNote(db, id, "only note", nil, "alice"); err != nil {
+		t.Fatalf("RunNote: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `1 note`)
+	if strings.Contains(body, `1 notes`) {
+		t.Errorf("singular note should not be pluralized")
+	}
+}
+
+func TestActors_ActiveClaimComesBeforeHistoryInDOM(t *testing.T) {
+	db := setupLogTestDB(t)
+	// alice has a current claim on task A and a finished done on task B.
+	idA := mustAdd(t, db, "alice", "alice-claimed-task", nil, nil)
+	mustClaim(t, db, idA, "alice")
+	idB := mustAdd(t, db, "alice", "alice-done-task", nil, nil)
+	if _, _, err := job.RunDone(db, []string{idB}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	// CSS uses column-reverse to dock claims at the visual bottom, so
+	// the current claim card must appear earlier in DOM than the done
+	// (history) card.
+	claimIdx := strings.Index(body, "alice-claimed-task")
+	doneIdx := strings.Index(body, "alice-done-task")
+	if claimIdx < 0 || doneIdx < 0 {
+		t.Fatalf("expected both task titles in body; got claim=%d done=%d\n%s", claimIdx, doneIdx, body)
+	}
+	if claimIdx > doneIdx {
+		t.Errorf("active claim should precede history in DOM (claim at %d, done at %d)", claimIdx, doneIdx)
+	}
+}
+
+func TestActors_IdleColumnGetsIdleClass(t *testing.T) {
+	db := setupLogTestDB(t)
+	// alice has activity but no current claim → idle column.
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `c-actor-col--idle`)
+	mustContain(t, body, `c-actor-col__status--idle`)
+}
+
+func TestActors_ActiveColumnNotIdle(t *testing.T) {
+	db := setupLogTestDB(t)
+	// alice has a current claim → not idle.
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustClaim(t, db, id, "alice")
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	if strings.Contains(body, `c-actor-col--idle`) {
+		t.Errorf("active actor (with a claim) should not get c-actor-col--idle")
+	}
+	if strings.Contains(body, `c-actor-col__status--idle`) {
+		t.Errorf("active actor's status row should not carry the idle modifier")
+	}
+}
+
+func TestActors_ColumnsOrderedByMostRecentActivity(t *testing.T) {
+	db := setupLogTestDB(t)
+	// Seed explicit timestamps so the ordering signal isn't lost in
+	// the sub-second race that mustAdd() would create.
+	now := time.Now()
+	aliceID := homeSeedTask(t, db, "atask", "alice-task", "available", now.Add(-1*time.Hour))
+	bobID := homeSeedTask(t, db, "btask", "bob-task", "available", now.Add(-30*time.Minute))
+	homeSeedEventActor(t, db, aliceID, "created", "alice", now.Add(-1*time.Hour))
+	homeSeedEventActor(t, db, bobID, "created", "bob", now.Add(-30*time.Minute))
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	aliceIdx := strings.Index(body, `data-actor="alice"`)
+	bobIdx := strings.Index(body, `data-actor="bob"`)
+	if aliceIdx < 0 || bobIdx < 0 {
+		t.Fatalf("missing actor markers; alice=%d bob=%d", aliceIdx, bobIdx)
+	}
+	if bobIdx > aliceIdx {
+		t.Errorf("most-recent actor (bob) should precede alice in DOM (bob=%d alice=%d)", bobIdx, aliceIdx)
+	}
+}
+
+func TestActors_TaskCardLinksToTask(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `href="/tasks/`+id+`"`)
+}
+
+func TestActors_ClaimCountAndStatusLineRender(t *testing.T) {
+	db := setupLogTestDB(t)
+	id1 := mustAdd(t, db, "alice", "t1", nil, nil)
+	id2 := mustAdd(t, db, "alice", "t2", nil, nil)
+	mustClaim(t, db, id1, "alice")
+	mustClaim(t, db, id2, "alice")
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `2 claims`)
+}
+
+func TestActors_CapsCardsPerColumn(t *testing.T) {
+	db := setupLogTestDB(t)
+	now := time.Now()
+	// Seed 120 distinct (alice, task) history pairs — each gets its
+	// own card. With the cap at 100, only the 100 most recent should
+	// render in alice's column.
+	for i := range 120 {
+		shortID := "t" + strconv.Itoa(i)
+		taskID := homeSeedTask(t, db, shortID, "task-"+strconv.Itoa(i), "available", now.Add(-time.Duration(120-i)*time.Minute))
+		homeSeedEventActor(t, db, taskID, "created", "alice", now.Add(-time.Duration(120-i)*time.Minute))
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	cards := countOuterCards(body)
+	if cards != handlers.ActorColumnCardLimit {
+		t.Errorf("card count: got %d, want %d", cards, handlers.ActorColumnCardLimit)
+	}
+	// Newest card should be present; oldest should be dropped.
+	mustContain(t, body, `task-119`)
+	if strings.Contains(body, `>task-0<`) {
+		t.Errorf("oldest history card should be truncated past the cap")
+	}
+}
+
+func TestActors_CapPrioritizesClaimsOverHistory(t *testing.T) {
+	db := setupLogTestDB(t)
+	now := time.Now()
+	// 100 history cards…
+	for i := range 100 {
+		shortID := "h" + strconv.Itoa(i)
+		taskID := homeSeedTask(t, db, shortID, "h-"+strconv.Itoa(i), "available", now.Add(-time.Duration(200-i)*time.Minute))
+		homeSeedEventActor(t, db, taskID, "created", "alice", now.Add(-time.Duration(200-i)*time.Minute))
+	}
+	// …plus one current claim. The claim must survive the cap even
+	// though the column is already at the limit before it's added.
+	cID := homeSeedTask(t, db, "claim1", "current-claim", "claimed", now.Add(-1*time.Minute))
+	homeSeedEventActor(t, db, cID, "claimed", "alice", now.Add(-1*time.Minute))
+	if _, err := db.Exec(`UPDATE tasks SET claimed_by='alice', claim_expires_at=? WHERE id=?`, now.Add(30*time.Minute).Unix(), cID); err != nil {
+		t.Fatalf("set claim: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	cards := countOuterCards(body)
+	if cards != handlers.ActorColumnCardLimit {
+		t.Errorf("card count: got %d, want %d", cards, handlers.ActorColumnCardLimit)
+	}
+	mustContain(t, body, `current-claim`)
+}
+
+func TestActors_NoteBadgeCarriesDataNoteCount(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "t", nil, nil)
+	for range 3 {
+		if err := job.RunNote(db, id, "n", nil, "alice"); err != nil {
+			t.Fatalf("RunNote: %v", err)
+		}
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	// Live-update module reads data-note-count to bump from the
+	// SSR-rendered value rather than restarting at 1.
+	mustContain(t, body, `data-note-count="3"`)
+}
+
+func TestActors_VerbSpanCarriesBaseClassForLiveUpdates(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustClaim(t, db, id, "alice")
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	// The verb span needs BOTH the base class and the modifier so
+	// the live-update module's `.c-log-row__verb` selector can find
+	// it on state transitions. Without the base class a card that
+	// moves from "claimed" → "done" still reads "claimed" in the
+	// browser until the page reloads.
+	mustContain(t, body, `<span class="c-log-row__verb c-log-row__verb--claimed">claimed</span>`)
+}
+
+func TestActors_BoardExposesLiveDataHooks(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustClaim(t, db, id, "alice")
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `data-actors-board`)
+	mustContain(t, body, `data-actor="alice"`)
+	// Card carries (actor, task) identity and the timestamp of its
+	// latest state-changing event so JS can decide whether an
+	// incoming SSE frame is fresher.
+	mustContain(t, body, `data-actor-task="alice:`+id+`"`)
+	mustContain(t, body, `data-event-at=`)
+	mustContain(t, body, `data-claim="1"`)
+}
+
+func TestActors_LiveRegionDefaultsToAllEvents(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `<live-region src="/events">`)
+}
+
+func TestActors_ExcludesEventsOnSoftDeletedTasks(t *testing.T) {
+	db := setupLogTestDB(t)
+	now := time.Now()
+	keepID := homeSeedTask(t, db, "keep1", "kept-task", "available", now.Add(-10*time.Minute))
+	gone := homeSeedTask(t, db, "gone1", "ghost-task", "available", now.Add(-5*time.Minute))
+	homeSeedEventActor(t, db, keepID, "created", "alice", now.Add(-10*time.Minute))
+	homeSeedEventActor(t, db, gone, "created", "alice", now.Add(-5*time.Minute))
+	if _, err := db.Exec(`UPDATE tasks SET deleted_at = ? WHERE id = ?`, now.Unix(), gone); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `kept-task`)
+	if strings.Contains(body, `ghost-task`) {
+		t.Errorf("soft-deleted task should not surface on the board")
+	}
+}
+
+func TestActors_ColumnTiebreakByActorName(t *testing.T) {
+	db := setupLogTestDB(t)
+	now := time.Now()
+	// Both columns share the exact same last-seen timestamp.
+	idA := homeSeedTask(t, db, "ta", "a-task", "available", now.Add(-1*time.Hour))
+	idB := homeSeedTask(t, db, "tb", "b-task", "available", now.Add(-1*time.Hour))
+	homeSeedEventActor(t, db, idA, "created", "zoe", now.Add(-1*time.Hour))
+	homeSeedEventActor(t, db, idB, "created", "alice", now.Add(-1*time.Hour))
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	aliceIdx := strings.Index(body, `data-actor="alice"`)
+	zoeIdx := strings.Index(body, `data-actor="zoe"`)
+	if aliceIdx < 0 || zoeIdx < 0 {
+		t.Fatalf("missing markers; alice=%d zoe=%d", aliceIdx, zoeIdx)
+	}
+	if aliceIdx > zoeIdx {
+		t.Errorf("with tied recency, alice (alphabetically first) should precede zoe (alice=%d zoe=%d)", aliceIdx, zoeIdx)
+	}
+}
+
+func TestActors_DescriptionOmittedWhenEmpty(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-task", nil, nil) // empty description
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	if strings.Contains(body, `c-actor-card__desc`) {
+		t.Errorf("empty description should not render the desc paragraph")
+	}
+}
+
+func TestActors_MultipleNotesAccumulate(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "t", nil, nil)
+	for range 4 {
+		if err := job.RunNote(db, id, "n", nil, "alice"); err != nil {
+			t.Fatalf("RunNote: %v", err)
+		}
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	mustContain(t, body, `4 notes`)
+}
+
+func TestActors_ReleasedCardSitsInHistoryNotClaimBand(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustClaim(t, db, id, "alice")
+	if err := job.RunRelease(db, id, "alice"); err != nil {
+		t.Fatalf("RunRelease: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	// Released card → no claim badge, since claimed_by is nil now.
+	if strings.Contains(body, `data-claim="1"`) {
+		t.Errorf("released card should not carry data-claim")
+	}
+}
+
+func TestActors_EmptyDatabaseRendersEmptyBoard(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+	body := fetchActors(t, deps)
+
+	if strings.Contains(body, `c-actor-col`) {
+		t.Errorf("empty db should render no actor columns")
+	}
+	mustContain(t, body, `c-actors-board`)
+}

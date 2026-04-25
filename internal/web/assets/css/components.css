@@ -560,6 +560,14 @@ a.c-log-row__actor {
 .c-log-row__verb--released { color: var(--color-on-surface-dim); }
 .c-log-row__verb--canceled { color: var(--color-signal-warn); }
 .c-log-row__verb--noted { color: var(--color-on-surface-dim); }
+.c-log-row__verb--claim_expired { color: var(--color-on-surface-dim); }
+
+/* System actor — used for housekeeping events (claim_expired, etc).
+   Reads as a quiet inline label rather than a clickable identity. */
+.c-log-row__actor--system {
+  color: var(--color-on-surface-muted);
+  font-style: italic;
+}
 
 .c-log-row__detail {
   display: inline-flex;

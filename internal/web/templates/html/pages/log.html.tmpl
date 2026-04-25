@@ -41,11 +41,17 @@
   {{range .Events}}
   <div class="c-log-row c-log-row--{{.EventType}}" role="listitem" data-event-id="{{.EventID}}">
     <time class="c-log-row__time" datetime="{{.ISOTime}}">{{.RelTime}}</time>
-    <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
-      <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
-      <span>{{.Actor}}</span>
-    </a>
-    <span class="c-log-row__verb c-log-row__verb--{{.EventType}}">{{.EventType}}</span>
+    {{- if .IsSystem -}}
+      <span class="c-log-row__actor c-log-row__actor--system">
+        <span>{{.Actor}}</span>
+      </span>
+    {{- else -}}
+      <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
+        <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
+        <span>{{.Actor}}</span>
+      </a>
+    {{- end -}}
+    <span class="c-log-row__verb c-log-row__verb--{{.EventType}}">{{.VerbText}}</span>
     <span class="c-id-pill">{{.ShortID}}</span>
     <span class="c-log-row__detail">
       {{if .Title}}<span class="c-log-row__title">{{.Title}}</span>{{end}}

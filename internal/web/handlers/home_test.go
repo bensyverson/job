@@ -328,7 +328,7 @@ func TestHome_ActiveClaims_RendersOneRowPerActiveClaim(t *testing.T) {
 	mustContain(t, body, `href="/actors/alice"`)
 }
 
-func TestHome_ActiveClaims_OrdersOldestFirst(t *testing.T) {
+func TestHome_ActiveClaims_OrdersNewestFirst(t *testing.T) {
 	db := setupLogTestDB(t)
 	deps := newLogDeps(t, db)
 
@@ -342,7 +342,8 @@ func TestHome_ActiveClaims_OrdersOldestFirst(t *testing.T) {
 
 	body := fetchHome(t, deps)
 
-	// Within the claims panel, the row order is old → mid → young.
+	// Within the claims panel, the row order is young → mid → old
+	// (newest claim at the top).
 	claimsStart := strings.Index(body, `id="p-claims"`)
 	panelEnd := strings.Index(body[claimsStart:], `</section>`)
 	section := body[claimsStart : claimsStart+panelEnd]
@@ -353,9 +354,9 @@ func TestHome_ActiveClaims_OrdersOldestFirst(t *testing.T) {
 	if oldIdx < 0 || midIdx < 0 || youngIdx < 0 {
 		t.Fatalf("missing row: old=%d mid=%d young=%d\n%s", oldIdx, midIdx, youngIdx, section)
 	}
-	if !(oldIdx < midIdx && midIdx < youngIdx) {
-		t.Errorf("row order wrong: old=%d mid=%d young=%d, want old < mid < young",
-			oldIdx, midIdx, youngIdx)
+	if !(youngIdx < midIdx && midIdx < oldIdx) {
+		t.Errorf("row order wrong: young=%d mid=%d old=%d, want young < mid < old",
+			youngIdx, midIdx, oldIdx)
 	}
 }
 
@@ -429,7 +430,7 @@ func TestHome_RecentCompletions_RendersDoneAndCanceled(t *testing.T) {
 	}
 }
 
-func TestHome_RecentCompletions_OrdersOldestFirst(t *testing.T) {
+func TestHome_RecentCompletions_OrdersNewestFirst(t *testing.T) {
 	db := setupLogTestDB(t)
 	deps := newLogDeps(t, db)
 
@@ -453,9 +454,10 @@ func TestHome_RecentCompletions_OrdersOldestFirst(t *testing.T) {
 	if oldIdx < 0 || midIdx < 0 || newIdx < 0 {
 		t.Fatalf("missing row: old=%d mid=%d new=%d\n%s", oldIdx, midIdx, newIdx, section)
 	}
-	if !(oldIdx < midIdx && midIdx < newIdx) {
-		t.Errorf("row order: old=%d mid=%d new=%d; want old < mid < new",
-			oldIdx, midIdx, newIdx)
+	// Newest at the top: new < mid < old in document order.
+	if !(newIdx < midIdx && midIdx < oldIdx) {
+		t.Errorf("row order: new=%d mid=%d old=%d; want new < mid < old",
+			newIdx, midIdx, oldIdx)
 	}
 }
 

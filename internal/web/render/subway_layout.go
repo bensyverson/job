@@ -242,7 +242,7 @@ func LayoutSubway(s signals.Subway) SubwayView {
 			IsLineAnchor:   anchorSet[n.ShortID],
 			IsForkAncestor: forkAncestorSet[n.ShortID],
 			LabelLeft:      left + subwayNodeRadius,
-			LabelTop:       top + subwayNodeSize + subwayBugOverhang + 2,
+			LabelTop:       top + subwayNodeSize + subwayBugOverhang,
 		}
 		if n.State == signals.SubwayNodeActive && n.Actor != "" {
 			nv.Bug = &NodeBug{

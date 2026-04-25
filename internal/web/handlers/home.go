@@ -260,7 +260,7 @@ func loadBlockedStrip(ctx context.Context, db *sql.DB) (BlockedStripPanel, error
 		  AND t.status NOT IN ('done', 'canceled')
 		  AND bt.deleted_at IS NULL
 		  AND bt.status != 'done'
-		ORDER BY t.created_at ASC, t.id ASC, b.created_at ASC, bt.id ASC
+		ORDER BY t.created_at DESC, t.id DESC, b.created_at ASC, bt.id ASC
 	`)
 	if err != nil {
 		return panel, err
@@ -379,7 +379,7 @@ func loadUpcoming(ctx context.Context, db *sql.DB, now time.Time) (UpcomingPanel
 
 // loadRecentCompletions returns up to RecentCompletionsLimit of the
 // most recent done/canceled events joined to their tasks, sorted
-// oldest-first for display. Tasks with a deleted_at or a missing
+// newest-first for display. Tasks with a deleted_at or a missing
 // short_id are excluded via the INNER JOIN.
 func loadRecentCompletions(ctx context.Context, db *sql.DB, now time.Time) (RecentCompletionsPanel, error) {
 	var panel RecentCompletionsPanel
@@ -397,9 +397,8 @@ func loadRecentCompletions(ctx context.Context, db *sql.DB, now time.Time) (Rece
 	}
 	defer rows.Close()
 
-	// Query returns newest-first so LIMIT keeps the freshest events;
-	// we then reverse in-place to render oldest-first.
-	var newestFirst []RecentCompletionRow
+	// Query returns newest-first; we render in the same order so the
+	// freshest completion sits at the top of the panel.
 	for rows.Next() {
 		var id int64
 		var actor, shortID, title string
@@ -407,7 +406,7 @@ func loadRecentCompletions(ctx context.Context, db *sql.DB, now time.Time) (Rece
 		if err := rows.Scan(&id, &actor, &completedAt, &shortID, &title); err != nil {
 			return panel, err
 		}
-		newestFirst = append(newestFirst, RecentCompletionRow{
+		panel.Rows = append(panel.Rows, RecentCompletionRow{
 			Actor:           actor,
 			ActorURL:        "/actors/" + actor,
 			TaskShortID:     shortID,
@@ -420,18 +419,13 @@ func loadRecentCompletions(ctx context.Context, db *sql.DB, now time.Time) (Rece
 	if err := rows.Err(); err != nil {
 		return panel, err
 	}
-
-	panel.Rows = make([]RecentCompletionRow, len(newestFirst))
-	for i, r := range newestFirst {
-		panel.Rows[len(newestFirst)-1-i] = r
-	}
 	panel.Count = len(panel.Rows)
 	return panel, nil
 }
 
 // loadActiveClaims lists every currently claimed task with enough
 // context to render a row in the Active Claims panel. Rows are sorted
-// oldest-first so the stalest claim is at the top. Multiple prior
+// newest-first so the most recent claim is at the top. Multiple prior
 // 'claimed' events for the same task are collapsed via MAX so we
 // always measure from the current holder's most recent claim.
 func loadActiveClaims(ctx context.Context, db *sql.DB, now time.Time) (ActiveClaimsPanel, error) {
@@ -446,7 +440,7 @@ func loadActiveClaims(ctx context.Context, db *sql.DB, now time.Time) (ActiveCla
 		  AND e.event_type = 'claimed'
 		  AND e.actor = t.claimed_by
 		GROUP BY t.id
-		ORDER BY claimed_at ASC, t.id ASC
+		ORDER BY claimed_at DESC, t.id DESC
 	`)
 	if err != nil {
 		return panel, err

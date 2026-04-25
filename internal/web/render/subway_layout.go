@@ -18,10 +18,13 @@ type SubwayView struct {
 	CanvasW, CanvasH int
 	Empty            bool
 	Lines            []SubwayLineView
-	Fork             *SubwayForkView
-	Nodes            []SubwayNodeView
-	Edges            []SubwayEdgeView
-	Elisions         []SubwayElisionView
+	// Forks holds one entry per ancestor cluster; with cross-project
+	// claims a single SubwayView can render multiple transfer
+	// stations stacked vertically.
+	Forks    []*SubwayForkView
+	Nodes    []SubwayNodeView
+	Edges    []SubwayEdgeView
+	Elisions []SubwayElisionView
 }
 
 // SubwayLineView is the geometric record for one line: the row it
@@ -34,11 +37,14 @@ type SubwayLineView struct {
 	StopShortIDs  []string
 }
 
-// SubwayForkView captures the LCA fork's render structure when two
-// or more lines are present. AncestorShortIDs is the rendered chain
-// (currently length 1 for shallow LCAs); BranchTargets lists the
-// line anchor short IDs in render order so the template can draw
-// fork-to-anchor connectors above and below the inline anchor.
+// SubwayForkView captures one cluster's transfer station — the LCA
+// (or project root) shared by a group of lines. With cross-project
+// claims a SubwayView holds multiple SubwayForkViews; each cluster's
+// fork sits at col 0..k-1 (k = chain length) on the row of its
+// inline line. AncestorShortIDs is the rendered chain (currently
+// length 1 for shallow LCAs); BranchTargets lists the line anchor
+// short IDs in render order so the template can draw fork-to-anchor
+// connectors above and below the inline anchor.
 type SubwayForkView struct {
 	AncestorShortIDs []string
 	BranchTargets    []string
@@ -135,19 +141,33 @@ func LayoutSubway(s signals.Subway) SubwayView {
 		rows[line.AnchorShortID] = i
 	}
 
-	inlineLineIdx := -1
-	if s.Fork != nil && len(s.Lines) >= 2 {
-		inlineLineIdx = (len(s.Lines) - 1) / 2
-	}
-
 	cols := map[string]int{}
-	anchorCol := 0
-	if s.Fork != nil {
-		for i, sid := range s.Fork.AncestorChain {
-			cols[sid] = i
-			rows[sid] = max(inlineLineIdx, 0)
+	maxChain := 0
+	for _, f := range s.Forks {
+		if len(f.AncestorChain) > maxChain {
+			maxChain = len(f.AncestorChain)
 		}
-		anchorCol = len(s.Fork.AncestorChain)
+	}
+	anchorCol := maxChain
+	// Each fork's ancestor chain sits at cols 0..k-1 on the row of
+	// the cluster's inline line. The inline line within a cluster
+	// follows the same (n-1)/2 rule as the global single-fork case —
+	// top for 2, middle for 3, low-middle for 4+.
+	for _, f := range s.Forks {
+		if len(f.LineIndices) == 0 {
+			continue
+		}
+		minRow := f.LineIndices[0]
+		for _, idx := range f.LineIndices {
+			if idx < minRow {
+				minRow = idx
+			}
+		}
+		inlineRow := minRow + (len(f.LineIndices)-1)/2
+		for i, sid := range f.AncestorChain {
+			cols[sid] = i
+			rows[sid] = inlineRow
+		}
 	}
 
 	view := SubwayView{
@@ -178,12 +198,12 @@ func LayoutSubway(s signals.Subway) SubwayView {
 		view.Lines[i] = lv
 	}
 
-	if s.Fork != nil {
-		fv := &SubwayForkView{AncestorShortIDs: s.Fork.AncestorChain}
-		for _, idx := range s.Fork.LineIndices {
+	for _, f := range s.Forks {
+		fv := &SubwayForkView{AncestorShortIDs: f.AncestorChain}
+		for _, idx := range f.LineIndices {
 			fv.BranchTargets = append(fv.BranchTargets, s.Lines[idx].AnchorShortID)
 		}
-		view.Fork = fv
+		view.Forks = append(view.Forks, fv)
 	}
 
 	contentW := maxCol*subwayColStep + subwayNodeSize
@@ -196,8 +216,8 @@ func LayoutSubway(s signals.Subway) SubwayView {
 		anchorSet[line.AnchorShortID] = true
 	}
 	forkAncestorSet := map[string]bool{}
-	if s.Fork != nil {
-		for _, sid := range s.Fork.AncestorChain {
+	for _, f := range s.Forks {
+		for _, sid := range f.AncestorChain {
 			forkAncestorSet[sid] = true
 		}
 	}

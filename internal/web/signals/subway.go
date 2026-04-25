@@ -52,7 +52,7 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 	if len(seeds) == 0 {
 		return Subway{}
 	}
-	fork := computeFork(seeds)
+	forks := computeForks(seeds)
 
 	lines := make([]Line, len(seeds))
 	for i, seed := range seeds {
@@ -77,7 +77,7 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 			URL:     "/tasks/" + t.shortID,
 		})
 	}
-	if fork != nil {
+	for _, fork := range forks {
 		for _, sid := range fork.AncestorChain {
 			pushNode(byShort[sid])
 		}
@@ -98,7 +98,7 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 	for _, seed := range seeds {
 		anchorSet[seed.parent.shortID] = true
 	}
-	if fork != nil {
+	for _, fork := range forks {
 		divergence := fork.AncestorChain[len(fork.AncestorChain)-1]
 		for _, idx := range fork.LineIndices {
 			anchor := seeds[idx].parent
@@ -210,7 +210,7 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 
 	return Subway{
 		Lines: lines,
-		Fork:  fork,
+		Forks: forks,
 		Nodes: nodes,
 		Edges: edges,
 	}
@@ -255,7 +255,13 @@ func subwayState(t *graphTask) SubwayNodeState {
 // stroke styles.
 type Subway struct {
 	Lines []Line
-	Fork  *Fork
+	// Forks holds one entry per cluster of lines that share a project
+	// root. When all rendered lines share a single root the slice has
+	// one Fork; with cross-project claims we emit one Fork per root so
+	// each cluster's transfer station renders. A single isolated line
+	// (one line, one root) leaves the slice empty — the LCA would be
+	// chrome.
+	Forks []*Fork
 	Nodes []SubwayNode
 	Edges []SubwayEdge
 }
@@ -572,6 +578,68 @@ func computeFork(seeds []*lineSeed) *Fork {
 		AncestorChain: []string{lca.shortID},
 		LineIndices:   indices,
 	}
+}
+
+// computeForks groups seeds by project root and emits one Fork per
+// cluster. Cross-project claims (lines under different roots) each
+// get their own transfer station; a single isolated line yields no
+// fork (the LCA would be chrome). Within a multi-line cluster the
+// fork sits at the LCA of the cluster's seed parents (often the
+// cluster root, sometimes deeper); a single-line cluster in a
+// multi-cluster Subway anchors its fork on the cluster root so the
+// project root still renders as the line's transfer station.
+//
+// LineIndices in each Fork are indices into the original seeds slice
+// (preorder-stable from collectLines).
+func computeForks(seeds []*lineSeed) []*Fork {
+	if len(seeds) < 2 {
+		return nil
+	}
+	type cluster struct {
+		root    *graphTask
+		seedIdx []int
+	}
+	var clusters []cluster
+	clusterByRoot := map[int64]int{}
+	for i, seed := range seeds {
+		root := seed.parent
+		for root.parent != nil {
+			root = root.parent
+		}
+		if idx, ok := clusterByRoot[root.id]; ok {
+			clusters[idx].seedIdx = append(clusters[idx].seedIdx, i)
+			continue
+		}
+		clusterByRoot[root.id] = len(clusters)
+		clusters = append(clusters, cluster{root: root, seedIdx: []int{i}})
+	}
+	if len(clusters) == 1 && len(clusters[0].seedIdx) < 2 {
+		return nil
+	}
+	var forks []*Fork
+	for _, c := range clusters {
+		if len(c.seedIdx) >= 2 {
+			subSeeds := make([]*lineSeed, len(c.seedIdx))
+			for j, i := range c.seedIdx {
+				subSeeds[j] = seeds[i]
+			}
+			f := computeFork(subSeeds)
+			if f == nil {
+				// Cluster shares a root, so an LCA must exist; fall
+				// back defensively to the cluster root.
+				f = &Fork{AncestorChain: []string{c.root.shortID}}
+			}
+			f.LineIndices = append([]int(nil), c.seedIdx...)
+			forks = append(forks, f)
+			continue
+		}
+		// Singleton in a multi-cluster Subway — anchor on the root.
+		forks = append(forks, &Fork{
+			AncestorChain: []string{c.root.shortID},
+			LineIndices:   append([]int(nil), c.seedIdx...),
+		})
+	}
+	return forks
 }
 
 // lcaPair returns the lowest common ancestor of two tasks, or nil

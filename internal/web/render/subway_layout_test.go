@@ -77,10 +77,10 @@ func scenario2Subway() signals.Subway {
 				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
 			},
 		},
-		Fork: &signals.Fork{
+		Forks: []*signals.Fork{{
 			AncestorChain: []string{"A"},
 			LineIndices:   []int{0, 1},
-		},
+		}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -123,7 +123,7 @@ func scenario3Subway() signals.Subway {
 				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
 			},
 		},
-		Fork: &signals.Fork{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}},
+		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -172,7 +172,7 @@ func scenario4Subway() signals.Subway {
 				Items:         []signals.LineItem{stopItem("K"), stopItem("L")},
 			},
 		},
-		Fork: &signals.Fork{AncestorChain: []string{"A"}, LineIndices: []int{0, 1, 2}},
+		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1, 2}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -223,7 +223,7 @@ func scenario5Subway() signals.Subway {
 				Items:         []signals.LineItem{stopItem("K"), stopItem("L")},
 			},
 		},
-		Fork: &signals.Fork{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}},
+		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -266,7 +266,7 @@ func scenario6Subway() signals.Subway {
 				Items:         []signals.LineItem{stopItem("K"), stopItem("L")},
 			},
 		},
-		Fork: &signals.Fork{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}},
+		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("G", signals.SubwayNodeTodo),
@@ -371,8 +371,8 @@ func TestLayoutSubway_Scenario1_SingleLineNoFork(t *testing.T) {
 	if len(v.Lines) != 1 {
 		t.Fatalf("Lines: got %d, want 1", len(v.Lines))
 	}
-	if v.Fork != nil {
-		t.Errorf("Fork: got %+v, want nil for single line", v.Fork)
+	if len(v.Forks) != 0 {
+		t.Errorf("Forks: got %d, want 0 for single line", len(v.Forks))
 	}
 	if v.Lines[0].AnchorShortID != "B" {
 		t.Errorf("anchor: got %q, want B", v.Lines[0].AnchorShortID)
@@ -430,11 +430,11 @@ func TestLayoutSubway_Scenario2_BranchClosedToG(t *testing.T) {
 	if len(v.Lines) != 2 {
 		t.Fatalf("Lines: got %d, want 2", len(v.Lines))
 	}
-	if v.Fork == nil {
-		t.Fatalf("Fork: got nil, want non-nil")
+	if len(v.Forks) == 0 {
+		t.Fatalf("Forks: got 0, want non-empty")
 	}
-	if len(v.Fork.AncestorShortIDs) == 0 || v.Fork.AncestorShortIDs[0] != "A" {
-		t.Errorf("Fork ancestors: got %v, want [A...]", v.Fork.AncestorShortIDs)
+	if len(v.Forks[0].AncestorShortIDs) == 0 || v.Forks[0].AncestorShortIDs[0] != "A" {
+		t.Errorf("Fork ancestors: got %v, want [A...]", v.Forks[0].AncestorShortIDs)
 	}
 
 	a := assertNodePositioned(t, v, "A")
@@ -520,8 +520,8 @@ func TestLayoutSubway_Scenario4_ThreeLinesAllOpen(t *testing.T) {
 	if len(v.Lines) != 3 {
 		t.Fatalf("Lines: got %d, want 3", len(v.Lines))
 	}
-	if v.Fork == nil {
-		t.Fatalf("Fork: got nil, want non-nil")
+	if len(v.Forks) == 0 {
+		t.Fatalf("Forks: got 0, want non-empty")
 	}
 
 	// All three branch ingress edges open (no closure markers).

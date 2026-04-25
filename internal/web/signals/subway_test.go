@@ -717,8 +717,8 @@ func TestBuildSubway_NoFocals_EmptySubway(t *testing.T) {
 	if len(got.Lines) != 0 {
 		t.Errorf("Lines: got %d, want 0", len(got.Lines))
 	}
-	if got.Fork != nil {
-		t.Errorf("Fork: got %+v, want nil", got.Fork)
+	if len(got.Forks) != 0 {
+		t.Errorf("Forks: got %d, want 0", len(got.Forks))
 	}
 	if len(got.Nodes) != 0 {
 		t.Errorf("Nodes: got %d, want 0", len(got.Nodes))
@@ -759,8 +759,8 @@ func TestBuildSubway_FallsBackToGlobalNext_WhenNoClaims(t *testing.T) {
 	if got.Lines[0].AnchorShortID != "B" {
 		t.Errorf("Line anchor: got %q, want %q", got.Lines[0].AnchorShortID, "B")
 	}
-	if got.Fork != nil {
-		t.Errorf("Fork: got %+v, want nil for single line", got.Fork)
+	if len(got.Forks) != 0 {
+		t.Errorf("Forks: got %d, want 0 for single line", len(got.Forks))
 	}
 }
 
@@ -776,8 +776,8 @@ func TestBuildSubway_Scenario1_OneLine_NoFork(t *testing.T) {
 	if len(got.Lines) != 1 {
 		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
 	}
-	if got.Fork != nil {
-		t.Errorf("Fork: got %+v, want nil for single line", got.Fork)
+	if len(got.Forks) != 0 {
+		t.Errorf("Forks: got %d, want 0 for single line", len(got.Forks))
 	}
 
 	// Nodes: anchor B + stops C, D, E, F.
@@ -834,8 +834,8 @@ func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
 	if len(got.Lines) != 2 {
 		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
 	}
-	if got.Fork == nil || len(got.Fork.AncestorChain) == 0 || got.Fork.AncestorChain[0] != "A" {
-		t.Fatalf("Fork: want chain=[A], got %+v", got.Fork)
+	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
+		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
 	}
 
 	// Fork ancestor A must be a rendered node.
@@ -923,8 +923,8 @@ func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 	if len(got.Lines) != 3 {
 		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
 	}
-	if got.Fork == nil || got.Fork.AncestorChain[0] != "A" {
-		t.Fatalf("Fork: want chain=[A], got %+v", got.Fork)
+	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
+		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
 	}
 	for _, anchor := range []string{"B", "G", "J"} {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
@@ -1176,8 +1176,8 @@ func TestBuildSubway_FourActivePhases(t *testing.T) {
 	if len(got.Lines) != 4 {
 		t.Fatalf("Lines: got %d, want 4", len(got.Lines))
 	}
-	if got.Fork == nil || got.Fork.AncestorChain[0] != "A" {
-		t.Fatalf("Fork: want chain=[A], got %+v", got.Fork)
+	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
+		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
 	}
 	for _, anchor := range []string{"B", "E", "H", "K"} {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
@@ -1208,11 +1208,11 @@ func TestBuildSubway_DeepLCAPath(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if got.Fork == nil {
+	if len(got.Forks) == 0 {
 		t.Fatalf("Fork: got nil, want non-nil")
 	}
-	if got.Fork.AncestorChain[0] != "Solo" {
-		t.Errorf("Fork ancestor: got %q, want %q", got.Fork.AncestorChain[0], "Solo")
+	if got.Forks[0].AncestorChain[0] != "Solo" {
+		t.Errorf("Fork ancestor: got %q, want %q", got.Forks[0].AncestorChain[0], "Solo")
 	}
 	if _, ok := findSubwayNode(got.Nodes, "Solo"); !ok {
 		t.Errorf("Solo missing from Nodes %v", subwayNodeShortIDs(got.Nodes))
@@ -1269,6 +1269,49 @@ func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
 	}
 }
 
+// Cross-project claims — focals under two different project roots
+// produce one Fork per cluster, each anchored at its respective
+// root. Without per-cluster fork emission the legacy "global LCA or
+// none" rule would drop the fork entirely (no shared ancestor
+// exists), and the home view would render disconnected lines without
+// any transfer station context.
+//
+//	RootA            RootB
+//	└── B            └── G
+//	    ├── C [c]        ├── H [c]
+//	    └── D            └── I
+func TestBuildSubway_CrossProjectClaims_OneForkPerRoot(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "RootA", parent: "", status: "available"},
+		{short: "B", parent: "RootA", status: "available"},
+		{short: "C", parent: "B", status: "claimed"},
+		{short: "D", parent: "B", status: "available"},
+		{short: "RootB", parent: "", status: "available"},
+		{short: "G", parent: "RootB", status: "available"},
+		{short: "H", parent: "G", status: "claimed"},
+		{short: "I", parent: "G", status: "available"},
+	})
+
+	got := buildSubway(w)
+
+	if len(got.Forks) != 2 {
+		t.Fatalf("Forks: got %d, want 2 (one per project root)", len(got.Forks))
+	}
+	// Both project roots render — that's the user-visible signal that
+	// the cross-project context exists.
+	for _, sid := range []string{"RootA", "RootB"} {
+		if _, ok := findSubwayNode(got.Nodes, sid); !ok {
+			t.Errorf("expected root %q in Nodes; got %v", sid, subwayNodeShortIDs(got.Nodes))
+		}
+	}
+	// Each cluster's Branch goes from its own root to its line anchor.
+	for _, p := range [][2]string{{"RootA", "B"}, {"RootB", "G"}} {
+		if !hasSubwayEdge(got.Edges, p[0], p[1], SubwayEdgeBranch) {
+			t.Errorf("missing Branch %s→%s in %s", p[0], p[1], edgeSummary(got.Edges))
+		}
+	}
+}
+
 // Same-agent multiple claims — two focals owned by the same actor on
 // different lines. The graph is about work, not workers; output
 // should be identical to the multi-agent case.
@@ -1299,7 +1342,7 @@ func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 		}
 	}
 	// Fork still emerges at A regardless of actor identity.
-	if got.Fork == nil || got.Fork.AncestorChain[0] != "A" {
-		t.Errorf("Fork: want chain=[A], got %+v", got.Fork)
+	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
+		t.Errorf("Forks: want chain=[A], got %+v", got.Forks)
 	}
 }

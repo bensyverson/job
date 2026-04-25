@@ -716,9 +716,9 @@ func TestHome_Upcoming_EmptyState(t *testing.T) {
 	body := fetchHome(t, deps)
 
 	section := upcomingSection(t, body)
-	mustContain(t, section, `Upcoming`)
+	mustContain(t, section, `Available`)
 	mustContain(t, section, `0 ready`)
-	mustContain(t, section, `No upcoming work`)
+	mustContain(t, section, `No available tasks`)
 }
 
 func TestHome_Upcoming_ListsAvailableLeavesWithAge(t *testing.T) {

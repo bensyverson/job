@@ -179,7 +179,7 @@ func collectLines(w *graphWorld, focals []*graphTask, L int) []*lineSeed {
 	for _, focal := range focals {
 		addAnchor(focal)
 		cur := focal
-		for i := 0; i < L; i++ {
+		for range L {
 			next := nextLeaf(w, cur)
 			if next == nil {
 				break
@@ -233,6 +233,74 @@ func nextLeaf(w *graphWorld, t *graphTask) *graphTask {
 		}
 		cur = next
 	}
+}
+
+// applyWindow turns a lineSeed into a Line with ±N windowing
+// applied. Each anchor (claimed or lookahead-touched stop) anchors a
+// window of ±N siblings; the union of those windows becomes the set
+// of visible stops. Elision markers (`…`) appear between the parent
+// anchor and the first visible stop when the leading siblings are
+// hidden, between two visible windows that aren't adjacent, and
+// after the last visible stop when trailing siblings are hidden.
+//
+// Done siblings don't anchor windows of their own — they render only
+// when they fall inside another anchor's window. Two close focals
+// produce a single merged window (the line stays visually
+// continuous); two distant focals produce two windows separated by
+// a `…` (the multi-focal union case from the spec).
+func applyWindow(seed *lineSeed, N int) Line {
+	if seed == nil || seed.parent == nil {
+		return Line{}
+	}
+	line := Line{AnchorShortID: seed.parent.shortID}
+	children := seed.parent.children
+	if len(children) == 0 {
+		return line
+	}
+
+	indexOf := make(map[int64]int, len(children))
+	for i, c := range children {
+		indexOf[c.id] = i
+	}
+
+	visibleSet := map[int]bool{}
+	for _, anchor := range seed.anchors {
+		idx, ok := indexOf[anchor.id]
+		if !ok {
+			continue
+		}
+		lo := max(idx-N, 0)
+		hi := min(idx+N, len(children)-1)
+		for i := lo; i <= hi; i++ {
+			visibleSet[i] = true
+		}
+	}
+	if len(visibleSet) == 0 {
+		return line
+	}
+
+	visible := make([]int, 0, len(visibleSet))
+	for i := range visibleSet {
+		visible = append(visible, i)
+	}
+	sort.Ints(visible)
+
+	if visible[0] > 0 {
+		line.Items = append(line.Items, LineItem{Kind: LineItemElision})
+	}
+	for i, idx := range visible {
+		if i > 0 && idx > visible[i-1]+1 {
+			line.Items = append(line.Items, LineItem{Kind: LineItemElision})
+		}
+		line.Items = append(line.Items, LineItem{
+			Kind:    LineItemStop,
+			ShortID: children[idx].shortID,
+		})
+	}
+	if visible[len(visible)-1] < len(children)-1 {
+		line.Items = append(line.Items, LineItem{Kind: LineItemElision})
+	}
+	return line
 }
 
 // computeFork returns the Fork that connects two or more lines, or

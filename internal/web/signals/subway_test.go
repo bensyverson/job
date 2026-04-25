@@ -1,6 +1,7 @@
 package signals
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -434,4 +435,226 @@ func TestComputeFork_DeepLCA_DivergenceBelowSolo(t *testing.T) {
 // Empty input → no fork.
 func TestComputeFork_NoSeeds(t *testing.T) {
 	assertFork(t, computeFork(nil), nil)
+}
+
+// ------------------------------------------------------------------
+// Windowing tests
+// ------------------------------------------------------------------
+
+// newWideLine builds a graphWorld with a single parent "P" and
+// len(statuses) children named c00, c01, ... in slice order. Returns
+// the world, the parent, and the child slice for index addressing.
+func newWideLine(statuses []string) (*graphWorld, *graphTask, []*graphTask) {
+	tasks := []tt{{short: "P", parent: "", status: "available"}}
+	for i, s := range statuses {
+		tasks = append(tasks, tt{
+			short:  fmt.Sprintf("c%02d", i),
+			parent: "P",
+			status: s,
+		})
+	}
+	w := newTestWorld(tasks)
+	parent := mustTask(w, "P")
+	children := make([]*graphTask, len(statuses))
+	for i := range statuses {
+		children[i] = mustTask(w, fmt.Sprintf("c%02d", i))
+	}
+	return w, parent, children
+}
+
+func buildSeed(parent *graphTask, children []*graphTask, anchorIndices []int) *lineSeed {
+	anchors := make([]*graphTask, len(anchorIndices))
+	for i, idx := range anchorIndices {
+		anchors[i] = children[idx]
+	}
+	return &lineSeed{parent: parent, anchors: anchors}
+}
+
+type expectedItem struct {
+	kind  LineItemKind
+	short string
+}
+
+func stop(s string) expectedItem { return expectedItem{kind: LineItemStop, short: s} }
+func elision() expectedItem      { return expectedItem{kind: LineItemElision} }
+func stops(short ...string) []expectedItem {
+	out := make([]expectedItem, len(short))
+	for i, s := range short {
+		out[i] = stop(s)
+	}
+	return out
+}
+
+func assertLine(t *testing.T, got Line, wantAnchor string, wantItems []expectedItem) {
+	t.Helper()
+	if got.AnchorShortID != wantAnchor {
+		t.Errorf("anchor: got %q, want %q", got.AnchorShortID, wantAnchor)
+	}
+	if !equalItems(got.Items, wantItems) {
+		t.Errorf("items: got %s, want %s",
+			summarizeItems(got.Items), summarizeWantItems(wantItems))
+	}
+}
+
+func equalItems(got []LineItem, want []expectedItem) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i].Kind != want[i].kind {
+			return false
+		}
+		if want[i].kind == LineItemStop && got[i].ShortID != want[i].short {
+			return false
+		}
+	}
+	return true
+}
+
+func summarizeItems(items []LineItem) string {
+	parts := make([]string, len(items))
+	for i, it := range items {
+		if it.Kind == LineItemElision {
+			parts[i] = "…"
+		} else {
+			parts[i] = it.ShortID
+		}
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+func summarizeWantItems(items []expectedItem) string {
+	parts := make([]string, len(items))
+	for i, it := range items {
+		if it.kind == LineItemElision {
+			parts[i] = "…"
+		} else {
+			parts[i] = it.short
+		}
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// Single anchor with all siblings inside ±N — no elision either side.
+// Mirrors Scenario 1 of the design doc (B's line: C done, D claimed,
+// E available, F available; anchors per collectLines = D + lookahead
+// E, F).
+func TestApplyWindow_AllVisible_NoElision(t *testing.T) {
+	_, parent, children := newWideLine([]string{
+		"done", "claimed", "available", "available",
+	})
+	seed := buildSeed(parent, children, []int{1, 2, 3})
+
+	line := applyWindow(seed, 2)
+
+	assertLine(t, line, "P", stops("c00", "c01", "c02", "c03"))
+}
+
+// Long line, single focal mid-way — elision on both sides.
+func TestApplyWindow_LongLine_ElisionBothSides(t *testing.T) {
+	statuses := make([]string, 30)
+	for i := range statuses {
+		statuses[i] = "available"
+	}
+	statuses[17] = "claimed"
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeed(parent, children, []int{17})
+
+	line := applyWindow(seed, 2)
+
+	want := []expectedItem{elision()}
+	want = append(want, stops("c15", "c16", "c17", "c18", "c19")...)
+	want = append(want, elision())
+	assertLine(t, line, "P", want)
+}
+
+// Two close focals (within 2N+1) — windows merge into one visible
+// span, no internal elision.
+func TestApplyWindow_MultiFocal_Contiguous(t *testing.T) {
+	statuses := []string{"available", "claimed", "available", "claimed", "available", "available"}
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeed(parent, children, []int{1, 3})
+
+	line := applyWindow(seed, 1)
+
+	want := []expectedItem{}
+	want = append(want, stops("c00", "c01", "c02", "c03", "c04")...)
+	want = append(want, elision())
+	assertLine(t, line, "P", want)
+}
+
+// Two distant focals — two visible windows separated by `…`.
+func TestApplyWindow_MultiFocal_GapElided(t *testing.T) {
+	statuses := make([]string, 12)
+	for i := range statuses {
+		statuses[i] = "available"
+	}
+	statuses[1] = "claimed"
+	statuses[8] = "claimed"
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeed(parent, children, []int{1, 8})
+
+	line := applyWindow(seed, 1)
+
+	want := []expectedItem{}
+	want = append(want, stops("c00", "c01", "c02")...)
+	want = append(want, elision())
+	want = append(want, stops("c07", "c08", "c09")...)
+	want = append(want, elision())
+	assertLine(t, line, "P", want)
+}
+
+// Anchor at start — no leading elision (window's left edge clamps to 0).
+func TestApplyWindow_AnchorAtStart(t *testing.T) {
+	statuses := []string{"claimed", "available", "available", "available", "available"}
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeed(parent, children, []int{0})
+
+	line := applyWindow(seed, 2)
+
+	want := []expectedItem{}
+	want = append(want, stops("c00", "c01", "c02")...)
+	want = append(want, elision())
+	assertLine(t, line, "P", want)
+}
+
+// Anchor at end — no trailing elision (window's right edge clamps).
+func TestApplyWindow_AnchorAtEnd(t *testing.T) {
+	statuses := []string{"available", "available", "available", "available", "claimed"}
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeed(parent, children, []int{4})
+
+	line := applyWindow(seed, 2)
+
+	want := []expectedItem{elision()}
+	want = append(want, stops("c02", "c03", "c04")...)
+	assertLine(t, line, "P", want)
+}
+
+// Done sibling between two focals (within union of ±N windows) —
+// renders inline, line stays visually continuous.
+func TestApplyWindow_DoneBetweenFocals(t *testing.T) {
+	statuses := []string{"available", "claimed", "done", "claimed"}
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeed(parent, children, []int{1, 3})
+
+	line := applyWindow(seed, 2)
+
+	assertLine(t, line, "P", stops("c00", "c01", "c02", "c03"))
+}
+
+// Empty parent — empty Line with anchor set, no items.
+func TestApplyWindow_NoChildren(t *testing.T) {
+	w := newTestWorld([]tt{{short: "P", parent: "", status: "available"}})
+	parent := mustTask(w, "P")
+	seed := &lineSeed{parent: parent}
+
+	line := applyWindow(seed, 2)
+
+	if line.AnchorShortID != "P" {
+		t.Errorf("anchor: got %q, want P", line.AnchorShortID)
+	}
+	if len(line.Items) != 0 {
+		t.Errorf("items: got %d, want 0", len(line.Items))
+	}
 }

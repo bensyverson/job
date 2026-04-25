@@ -133,11 +133,7 @@ func LayoutSubway(s signals.Subway) SubwayView {
 	if s.Fork != nil {
 		for i, sid := range s.Fork.AncestorChain {
 			cols[sid] = i
-			if inlineLineIdx >= 0 {
-				rows[sid] = inlineLineIdx
-			} else {
-				rows[sid] = 0
-			}
+			rows[sid] = max(inlineLineIdx, 0)
 		}
 		anchorCol = len(s.Fork.AncestorChain)
 	}

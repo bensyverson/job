@@ -65,7 +65,10 @@ type SubwayNodeView struct {
 // SubwayEdgeView is one rendered connector. Boolean predicates
 // classify the edge for the template (Go templates can't compare
 // typed iota constants cleanly). IsClosure marks the `⊘` decoration
-// on a sequence-blocked branch ingress.
+// on a sequence-blocked branch ingress; ClosureLeft/ClosureTop carry
+// the glyph's pixel position when IsClosure is true (zero otherwise).
+// The marker sits along the edge — never on the anchor node — so the
+// reader sees "this connection is closed," not "this stop is broken."
 type SubwayEdgeView struct {
 	FromShortID string
 	ToShortID   string
@@ -75,6 +78,8 @@ type SubwayEdgeView struct {
 	IsBranch    bool
 	IsClosure   bool
 	IsBlocker   bool
+	ClosureLeft int
+	ClosureTop  int
 }
 
 // SubwayElisionView is a `…` marker positioned along a line between
@@ -266,7 +271,7 @@ func buildSubwayEdgeView(e signals.SubwayEdge, from, to SubwayNodeView) SubwayEd
 		d = fmt.Sprintf("M%d %d C %d %d, %d %d, %d %d",
 			x1, fromCY, cx1, fromCY, cx2, toCY, x2, toCY)
 	}
-	return SubwayEdgeView{
+	ev := SubwayEdgeView{
 		FromShortID: e.FromShortID,
 		ToShortID:   e.ToShortID,
 		PathD:       d,
@@ -276,6 +281,13 @@ func buildSubwayEdgeView(e signals.SubwayEdge, from, to SubwayNodeView) SubwayEd
 		IsClosure:   e.Kind == signals.SubwayEdgeBranchClosed,
 		IsBlocker:   e.Kind == signals.SubwayEdgeBlocker,
 	}
+	if ev.IsClosure {
+		// Place the marker at the geometric midpoint between disc
+		// centers — squarely on the edge, never on either anchor.
+		ev.ClosureLeft = (fromCX + toCX) / 2
+		ev.ClosureTop = (fromCY + toCY) / 2
+	}
+	return ev
 }
 
 func subwayStateClass(s signals.SubwayNodeState) string {

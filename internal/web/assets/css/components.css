@@ -2316,6 +2316,79 @@ a.c-graph-node__bug:focus-visible {
   opacity: 0.85;
 }
 
+/* Subway-system model edges. --flow inherits the base stroke; --branch
+   is the fork's ingress to a line's anchor and reads slightly lighter
+   so the line itself stays the dominant visual. --closed combines with
+   --branch to mark a sequence-blocked ingress; the dashed amber stroke
+   plus the glyph (rendered separately as .c-subway-closure) communicate
+   "this connection is closed" without staining the line itself. */
+.c-graph-edge--flow {
+  stroke: var(--color-outline-strong);
+}
+
+.c-graph-edge--branch {
+  stroke: var(--color-outline-strong);
+  opacity: 0.75;
+}
+
+.c-graph-edge--closed {
+  stroke: var(--color-status-blocked);
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
+}
+
+/* The `⊘` glyph that annotates a sequence-blocked ingress edge. The
+   template positions an absolute element at SubwayEdgeView's
+   ClosureLeft/ClosureTop coordinates (the geometric midpoint of the
+   ingress edge). A small disc background lets the glyph read above
+   the edge stroke beneath it. */
+.c-subway-closure {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  margin-top: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-status-blocked);
+  background: var(--color-surface);
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The `…` glyph that fills an elided span between visible windows on
+   a line (or between the line anchor and the first visible stop, or
+   after the last visible stop). Positioned at the column slot the
+   data layer reserved for the elision. */
+.c-subway-elision {
+  position: absolute;
+  margin-left: -8px;
+  margin-top: -8px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-on-surface-dim);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Fork node — the LCA "transfer station" where two or more lines
+   diverge. Slightly larger inner glyph and a subtle outline highlight
+   so the eye registers it as a junction rather than another stop. */
+.c-graph-node--fork {
+  background: var(--color-surface-raised);
+  border-color: var(--color-on-surface-muted);
+  color: var(--color-on-surface);
+}
+
 /* "+N" pill hanging off a parent node whose unshown direct
    children are being rolled up at a phase boundary. */
 .c-graph-node__pill {

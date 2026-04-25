@@ -612,3 +612,108 @@ func TestLayoutSubway_NodeURLsPreserved(t *testing.T) {
 		t.Errorf("D URL: got %q, want %q", d.URL, "/tasks/D")
 	}
 }
+
+// ------------------------------------------------------------------
+// Closure-marker placement (covers Scenarios 2 and 3)
+//
+// Per the design doc: "The closure marker `⊘` lives on the connector
+// edge from the fork to the blocked line's parent, not on the parent
+// node itself." Tests pin the marker's geometry so it can never drift
+// onto the anchor node.
+// ------------------------------------------------------------------
+
+// closurePosition strictly between two endpoints (exclusive). Used to
+// assert the marker sits along the ingress edge geometry rather than
+// at either endpoint.
+func assertBetween(t *testing.T, label string, got, lo, hi int) {
+	t.Helper()
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if got <= lo || got >= hi {
+		t.Errorf("%s: got %d, want strictly within (%d, %d)", label, got, lo, hi)
+	}
+}
+
+// Scenario 2 — A → G is BranchClosed. Closure marker must sit on the
+// edge geometry between A and G, never on G's anchor disc.
+func TestLayoutSubway_Scenario2_ClosureMarkerOnIngressEdge(t *testing.T) {
+	v := LayoutSubway(scenario2Subway())
+
+	a := assertNodePositioned(t, v, "A")
+	g := assertNodePositioned(t, v, "G")
+
+	e := assertEdgePresent(t, v, "A", "G")
+	if !e.IsClosure {
+		t.Fatalf("A→G should be a closure edge")
+	}
+
+	// The marker must be positioned (non-zero coordinates).
+	if e.ClosureLeft == 0 && e.ClosureTop == 0 {
+		t.Errorf("closure marker not positioned: ClosureLeft=%d ClosureTop=%d",
+			e.ClosureLeft, e.ClosureTop)
+	}
+
+	// The marker must sit *between* A and G — not on either anchor's
+	// disc center. "Strictly between" rules out a stray placement on
+	// the line's parent node itself, which the spec forbids.
+	aCX, aCY := a.Left+subwayNodeRadius, a.Top+subwayNodeRadius
+	gCX, gCY := g.Left+subwayNodeRadius, g.Top+subwayNodeRadius
+	assertBetween(t, "A→G ClosureLeft", e.ClosureLeft, aCX, gCX)
+	assertBetween(t, "A→G ClosureTop", e.ClosureTop, aCY, gCY)
+
+	// Negative: the marker must not coincide with G's disc.
+	if e.ClosureLeft == gCX && e.ClosureTop == gCY {
+		t.Errorf("closure marker collided with G anchor center (%d,%d)", gCX, gCY)
+	}
+
+	// Negative: open Branch edges must not carry closure coordinates.
+	openAB := assertEdgePresent(t, v, "A", "B")
+	if openAB.IsClosure {
+		t.Errorf("A→B should not be a closure edge")
+	}
+	if openAB.ClosureLeft != 0 || openAB.ClosureTop != 0 {
+		t.Errorf("open Branch A→B should have zero closure coords; got (%d,%d)",
+			openAB.ClosureLeft, openAB.ClosureTop)
+	}
+}
+
+// Scenario 3 — same ingress block; the inline E✓ done sibling on B's
+// line must not affect the closure-marker placement on A→G.
+func TestLayoutSubway_Scenario3_ClosureMarkerStillOnIngress(t *testing.T) {
+	v := LayoutSubway(scenario3Subway())
+
+	a := assertNodePositioned(t, v, "A")
+	g := assertNodePositioned(t, v, "G")
+
+	e := assertEdgePresent(t, v, "A", "G")
+	if !e.IsClosure {
+		t.Fatalf("A→G should be a closure edge")
+	}
+	if e.ClosureLeft == 0 && e.ClosureTop == 0 {
+		t.Errorf("closure marker not positioned: ClosureLeft=%d ClosureTop=%d",
+			e.ClosureLeft, e.ClosureTop)
+	}
+
+	aCX, aCY := a.Left+subwayNodeRadius, a.Top+subwayNodeRadius
+	gCX, gCY := g.Left+subwayNodeRadius, g.Top+subwayNodeRadius
+	assertBetween(t, "A→G ClosureLeft", e.ClosureLeft, aCX, gCX)
+	assertBetween(t, "A→G ClosureTop", e.ClosureTop, aCY, gCY)
+}
+
+// Closure markers are reserved for edges, not nodes — no node carries
+// closure-related state. The model deliberately removed Blocked from
+// SubwayNodeState; this fence keeps that property tested.
+func TestLayoutSubway_Scenario2_AnchorNodeCarriesNoClosureState(t *testing.T) {
+	v := LayoutSubway(scenario2Subway())
+	g := assertNodePositioned(t, v, "G")
+	// G must render as Todo, not as a "blocked" or special state
+	// adjacent to the closure marker.
+	if g.IsActive || g.IsDone {
+		t.Errorf("G should render as Todo (not Active/Done); got Active=%v Done=%v",
+			g.IsActive, g.IsDone)
+	}
+	if strings.Contains(g.StateClass, "closed") || strings.Contains(g.StateClass, "block") {
+		t.Errorf("G StateClass should not encode closure/block state; got %q", g.StateClass)
+	}
+}

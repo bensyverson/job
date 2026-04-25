@@ -464,12 +464,13 @@ func TestHome_RecentCompletions_CapsToLimitKeepingNewest(t *testing.T) {
 	deps := newLogDeps(t, db)
 
 	now := time.Now()
-	// Seed 12 completions; only the 10 newest should appear.
-	for i := range 12 {
+	// Seed limit+2 completions; only the newest `limit` should appear.
+	total := handlers.RecentCompletionsLimit + 2
+	for i := range total {
 		sid := "t" + strconv.Itoa(i)
 		tID := homeSeedTask(t, db, sid, sid, "done", now.Add(-2*time.Hour))
-		// i=0 is oldest (completed 12m ago); i=11 is newest (1m ago).
-		ago := time.Duration(12-i) * time.Minute
+		// i=0 is oldest; last i is newest.
+		ago := time.Duration(total-i) * time.Minute
 		homeSeedEventActor(t, db, tID, "done", "a", now.Add(-ago))
 	}
 
@@ -481,18 +482,19 @@ func TestHome_RecentCompletions_CapsToLimitKeepingNewest(t *testing.T) {
 
 	re := regexp.MustCompile(`class="c-panel-row"`)
 	rows := re.FindAllStringIndex(section, -1)
-	if len(rows) != 10 {
-		t.Errorf("row count: got %d, want 10 (limit)", len(rows))
+	if len(rows) != handlers.RecentCompletionsLimit {
+		t.Errorf("row count: got %d, want %d (limit)", len(rows), handlers.RecentCompletionsLimit)
 	}
-	// Oldest two (t0, t1) are dropped; t2..t11 remain.
+	// The two oldest (t0, t1) are dropped; t2..t{total-1} remain.
 	if strings.Contains(section, "/tasks/t0") {
 		t.Errorf("t0 (oldest) should be trimmed")
 	}
 	if !strings.Contains(section, "/tasks/t2") {
 		t.Errorf("t2 should remain as oldest of the retained set")
 	}
-	if !strings.Contains(section, "/tasks/t11") {
-		t.Errorf("t11 (newest) should remain")
+	newest := "/tasks/t" + strconv.Itoa(total-1)
+	if !strings.Contains(section, newest) {
+		t.Errorf("%s (newest) should remain", newest)
 	}
 }
 
@@ -682,6 +684,223 @@ func TestHome_Graph_RendersSpineForActiveClaim(t *testing.T) {
 	mustContain(t, body, `data-task-id="st2"`)
 	mustContain(t, body, `data-actor="alice"`)
 	mustContain(t, body, `c-graph-edge`)
+}
+
+// ------------------------------------------------------------------
+// Upcoming panel — the claimable frontier (available leaves, unblocked,
+// no open children). Mirrors the semantics of `Next:` in job status,
+// expanded to a LIMIT-capped list in preorder.
+// ------------------------------------------------------------------
+
+// upcomingSection extracts the Upcoming panel's HTML so assertions
+// don't false-match against Active Claims or Blocked content.
+func upcomingSection(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `id="p-upcoming"`)
+	if start < 0 {
+		t.Fatalf("upcoming panel not found\nbody excerpt: %s", bodyExcerpt(body, `p-blocked`, 400))
+	}
+	end := strings.Index(body[start:], `</section>`)
+	if end < 0 {
+		t.Fatalf("upcoming panel section close not found")
+	}
+	return body[start : start+end]
+}
+
+func TestHome_Upcoming_EmptyState(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	body := fetchHome(t, deps)
+
+	section := upcomingSection(t, body)
+	mustContain(t, section, `Upcoming`)
+	mustContain(t, section, `0 ready`)
+	mustContain(t, section, `No upcoming work`)
+}
+
+func TestHome_Upcoming_ListsAvailableLeavesWithAge(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	homeSeedTask(t, db, "one", "first up", "available", now.Add(-2*time.Hour))
+	homeSeedTask(t, db, "two", "second up", "available", now.Add(-30*time.Minute))
+
+	body := fetchHome(t, deps)
+	section := upcomingSection(t, body)
+
+	mustContain(t, section, `2 ready`)
+	mustContain(t, section, `>first up<`)
+	mustContain(t, section, `>second up<`)
+	mustContain(t, section, `href="/tasks/one"`)
+	mustContain(t, section, `href="/tasks/two"`)
+	// Age text is rendered via render.RelativeTime — just check a row
+	// has a meta slot. The exact phrasing is tested in the render pkg.
+	mustContain(t, section, `c-panel-row__meta`)
+}
+
+func TestHome_Upcoming_ExcludesClaimedDoneCanceledDeleted(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	// Claimed — excluded by status filter.
+	claimedID := homeSeedTask(t, db, "clm", "claimed one", "available", now.Add(-1*time.Hour))
+	homeSeedClaim(t, db, claimedID, "alice", now.Add(-5*time.Minute))
+
+	// Done — excluded.
+	homeSeedTask(t, db, "dn", "done one", "done", now.Add(-1*time.Hour))
+	// Canceled — excluded.
+	homeSeedTask(t, db, "can", "canceled one", "canceled", now.Add(-1*time.Hour))
+
+	// Soft-deleted available — excluded.
+	delID := homeSeedTask(t, db, "del", "deleted one", "available", now.Add(-1*time.Hour))
+	if _, err := db.Exec(`UPDATE tasks SET deleted_at = ? WHERE id = ?`, now.Unix(), delID); err != nil {
+		t.Fatalf("soft-delete: %v", err)
+	}
+
+	// The one live candidate.
+	homeSeedTask(t, db, "lv", "live candidate", "available", now.Add(-1*time.Hour))
+
+	body := fetchHome(t, deps)
+	section := upcomingSection(t, body)
+
+	mustContain(t, section, `1 ready`)
+	mustContain(t, section, `>live candidate<`)
+	for _, bad := range []string{"claimed one", "done one", "canceled one", "deleted one"} {
+		if strings.Contains(section, bad) {
+			t.Errorf("panel should not contain %q", bad)
+		}
+	}
+}
+
+func TestHome_Upcoming_ExcludesBlockedTasks(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	blocker := homeSeedTask(t, db, "blk", "active blocker", "available", now.Add(-1*time.Hour))
+	blocked := homeSeedTask(t, db, "bld", "blocked task", "available", now.Add(-1*time.Hour))
+	homeSeedBlock(t, db, blocked, blocker, now.Add(-5*time.Minute))
+
+	body := fetchHome(t, deps)
+	section := upcomingSection(t, body)
+
+	// Only the blocker is claimable (it has no blocker of its own).
+	mustContain(t, section, `>active blocker<`)
+	if strings.Contains(section, "blocked task") {
+		t.Error("blocked task should not appear in Upcoming")
+	}
+}
+
+func TestHome_Upcoming_ExcludesParentsWithOpenChildren(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	parentID := homeSeedTask(t, db, "par", "parent with kid", "available", now.Add(-2*time.Hour))
+	// Open child → parent is not a leaf.
+	_, err := db.Exec(`
+		INSERT INTO tasks (short_id, title, description, status, sort_order, parent_id, created_at, updated_at)
+		VALUES ('kid', 'open kid', '', 'available', 0, ?, ?, ?)
+	`, parentID, now.Add(-1*time.Hour).Unix(), now.Add(-1*time.Hour).Unix())
+	if err != nil {
+		t.Fatalf("seed child: %v", err)
+	}
+
+	body := fetchHome(t, deps)
+	section := upcomingSection(t, body)
+
+	// Child is a leaf and shows up; parent is not.
+	mustContain(t, section, `>open kid<`)
+	if strings.Contains(section, "parent with kid") {
+		t.Error("parent with open children should not appear as a leaf")
+	}
+}
+
+func TestHome_Upcoming_RespectsLimit(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	// Seed UpcomingLimit + 3 available leaves.
+	total := handlers.UpcomingLimit + 3
+	for i := range total {
+		sid := "u" + strconv.Itoa(i)
+		homeSeedTask(t, db, sid, "leaf "+strconv.Itoa(i), "available", now.Add(-time.Duration(total-i)*time.Hour))
+	}
+
+	body := fetchHome(t, deps)
+	section := upcomingSection(t, body)
+
+	// Count the row links — one per claimable row.
+	rowRe := regexp.MustCompile(`class="c-row-link"`)
+	matches := rowRe.FindAllString(section, -1)
+	if len(matches) != handlers.UpcomingLimit {
+		t.Errorf("row link count: got %d, want %d (total seeded = %d)",
+			len(matches), handlers.UpcomingLimit, total)
+	}
+	// The count meta shows the visible count (matching the Blocked
+	// panel's convention of not surfacing the overflow figure).
+	mustContain(t, section, strconv.Itoa(handlers.UpcomingLimit)+` ready`)
+}
+
+func TestHome_Upcoming_PreorderBySortPath(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+
+	now := time.Now()
+	// Two roots: Root A (sort_order 0) and Root B (sort_order 1).
+	// Each has two open children. Preorder visits A → A.c1 → A.c2 →
+	// B → B.c1 → B.c2. Only leaves are claimable, so the Upcoming
+	// order must be A.c1, A.c2, B.c1, B.c2 regardless of created_at.
+	seedParent := func(sid, title string, sortOrder int, createdAgo time.Duration) int64 {
+		res, err := db.Exec(`
+			INSERT INTO tasks (short_id, title, description, status, sort_order, created_at, updated_at)
+			VALUES (?, ?, '', 'available', ?, ?, ?)
+		`, sid, title, sortOrder, now.Add(-createdAgo).Unix(), now.Add(-createdAgo).Unix())
+		if err != nil {
+			t.Fatalf("seed parent: %v", err)
+		}
+		id, _ := res.LastInsertId()
+		return id
+	}
+	seedChild := func(sid, title string, parentID int64, sortOrder int, createdAgo time.Duration) {
+		_, err := db.Exec(`
+			INSERT INTO tasks (short_id, title, description, status, sort_order, parent_id, created_at, updated_at)
+			VALUES (?, ?, '', 'available', ?, ?, ?, ?)
+		`, sid, title, sortOrder, parentID, now.Add(-createdAgo).Unix(), now.Add(-createdAgo).Unix())
+		if err != nil {
+			t.Fatalf("seed child: %v", err)
+		}
+	}
+	// Root A is newer (created 1h ago); Root B is older (created 3h
+	// ago). Pure created_at ordering would flip the expected order —
+	// preorder-by-sort_order keeps A first.
+	rootA := seedParent("rA", "root A", 0, 1*time.Hour)
+	rootB := seedParent("rB", "root B", 1, 3*time.Hour)
+	seedChild("aC1", "A child one", rootA, 0, 30*time.Minute)
+	seedChild("aC2", "A child two", rootA, 1, 30*time.Minute)
+	seedChild("bC1", "B child one", rootB, 0, 2*time.Hour)
+	seedChild("bC2", "B child two", rootB, 1, 2*time.Hour)
+
+	body := fetchHome(t, deps)
+	section := upcomingSection(t, body)
+
+	want := []string{"A child one", "A child two", "B child one", "B child two"}
+	prev := -1
+	for _, title := range want {
+		idx := strings.Index(section, ">"+title+"<")
+		if idx < 0 {
+			t.Fatalf("title %q missing from Upcoming panel", title)
+		}
+		if idx <= prev {
+			t.Errorf("order violation: %q at %d, previous match at %d — want preorder %v",
+				title, idx, prev, want)
+		}
+		prev = idx
+	}
 }
 
 // bodyExcerpt returns `n` chars around the first occurrence of `anchor`

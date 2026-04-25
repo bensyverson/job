@@ -35,8 +35,19 @@ type homeTemplateData struct {
 	OldestTodo        homeOldestTodo
 	ActiveClaims      homeActiveClaims
 	RecentCompletions homeRecentCompletions
+	Upcoming          homeUpcoming
 	Blocked           homeBlocked
 	Graph             render.MiniGraphView
+}
+
+type homeUpcoming struct {
+	Count int
+	Rows  []homeUpcomingRow
+}
+
+type homeUpcomingRow struct {
+	TaskShortID, TaskURL, TaskTitle, AgeText string
+	CreatedAtUnix                            int64
 }
 
 type homeBlocked struct {

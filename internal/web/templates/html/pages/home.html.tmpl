@@ -229,9 +229,28 @@
     </div>
   </section>
 
-  {{/* Upcoming panel — the claimable frontier beyond "Next:": any
-       available, unblocked leaf. Data wiring arrives in its own
-       Phase 5 child task. */}}
+  <section class="c-panel" aria-labelledby="p-upcoming" data-home-upcoming>
+    <div class="c-panel__header">
+      <h2 id="p-upcoming" class="c-panel__title">Upcoming</h2>
+      <span class="c-panel__meta">{{.Upcoming.Count}} ready</span>
+    </div>
+    <div class="c-panel__list">
+      {{- if .Upcoming.Rows -}}
+        {{- range .Upcoming.Rows -}}
+          <div class="c-panel-row" style="--row-cols: 80px 1fr auto" data-created-at="{{.CreatedAtUnix}}">
+            <span class="c-id-pill">{{.TaskShortID}}</span>
+            <span class="c-panel-row__title">{{.TaskTitle}}</span>
+            <span class="c-panel-row__meta">{{.AgeText}}</span>
+            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+          </div>
+        {{- end -}}
+      {{- else -}}
+        <div class="c-panel-row" style="--row-cols: 1fr">
+          <span class="c-panel-row__title t-muted">No upcoming work</span>
+        </div>
+      {{- end -}}
+    </div>
+  </section>
 
   <section class="c-panel" aria-labelledby="p-blocked" data-home-blocked>
     <div class="c-panel__header">

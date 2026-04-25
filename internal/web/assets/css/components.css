@@ -105,6 +105,11 @@
 .c-id-pill {
   display: inline-flex;
   align-items: center;
+  /* Grid/flex parents stretch children to fill the track by default.
+     Anchor the pill to the start so its dark background hugs the text
+     instead of extending across the column. */
+  justify-self: start;
+  align-self: center;
   background: var(--color-surface-raised);
   color: var(--color-on-surface);
   padding: 2px 6px;
@@ -2105,9 +2110,12 @@ a.c-graph-node__bug:focus-visible {
   gap: var(--space-lg);
   /* Claim remaining vertical space in the .main flex column so
      the Home panels row fills the viewport the same way Log's
-     rows do. Panels inside stretch via grid-cell alignment. */
+     rows do. Panels inside stretch via grid-cell alignment.
+     min-height guards short viewports: without it the row can
+     collapse to zero when the rest of the page consumes all the
+     height budget. 320px ≈ header (48px) + ~8 rows (32px each). */
   flex: 1;
-  min-height: 0;
+  min-height: 320px;
 }
 
 /* Within the home-view panels row, let the scrollable list grow

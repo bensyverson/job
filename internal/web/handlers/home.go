@@ -24,6 +24,7 @@ type HomePageData struct {
 	OldestTodo        OldestTodoCard
 	ActiveClaims      ActiveClaimsPanel
 	RecentCompletions RecentCompletionsPanel
+	Upcoming          UpcomingPanel
 	Blocked           BlockedStripPanel
 	Graph             render.MiniGraphView
 }
@@ -130,9 +131,9 @@ type RecentCompletionRow struct {
 }
 
 // RecentCompletionsLimit caps the panel at a reasonable scroll depth.
-// Tune as the design matures; panel height budget is ~280px (eight
-// rows at 32px + padding) with overflow scrolling.
-const RecentCompletionsLimit = 10
+// Panel is scrollable (max-height: 280px ≈ 8 rows visible); the rest
+// paginate via overflow scroll.
+const RecentCompletionsLimit = 25
 
 // BlockedStripPanel is the "Blocked" list on Home: tasks with at least
 // one active blocker, each row stacked so its "waiting on …" line fits
@@ -160,6 +161,27 @@ type BlockerLink struct {
 // BlockedStripLimit caps the panel's depth. Dashboards that exceed
 // this probably want the Plan view's full blocker tree anyway.
 const BlockedStripLimit = 20
+
+// UpcomingPanel is the "Upcoming" list on Home: available, unblocked
+// leaves in preorder — the set that mirrors what `job status` would
+// surface as claimable if another agent joined.
+type UpcomingPanel struct {
+	Count int
+	Rows  []UpcomingRow
+}
+
+// UpcomingRow is one claimable leaf. No actor column — nothing in this
+// panel is claimed.
+type UpcomingRow struct {
+	TaskShortID   string
+	TaskURL       string
+	TaskTitle     string
+	AgeText       string
+	CreatedAtUnix int64
+}
+
+// UpcomingLimit caps the panel at the same depth as other Home panels.
+const UpcomingLimit = 25
 
 // Home renders the landing "Now" view: four signal cards on top,
 // other Home-view sections (claims table, recent completions, blocked
@@ -191,6 +213,12 @@ func Home(deps Deps) http.Handler {
 			return
 		}
 
+		upcoming, err := loadUpcoming(r.Context(), deps.DB, now)
+		if err != nil {
+			InternalError(deps, w, "home upcoming", err)
+			return
+		}
+
 		mg, err := signals.ComputeMiniGraph(r.Context(), deps.DB, now)
 		if err != nil {
 			InternalError(deps, w, "home mini-graph", err)
@@ -205,6 +233,7 @@ func Home(deps Deps) http.Handler {
 			OldestTodo:        buildOldestTodoCard(sig.OldestTodo),
 			ActiveClaims:      claims,
 			RecentCompletions: recent,
+			Upcoming:          upcoming,
 			Blocked:           blocked,
 			Graph:             render.LayoutMiniGraph(mg),
 		}
@@ -276,6 +305,73 @@ func loadBlockedStrip(ctx context.Context, db *sql.DB) (BlockedStripPanel, error
 	panel.Rows = make([]BlockedRow, 0, len(order))
 	for _, id := range order {
 		panel.Rows = append(panel.Rows, *byID[id])
+	}
+	panel.Count = len(panel.Rows)
+	return panel, nil
+}
+
+// loadUpcoming returns up to UpcomingLimit available leaves in
+// preorder — the claimable frontier mirroring `job status`'s Next:
+// pool. A row is included when the task is available (not claimed, not
+// done, not canceled), not soft-deleted, has no still-active blockers
+// (a blocker counts only if it's neither done nor deleted), and has
+// no open children (a child counts as open when its status is not
+// done/canceled and it is not soft-deleted). Ordering is the
+// zero-padded sort_order path so siblings read top-to-bottom in
+// declaration order and deeper descendants follow their ancestors.
+func loadUpcoming(ctx context.Context, db *sql.DB, now time.Time) (UpcomingPanel, error) {
+	var panel UpcomingPanel
+	rows, err := db.QueryContext(ctx, `
+		WITH RECURSIVE subtree(id, sort_path) AS (
+			SELECT t.id, printf('%06d', t.sort_order)
+			FROM tasks t
+			WHERE t.parent_id IS NULL AND t.deleted_at IS NULL
+			UNION ALL
+			SELECT t.id, s.sort_path || '/' || printf('%06d', t.sort_order)
+			FROM tasks t JOIN subtree s ON t.parent_id = s.id
+			WHERE t.deleted_at IS NULL
+		)
+		SELECT t.short_id, t.title, t.created_at
+		FROM tasks t JOIN subtree s ON s.id = t.id
+		WHERE t.status = 'available'
+		  AND t.deleted_at IS NULL
+		  AND NOT EXISTS (
+		    SELECT 1 FROM blocks b
+		    JOIN tasks bt ON bt.id = b.blocker_id
+		    WHERE b.blocked_id = t.id
+		      AND bt.status != 'done'
+		      AND bt.deleted_at IS NULL
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM tasks c
+		    WHERE c.parent_id = t.id
+		      AND c.status NOT IN ('done', 'canceled')
+		      AND c.deleted_at IS NULL
+		  )
+		ORDER BY s.sort_path
+		LIMIT ?
+	`, UpcomingLimit)
+	if err != nil {
+		return panel, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var shortID, title string
+		var createdAt int64
+		if err := rows.Scan(&shortID, &title, &createdAt); err != nil {
+			return panel, err
+		}
+		panel.Rows = append(panel.Rows, UpcomingRow{
+			TaskShortID:   shortID,
+			TaskURL:       "/tasks/" + shortID,
+			TaskTitle:     title,
+			AgeText:       render.RelativeTime(now, time.Unix(createdAt, 0)),
+			CreatedAtUnix: createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return panel, err
 	}
 	panel.Count = len(panel.Rows)
 	return panel, nil

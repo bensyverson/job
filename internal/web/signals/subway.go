@@ -7,12 +7,14 @@ import (
 	"time"
 )
 
-// Default windowing and lookahead values from the design doc
-// (project/2026-04-25-graph-clarification.md). Both tunable later as
-// part of Phase 4 — here as named constants so tests and callers
-// share the same numbers.
+// Default windowing and lookahead values for the production home view.
+// L was tightened from the original spec default of 2 to 1 once the
+// dashboard was rendered against real data and the wider preview made
+// rows feel cluttered. N stays at 2. The design doc's six reference
+// scenarios are still authored against L=2 — tests that exercise those
+// shapes pass 2 explicitly via buildSubwayWith.
 const (
-	subwayLookahead = 2
+	subwayLookahead = 1
 	subwayWindow    = 2
 )
 
@@ -32,15 +34,21 @@ func BuildSubway(ctx context.Context, db *sql.DB, _ time.Time) (Subway, error) {
 	return buildSubway(w), nil
 }
 
-// buildSubway is the pure, world-driven core of BuildSubway. Tests
-// drive it directly with in-memory graphWorlds; the public entry
-// point is the DB shim above.
+// buildSubway is the pure, world-driven core of BuildSubway running
+// at production defaults. Tests that depend on specific lookahead /
+// window values call buildSubwayWith instead.
 func buildSubway(w *graphWorld) Subway {
+	return buildSubwayWith(w, subwayLookahead, subwayWindow)
+}
+
+// buildSubwayWith is the parameterized core. The public entry point
+// (BuildSubway) and buildSubway both delegate here.
+func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 	focals := pickFocals(w)
 	if len(focals) == 0 {
 		return Subway{}
 	}
-	seeds := collectLines(w, focals, subwayLookahead)
+	seeds := collectLines(w, focals, lookahead)
 	if len(seeds) == 0 {
 		return Subway{}
 	}
@@ -48,7 +56,7 @@ func buildSubway(w *graphWorld) Subway {
 
 	lines := make([]Line, len(seeds))
 	for i, seed := range seeds {
-		lines[i] = applyWindow(seed, subwayWindow)
+		lines[i] = applyWindow(seed, window)
 	}
 
 	// Render order: fork ancestors first, then for each line its

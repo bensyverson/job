@@ -1679,13 +1679,24 @@ a.c-graph-node:focus-visible {
   font-size: 11px;
   line-height: 1.2;
   color: var(--color-on-surface-muted);
-  pointer-events: none;
   display: inline-block;
   max-width: 140px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
+}
+
+a.c-graph-label {
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+a.c-graph-label:hover,
+a.c-graph-label:focus-visible {
+  color: var(--color-on-surface);
+  outline: none;
 }
 
 /* Actor avatar overlaid as a "bug" in the bottom-right quadrant.

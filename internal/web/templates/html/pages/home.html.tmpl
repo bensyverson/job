@@ -164,7 +164,9 @@
                title="Claimed by {{.Actor}}"
                aria-label="Actor {{.Actor}}">{{.Letter}}</a>
           {{- end -}}
-          <span class="c-graph-label" style="left: {{.LabelLeft}}px; top: {{.LabelTop}}px">{{.Title}}</span>
+          <a href="{{.URL}}" class="c-graph-label"
+             style="left: {{.LabelLeft}}px; top: {{.LabelTop}}px"
+             title="{{.ShortID}} — {{.Title}}">{{.Title}}</a>
         {{- end -}}
         {{- range .Graph.Edges -}}
           {{- if .IsClosure -}}

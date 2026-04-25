@@ -816,7 +816,9 @@ func TestBuildSubway_Scenario1_OneLine_NoFork(t *testing.T) {
 }
 
 // Scenario 2 — D and E claimed; G blocked by B → BranchClosed ingress
-// to G's line. Two lines, fork at A.
+// to G's line. Two lines, fork at A. Requires L=2 for E's lookahead to
+// reach into G's subtree; the production default is L=1 (which would
+// leave only B's line). buildSubwayWith pins the design-doc scenario.
 func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
 	w := newTestWorld(
 		referenceTree(map[string]string{
@@ -827,7 +829,7 @@ func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
 		[2]string{"B", "G"},
 	)
 
-	got := buildSubway(w)
+	got := buildSubwayWith(w, 2, 2)
 
 	if len(got.Lines) != 2 {
 		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
@@ -871,7 +873,9 @@ func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
 }
 
 // Scenario 3 — D and F claimed, E done between. E renders inline as
-// Done (sits between two visible focals on B's line).
+// Done (sits between two visible focals on B's line). Uses L=2 so F's
+// lookahead reaches into G's subtree, matching the design doc's
+// rendered shape.
 func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 	w := newTestWorld(
 		referenceTree(map[string]string{
@@ -883,7 +887,7 @@ func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 		[2]string{"B", "G"},
 	)
 
-	got := buildSubway(w)
+	got := buildSubwayWith(w, 2, 2)
 
 	if len(got.Lines) != 2 {
 		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
@@ -904,7 +908,9 @@ func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 }
 
 // Scenario 4 — D, H claimed (G unblocked). Three lines, fork at A,
-// all three branches open.
+// all three branches open. Requires L=2 for H's lookahead to reach K
+// and trigger J's peek line; production L=1 would render only two
+// lines (B and G).
 func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"C": "done",
@@ -912,7 +918,7 @@ func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 		"H": "claimed",
 	}))
 
-	got := buildSubway(w)
+	got := buildSubwayWith(w, 2, 2)
 
 	if len(got.Lines) != 3 {
 		t.Fatalf("Lines: got %d, want 3", len(got.Lines))

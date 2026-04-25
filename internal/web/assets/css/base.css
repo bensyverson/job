@@ -186,7 +186,7 @@ a {
    global hover-underline repaints their border-bottom-color, the
    disc's bottom slices off-tone. Exclude them from the hover
    rule so their state-based border-color stays uniform. */
-a:not(.c-graph-node):not(.c-graph-node__bug):hover {
+a:not(.c-graph-node):not(.c-graph-node__bug):not(.c-graph-label):hover {
   border-bottom-color: var(--color-outline-strong);
 }
 

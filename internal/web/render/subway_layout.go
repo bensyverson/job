@@ -92,13 +92,16 @@ type SubwayElisionView struct {
 }
 
 // Subway layout geometry. 32px node disc, 160px between column
-// centers, 40px between row centers; 56px left/right and 14/40px
+// centers, 64px between row centers; 56px left/right and 14/40px
 // top/bottom margins. The actor bug is a 20px avatar overhanging the
-// node's bottom-right by 6px (matching the prototype's pattern).
+// node's bottom-right by 6px (matching the prototype's pattern). Row
+// stride is 64 — wide enough that one row's label (sitting +40 below
+// its disc to clear the bug overhang) doesn't collide with the next
+// row's disc.
 const (
 	subwayNodeSize     = 32
 	subwayColStep      = 160
-	subwayRowStep      = 40
+	subwayRowStep      = 64
 	subwayMarginLeft   = 56
 	subwayMarginTop    = 14
 	subwayMarginRight  = 56

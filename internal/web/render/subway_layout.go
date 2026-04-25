@@ -44,9 +44,11 @@ type SubwayForkView struct {
 	BranchTargets    []string
 }
 
-// SubwayNodeView is a positioned subway stop or anchor. State
-// predicates mirror MiniGraphNodeView so the template stamps the
-// same anchor + bug + label structure for both graph variants.
+// SubwayNodeView is a positioned subway stop or anchor. The template
+// uses the boolean predicates (Go templates can't compare typed iota
+// constants cleanly) and the precomputed Left/Top/Label coordinates
+// to stamp anchors, optional actor bugs, and labels without extra
+// lookups.
 type SubwayNodeView struct {
 	ShortID        string
 	Title          string
@@ -59,7 +61,7 @@ type SubwayNodeView struct {
 	IsForkAncestor bool
 	LabelLeft      int
 	LabelTop       int
-	Bug            *MiniGraphBug
+	Bug            *NodeBug
 }
 
 // SubwayEdgeView is one rendered connector. Boolean predicates
@@ -89,19 +91,21 @@ type SubwayElisionView struct {
 	Left, Top int
 }
 
-// Subway layout geometry. Reuses the mini-graph node disc and column
-// stride so the two graph variants render at the same visual scale.
+// Subway layout geometry. 32px node disc, 160px between column
+// centers, 40px between row centers; 56px left/right and 14/40px
+// top/bottom margins. The actor bug is a 20px avatar overhanging the
+// node's bottom-right by 6px (matching the prototype's pattern).
 const (
-	subwayNodeSize     = miniGraphNodeSize
-	subwayColStep      = miniGraphColStep
-	subwayRowStep      = miniGraphRowStep
-	subwayMarginLeft   = miniGraphMarginLeft
-	subwayMarginTop    = miniGraphMarginTop
-	subwayMarginRight  = miniGraphMarginRight
-	subwayMarginBottom = miniGraphMarginBottom
-	subwayNodeRadius   = miniGraphNodeRadius
-	subwayBugSize      = miniGraphBugSize
-	subwayBugOverhang  = miniGraphBugOverhang
+	subwayNodeSize     = 32
+	subwayColStep      = 160
+	subwayRowStep      = 40
+	subwayMarginLeft   = 56
+	subwayMarginTop    = 14
+	subwayMarginRight  = 56
+	subwayMarginBottom = 40
+	subwayNodeRadius   = subwayNodeSize / 2
+	subwayBugSize      = 20
+	subwayBugOverhang  = 6
 )
 
 // LayoutSubway turns a topological signals.Subway into a positioned
@@ -218,7 +222,7 @@ func LayoutSubway(s signals.Subway) SubwayView {
 			LabelTop:       top + subwayNodeSize + subwayBugOverhang + 2,
 		}
 		if n.State == signals.SubwayNodeActive && n.Actor != "" {
-			nv.Bug = &MiniGraphBug{
+			nv.Bug = &NodeBug{
 				Actor:    n.Actor,
 				ActorURL: "/actors/" + n.Actor,
 				Letter:   InitialOf(n.Actor),

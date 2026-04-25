@@ -37,7 +37,7 @@ type homeTemplateData struct {
 	RecentCompletions homeRecentCompletions
 	Upcoming          homeUpcoming
 	Blocked           homeBlocked
-	Graph             render.MiniGraphView
+	Graph             render.SubwayView
 }
 
 type homeUpcoming struct {

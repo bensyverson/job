@@ -134,7 +134,7 @@
             </marker>
           </defs>
           {{- range .Graph.Edges -}}
-            {{- if .IsBlocker -}}
+            {{- if or .IsBlocker .IsClosure -}}
               <path class="{{.CSSClass}}" d="{{.PathD}}" />
             {{- else -}}
               <path class="{{.CSSClass}}" d="{{.PathD}}" marker-end="url(#graph-arrow)" />
@@ -142,7 +142,7 @@
           {{- end -}}
         </svg>
         {{- range .Graph.Nodes -}}
-          <a href="{{.URL}}" class="c-graph-node {{.StateClass}}"
+          <a href="{{.URL}}" class="c-graph-node {{.StateClass}}{{if .IsForkAncestor}} c-graph-node--fork{{end}}"
              style="position: absolute; left: {{.Left}}px; top: {{.Top}}px"
              data-task-id="{{.ShortID}}"
              title="{{.ShortID}} — {{.Title}}"
@@ -155,14 +155,6 @@
               <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <circle cx="8" cy="8" r="3" />
               </svg>
-            {{- else if .IsBlocked -}}
-              <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <rect x="5" y="4" width="2" height="8" />
-                <rect x="9" y="4" width="2" height="8" />
-              </svg>
-            {{- end -}}
-            {{- if gt .ChildrenNotShown 0 -}}
-              <span class="c-graph-node__pill">+{{.ChildrenNotShown}}</span>
             {{- end -}}
           </a>
           {{- with .Bug -}}
@@ -173,6 +165,15 @@
                aria-label="Actor {{.Actor}}">{{.Letter}}</a>
           {{- end -}}
           <span class="c-graph-label" style="left: {{.LabelLeft}}px; top: {{.LabelTop}}px">{{.Title}}</span>
+        {{- end -}}
+        {{- range .Graph.Edges -}}
+          {{- if .IsClosure -}}
+            <span class="c-subway-closure" style="left: {{.ClosureLeft}}px; top: {{.ClosureTop}}px"
+                  aria-label="Connection closed — prior phase incomplete">⊘</span>
+          {{- end -}}
+        {{- end -}}
+        {{- range .Graph.Elisions -}}
+          <span class="c-subway-elision" style="left: {{.Left}}px; top: {{.Top}}px" aria-hidden="true">…</span>
         {{- end -}}
       </div>
     {{- end -}}

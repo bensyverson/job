@@ -26,7 +26,7 @@ type HomePageData struct {
 	RecentCompletions RecentCompletionsPanel
 	Upcoming          UpcomingPanel
 	Blocked           BlockedStripPanel
-	Graph             render.MiniGraphView
+	Graph             render.SubwayView
 }
 
 // ActivityCard carries the 60-bucket histogram and the per-type
@@ -219,7 +219,7 @@ func Home(deps Deps) http.Handler {
 			return
 		}
 
-		mg, err := signals.ComputeMiniGraph(r.Context(), deps.DB, now)
+		sub, err := signals.BuildSubway(r.Context(), deps.DB, now)
 		if err != nil {
 			InternalError(deps, w, "home mini-graph", err)
 			return
@@ -235,7 +235,7 @@ func Home(deps Deps) http.Handler {
 			RecentCompletions: recent,
 			Upcoming:          upcoming,
 			Blocked:           blocked,
-			Graph:             render.LayoutMiniGraph(mg),
+			Graph:             render.LayoutSubway(sub),
 		}
 		renderPage(deps, w, "home", data)
 	})

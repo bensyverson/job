@@ -1014,22 +1014,33 @@ func TestBuildSubway_NodeMetadata_TitleActorURL(t *testing.T) {
 	}
 }
 
-// Explicit blocks edge between two rendered stops (not line anchors)
-// → SubwayEdgeBlocker. Distinct from sequential-phase block, which is
-// covered by BranchClosed on the ingress edge.
-func TestBuildSubway_BlockerEdge_BetweenStops(t *testing.T) {
+// Same-line stop blockage renders on the *immediate ingress* edge,
+// not as a long span from the original blocker. D blocks F with E
+// between them on B's line: the dashed marker sits on E→F (F's
+// ingress), and there is no D→F edge.
+func TestBuildSubway_BlockerEdge_OnIngressNotSpan(t *testing.T) {
 	w := newTestWorld(
 		referenceTree(map[string]string{
 			"C": "done",
 			"D": "claimed",
 		}),
-		[2]string{"D", "F"}, // D explicitly blocks F (both stops on B)
+		[2]string{"D", "F"}, // D blocks F with E between them
 	)
 
 	got := buildSubway(w)
 
-	if !hasSubwayEdge(got.Edges, "D", "F", SubwayEdgeBlocker) {
-		t.Errorf("missing Blocker edge D→F in %s", edgeSummary(got.Edges))
+	if !hasSubwayEdge(got.Edges, "E", "F", SubwayEdgeBlocker) {
+		t.Errorf("missing ingress Blocker E→F in %s", edgeSummary(got.Edges))
+	}
+	// No long span from the original blocker.
+	if hasSubwayEdge(got.Edges, "D", "F", SubwayEdgeBlocker) {
+		t.Errorf("did not expect long Blocker D→F (block sits on ingress); got: %s",
+			edgeSummary(got.Edges))
+	}
+	// Flow E→F is replaced by Blocker E→F — they're mutually exclusive.
+	if hasSubwayEdge(got.Edges, "E", "F", SubwayEdgeFlow) {
+		t.Errorf("Flow E→F should be replaced by the Blocker; got: %s",
+			edgeSummary(got.Edges))
 	}
 }
 

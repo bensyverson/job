@@ -105,14 +105,16 @@ func buildSubway(w *graphWorld) Subway {
 			})
 		}
 	}
-	// Explicit blocks between two rendered nodes — computed first so
-	// the Flow loop below can skip pairs a Blocker covers. For each
-	// rendered blocker, emit one Blocker edge to its nearest rendered
-	// blocked stop (smallest preorder position). Subsequent blocks by
-	// the same blocker are transitive — drawing them separately would
-	// visually imply that intermediate stops carry the constraint.
-	// Skip pairs already represented by BranchClosed (line-anchor
-	// ingress) and skip blockers that are done/canceled (historical).
+	// Same-line stop blockage renders on the immediate ingress edge,
+	// not as a long span from the original blocker — the subway
+	// metaphor is "this stop's ingress is closed," like BranchClosed
+	// at the LCA but within a single line. For each rendered open
+	// blocker on the same line as something it blocks, the *nearest*
+	// blocked stop's ingress edge becomes a Blocker (replacing Flow);
+	// subsequent blocks by the same blocker are transitive and don't
+	// earn an extra marker. Cross-line blocks at stop level aren't
+	// drawn here — the design covers cross-line blockage via
+	// BranchClosed on the LCA ingress to the line anchor.
 	candidates := map[string][]*graphTask{}
 	var blockerOrder []string
 	for _, n := range nodes {
@@ -120,18 +122,22 @@ func buildSubway(w *graphWorld) Subway {
 			continue
 		}
 		t := byShort[n.ShortID]
-		if t == nil {
+		if t == nil || t.parent == nil {
 			continue
 		}
 		for _, blockerID := range t.blockerIDs {
 			blocker := w.byID[blockerID]
-			if blocker == nil {
+			if blocker == nil || blocker.parent == nil {
 				continue
 			}
 			if blocker.status == "done" || blocker.status == "canceled" {
 				continue
 			}
 			if !seen[blocker.shortID] {
+				continue
+			}
+			// Same-line check: blocker and blocked share a parent.
+			if blocker.parent.id != t.parent.id {
 				continue
 			}
 			if _, exists := candidates[blocker.shortID]; !exists {
@@ -145,18 +151,34 @@ func buildSubway(w *graphWorld) Subway {
 	for i, t := range preorder {
 		preorderPos[t.id] = i
 	}
+	lineByAnchor := map[string]int{}
+	for i, line := range lines {
+		lineByAnchor[line.AnchorShortID] = i
+	}
 	type pair struct{ from, to string }
-	var blockerPairs []pair
-	blockerCovers := map[pair]bool{}
+	ingressBlocked := map[pair]bool{}
 	for _, blockerSID := range blockerOrder {
 		blocked := candidates[blockerSID]
 		sort.SliceStable(blocked, func(i, j int) bool {
 			return preorderPos[blocked[i].id] < preorderPos[blocked[j].id]
 		})
 		nearest := blocked[0]
-		bp := pair{blockerSID, nearest.shortID}
-		blockerPairs = append(blockerPairs, bp)
-		blockerCovers[bp] = true
+		lineIdx, ok := lineByAnchor[nearest.parent.shortID]
+		if !ok {
+			continue
+		}
+		line := lines[lineIdx]
+		pred := line.AnchorShortID
+		for _, item := range line.Items {
+			if item.Kind != LineItemStop {
+				continue
+			}
+			if item.ShortID == nearest.shortID {
+				break
+			}
+			pred = item.ShortID
+		}
+		ingressBlocked[pair{pred, nearest.shortID}] = true
 	}
 
 	for _, line := range lines {
@@ -165,22 +187,17 @@ func buildSubway(w *graphWorld) Subway {
 			if item.Kind != LineItemStop {
 				continue
 			}
-			if !blockerCovers[pair{prev, item.ShortID}] {
-				edges = append(edges, SubwayEdge{
-					FromShortID: prev,
-					ToShortID:   item.ShortID,
-					Kind:        SubwayEdgeFlow,
-				})
+			kind := SubwayEdgeFlow
+			if ingressBlocked[pair{prev, item.ShortID}] {
+				kind = SubwayEdgeBlocker
 			}
+			edges = append(edges, SubwayEdge{
+				FromShortID: prev,
+				ToShortID:   item.ShortID,
+				Kind:        kind,
+			})
 			prev = item.ShortID
 		}
-	}
-	for _, bp := range blockerPairs {
-		edges = append(edges, SubwayEdge{
-			FromShortID: bp.from,
-			ToShortID:   bp.to,
-			Kind:        SubwayEdgeBlocker,
-		})
 	}
 
 	return Subway{

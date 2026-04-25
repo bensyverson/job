@@ -105,24 +105,16 @@ func buildSubway(w *graphWorld) Subway {
 			})
 		}
 	}
-	for _, line := range lines {
-		prev := line.AnchorShortID
-		for _, item := range line.Items {
-			if item.Kind != LineItemStop {
-				continue
-			}
-			edges = append(edges, SubwayEdge{
-				FromShortID: prev,
-				ToShortID:   item.ShortID,
-				Kind:        SubwayEdgeFlow,
-			})
-			prev = item.ShortID
-		}
-	}
-	// Explicit blocks between two rendered nodes. Skip pairs already
-	// represented by a BranchClosed ingress (handled above for line
-	// anchors); skip blockers that are done/canceled (historical, not
-	// a live constraint).
+	// Explicit blocks between two rendered nodes — computed first so
+	// the Flow loop below can skip pairs a Blocker covers. For each
+	// rendered blocker, emit one Blocker edge to its nearest rendered
+	// blocked stop (smallest preorder position). Subsequent blocks by
+	// the same blocker are transitive — drawing them separately would
+	// visually imply that intermediate stops carry the constraint.
+	// Skip pairs already represented by BranchClosed (line-anchor
+	// ingress) and skip blockers that are done/canceled (historical).
+	candidates := map[string][]*graphTask{}
+	var blockerOrder []string
 	for _, n := range nodes {
 		if anchorSet[n.ShortID] {
 			continue
@@ -142,12 +134,53 @@ func buildSubway(w *graphWorld) Subway {
 			if !seen[blocker.shortID] {
 				continue
 			}
-			edges = append(edges, SubwayEdge{
-				FromShortID: blocker.shortID,
-				ToShortID:   n.ShortID,
-				Kind:        SubwayEdgeBlocker,
-			})
+			if _, exists := candidates[blocker.shortID]; !exists {
+				blockerOrder = append(blockerOrder, blocker.shortID)
+			}
+			candidates[blocker.shortID] = append(candidates[blocker.shortID], t)
 		}
+	}
+	preorder := preorderAll(w)
+	preorderPos := make(map[int64]int, len(preorder))
+	for i, t := range preorder {
+		preorderPos[t.id] = i
+	}
+	type pair struct{ from, to string }
+	var blockerPairs []pair
+	blockerCovers := map[pair]bool{}
+	for _, blockerSID := range blockerOrder {
+		blocked := candidates[blockerSID]
+		sort.SliceStable(blocked, func(i, j int) bool {
+			return preorderPos[blocked[i].id] < preorderPos[blocked[j].id]
+		})
+		nearest := blocked[0]
+		bp := pair{blockerSID, nearest.shortID}
+		blockerPairs = append(blockerPairs, bp)
+		blockerCovers[bp] = true
+	}
+
+	for _, line := range lines {
+		prev := line.AnchorShortID
+		for _, item := range line.Items {
+			if item.Kind != LineItemStop {
+				continue
+			}
+			if !blockerCovers[pair{prev, item.ShortID}] {
+				edges = append(edges, SubwayEdge{
+					FromShortID: prev,
+					ToShortID:   item.ShortID,
+					Kind:        SubwayEdgeFlow,
+				})
+			}
+			prev = item.ShortID
+		}
+	}
+	for _, bp := range blockerPairs {
+		edges = append(edges, SubwayEdge{
+			FromShortID: bp.from,
+			ToShortID:   bp.to,
+			Kind:        SubwayEdgeBlocker,
+		})
 	}
 
 	return Subway{

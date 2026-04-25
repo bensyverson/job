@@ -1033,6 +1033,60 @@ func TestBuildSubway_BlockerEdge_BetweenStops(t *testing.T) {
 	}
 }
 
+// When a Blocker edge covers a (from, to) pair, the Flow edge for the
+// same pair is suppressed. Without this, the Flow's arrowhead reads
+// as if the dashed amber blocker line itself has an arrow.
+func TestBuildSubway_BlockerEdge_SuppressesAdjacentFlow(t *testing.T) {
+	w := newTestWorld(
+		referenceTree(map[string]string{
+			"C": "done",
+			"D": "claimed",
+		}),
+		[2]string{"D", "E"}, // D blocks E (consecutive stops on B's line)
+	)
+
+	got := buildSubway(w)
+
+	if !hasSubwayEdge(got.Edges, "D", "E", SubwayEdgeBlocker) {
+		t.Errorf("missing Blocker D→E in %s", edgeSummary(got.Edges))
+	}
+	if hasSubwayEdge(got.Edges, "D", "E", SubwayEdgeFlow) {
+		t.Errorf("Flow D→E should be suppressed when Blocker D→E covers the pair: %s",
+			edgeSummary(got.Edges))
+	}
+	// Other Flow edges remain — only the covered pair is dropped.
+	for _, p := range [][2]string{{"B", "C"}, {"C", "D"}, {"E", "F"}} {
+		if !hasSubwayEdge(got.Edges, p[0], p[1], SubwayEdgeFlow) {
+			t.Errorf("missing Flow %s→%s in %s", p[0], p[1], edgeSummary(got.Edges))
+		}
+	}
+}
+
+// One blocker, multiple rendered blocked stops → only the nearest
+// blocked stop (smallest preorder position) gets a Blocker edge.
+// Subsequent blocks are transitive and would visually imply
+// "intermediate stop blocks the next one" if drawn separately.
+func TestBuildSubway_BlockerEdge_OnlyNearestBlocked(t *testing.T) {
+	w := newTestWorld(
+		referenceTree(map[string]string{
+			"C": "done",
+			"D": "claimed",
+		}),
+		[2]string{"D", "E"},
+		[2]string{"D", "F"},
+	)
+
+	got := buildSubway(w)
+
+	if !hasSubwayEdge(got.Edges, "D", "E", SubwayEdgeBlocker) {
+		t.Errorf("missing Blocker D→E (nearest blocked) in %s", edgeSummary(got.Edges))
+	}
+	if hasSubwayEdge(got.Edges, "D", "F", SubwayEdgeBlocker) {
+		t.Errorf("Blocker D→F should be suppressed (transitive); got: %s",
+			edgeSummary(got.Edges))
+	}
+}
+
 // Done blockers don't earn a Blocker edge — historical, not a live
 // constraint.
 func TestBuildSubway_DoneBlocker_NoBlockerEdge(t *testing.T) {

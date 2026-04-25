@@ -1050,3 +1050,185 @@ func TestBuildSubway_DoneBlocker_NoBlockerEdge(t *testing.T) {
 		t.Errorf("did not expect Blocker C→F (C done): %s", edgeSummary(got.Edges))
 	}
 }
+
+// ------------------------------------------------------------------
+// Edge cases (per design doc — 3+ active phases, deep LCA path,
+// mid-row deep focal, same-agent multiple claims)
+// ------------------------------------------------------------------
+
+// fourPhaseTree extends the reference shape with a fourth phase. Used
+// to exercise the 3+-active-phases case.
+//
+//	A
+//	├── B (phase 1) — children C, D
+//	├── E (phase 2) — children F, G
+//	├── H (phase 3) — children I, J
+//	└── K (phase 4) — children L, M
+func fourPhaseTree(statuses map[string]string) []tt {
+	base := []tt{
+		{short: "A", parent: ""},
+		{short: "B", parent: "A"},
+		{short: "C", parent: "B"},
+		{short: "D", parent: "B"},
+		{short: "E", parent: "A"},
+		{short: "F", parent: "E"},
+		{short: "G", parent: "E"},
+		{short: "H", parent: "A"},
+		{short: "I", parent: "H"},
+		{short: "J", parent: "H"},
+		{short: "K", parent: "A"},
+		{short: "L", parent: "K"},
+		{short: "M", parent: "K"},
+	}
+	for i := range base {
+		if s, ok := statuses[base[i].short]; ok {
+			base[i].status = s
+		} else {
+			base[i].status = "available"
+		}
+	}
+	return base
+}
+
+// 3+ active phases — four claims, one per phase. Four lines, fork at
+// A, all branches open.
+func TestBuildSubway_FourActivePhases(t *testing.T) {
+	w := newTestWorld(fourPhaseTree(map[string]string{
+		"C": "claimed",
+		"F": "claimed",
+		"I": "claimed",
+		"L": "claimed",
+	}))
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 4 {
+		t.Fatalf("Lines: got %d, want 4", len(got.Lines))
+	}
+	if got.Fork == nil || got.Fork.AncestorChain[0] != "A" {
+		t.Fatalf("Fork: want chain=[A], got %+v", got.Fork)
+	}
+	for _, anchor := range []string{"B", "E", "H", "K"} {
+		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
+			t.Errorf("missing open Branch A→%s in %s", anchor, edgeSummary(got.Edges))
+		}
+	}
+}
+
+// Deep LCA — two claims share an only-child ancestor (Solo) below
+// the project root. The fork's AncestorChain should anchor at Solo,
+// not Root.
+//
+//	Root
+//	└── Solo
+//	    ├── B  (children: C [claimed], D)
+//	    └── G  (children: H [claimed], I)
+func TestBuildSubway_DeepLCAPath(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "Root", parent: "", status: "available"},
+		{short: "Solo", parent: "Root", status: "available"},
+		{short: "B", parent: "Solo", status: "available"},
+		{short: "C", parent: "B", status: "claimed"},
+		{short: "D", parent: "B", status: "available"},
+		{short: "G", parent: "Solo", status: "available"},
+		{short: "H", parent: "G", status: "claimed"},
+		{short: "I", parent: "G", status: "available"},
+	})
+
+	got := buildSubway(w)
+
+	if got.Fork == nil {
+		t.Fatalf("Fork: got nil, want non-nil")
+	}
+	if got.Fork.AncestorChain[0] != "Solo" {
+		t.Errorf("Fork ancestor: got %q, want %q", got.Fork.AncestorChain[0], "Solo")
+	}
+	if _, ok := findSubwayNode(got.Nodes, "Solo"); !ok {
+		t.Errorf("Solo missing from Nodes %v", subwayNodeShortIDs(got.Nodes))
+	}
+	// Root is above the divergence and should not appear.
+	if _, ok := findSubwayNode(got.Nodes, "Root"); ok {
+		t.Errorf("Root should not appear (above LCA); got %v", subwayNodeShortIDs(got.Nodes))
+	}
+	// Branch edges originate at Solo.
+	for _, anchor := range []string{"B", "G"} {
+		if !hasSubwayEdge(got.Edges, "Solo", anchor, SubwayEdgeBranch) {
+			t.Errorf("missing Branch Solo→%s in %s", anchor, edgeSummary(got.Edges))
+		}
+	}
+}
+
+// Mid-row deep focal — claim is on a grandchild. The line should
+// anchor on the grandchild's immediate parent (the deepest ancestor
+// whose other children are relevant context), not on the line's
+// great-grandparent.
+//
+//	Top
+//	└── Mid
+//	    └── B (line anchor — siblings X, Y matter)
+//	        ├── X
+//	        └── Y [claimed]
+func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "Top", parent: "", status: "available"},
+		{short: "Mid", parent: "Top", status: "available"},
+		{short: "B", parent: "Mid", status: "available"},
+		{short: "X", parent: "B", status: "available"},
+		{short: "Y", parent: "B", status: "claimed"},
+	})
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "B" {
+		t.Errorf("anchor: got %q, want B (grandchild's parent)", got.Lines[0].AnchorShortID)
+	}
+	// Y renders as the active stop.
+	if n, _ := findSubwayNode(got.Nodes, "Y"); n.State != SubwayNodeActive {
+		t.Errorf("Y state: got %d, want Active", n.State)
+	}
+	// Top and Mid are above the line anchor and should not appear.
+	for _, s := range []string{"Top", "Mid"} {
+		if _, ok := findSubwayNode(got.Nodes, s); ok {
+			t.Errorf("%s should not appear (above line anchor); got %v",
+				s, subwayNodeShortIDs(got.Nodes))
+		}
+	}
+}
+
+// Same-agent multiple claims — two focals owned by the same actor on
+// different lines. The graph is about work, not workers; output
+// should be identical to the multi-agent case.
+func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
+	w := newTestWorld(referenceTree(map[string]string{
+		"D": "claimed",
+		"K": "claimed",
+	}))
+	mustTask(w, "D").actor = "alice"
+	mustTask(w, "K").actor = "alice"
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	// Both active stops carry the actor.
+	for _, s := range []string{"D", "K"} {
+		n, ok := findSubwayNode(got.Nodes, s)
+		if !ok {
+			t.Fatalf("%s missing from Nodes", s)
+		}
+		if n.State != SubwayNodeActive {
+			t.Errorf("%s state: got %d, want Active", s, n.State)
+		}
+		if n.Actor != "alice" {
+			t.Errorf("%s actor: got %q, want %q", s, n.Actor, "alice")
+		}
+	}
+	// Fork still emerges at A regardless of actor identity.
+	if got.Fork == nil || got.Fork.AncestorChain[0] != "A" {
+		t.Errorf("Fork: want chain=[A], got %+v", got.Fork)
+	}
+}

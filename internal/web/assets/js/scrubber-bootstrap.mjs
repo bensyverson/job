@@ -66,8 +66,35 @@ export function buildEventsFetcher({ baseURL = "/events", fetch: fetchImpl } = {
     if (!res.ok) {
       throw new Error(`fetch ${baseURL}: ${res.status}`);
     }
-    return res.json();
+    const events = await res.json();
+    for (const e of events) normalizeEvent(e);
+    return events;
   };
+}
+
+// normalizeEvent converts the on-the-wire event shape into what the
+// reducer expects:
+//   - detail: opaque JSON string per the /events contract → parsed
+//             object so the reducer can read structured fields.
+//   - created_at: RFC3339 string → unix seconds (number) so the
+//             cursor math (which multiplies by 1000) works.
+// Exported for tests; production callers receive normalized events
+// transparently from buildEventsFetcher.
+export function normalizeEvent(e) {
+  if (typeof e.detail === "string" && e.detail.length > 0) {
+    try {
+      e.detail = JSON.parse(e.detail);
+    } catch {
+      e.detail = {};
+    }
+  } else if (typeof e.detail !== "object" || e.detail === null) {
+    e.detail = {};
+  }
+  if (typeof e.created_at === "string") {
+    const ms = Date.parse(e.created_at);
+    e.created_at = Number.isFinite(ms) ? Math.floor(ms / 1000) : 0;
+  }
+  return e;
 }
 
 // createScrubber assembles the buffer from parsed payload + fetcher.

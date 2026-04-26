@@ -17,6 +17,7 @@ import {
   parseInitialFrameJSON,
   buildEventsFetcher,
   createScrubber,
+  normalizeEvent,
 } from "../assets/js/scrubber-bootstrap.mjs";
 
 // --- parseInitialFrameJSON ---
@@ -100,4 +101,35 @@ test("buildEventsFetcher: surfaces non-2xx responses as thrown errors", async ()
     new Response("nope", { status: 500 });
   const fetcher = buildEventsFetcher({ baseURL: "http://example.test/events", fetch: stubFetch });
   await assert.rejects(() => fetcher({ since: 0, limit: 10 }), /500/);
+});
+
+test("buildEventsFetcher: normalizes wire shape (detail string → object, RFC3339 → unix)", async () => {
+  // Mirrors what /events actually returns: detail is a JSON string,
+  // created_at is an RFC3339 string. The reducer expects detail as
+  // an object and created_at as unix seconds.
+  const wire = [
+    {
+      id: 1,
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "created",
+      detail: '{"title":"T","sort_order":0}',
+      created_at: "2026-04-21T21:37:05Z",
+    },
+  ];
+  const stubFetch = async () =>
+    new Response(JSON.stringify(wire), { status: 200, headers: { "content-type": "application/json" } });
+  const fetcher = buildEventsFetcher({ baseURL: "http://example.test/events", fetch: stubFetch });
+  const got = await fetcher({ limit: 1 });
+  assert.equal(got.length, 1);
+  assert.deepStrictEqual(got[0].detail, { title: "T", sort_order: 0 });
+  assert.equal(typeof got[0].created_at, "number");
+  // 2026-04-21T21:37:05Z = 1776159425 (sanity-check unix seconds).
+  assert.equal(got[0].created_at, Math.floor(Date.parse("2026-04-21T21:37:05Z") / 1000));
+});
+
+test("normalizeEvent: malformed detail string falls back to empty object", () => {
+  const e = { detail: "{ not json", created_at: "2026-04-21T21:37:05Z" };
+  normalizeEvent(e);
+  assert.deepStrictEqual(e.detail, {});
 });

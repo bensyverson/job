@@ -99,21 +99,15 @@ func newRootCmd() *cobra.Command {
 
 const rootLongHelp = `job — the CLI for Jobs, a hierarchical task tracker backed by an event store in SQLite.
 
-Tasks form a tree. Every write is attributed to a named identity and
-recorded as an event, so history is replayable and multiple agents can
-coordinate through durable short-TTL claims.
+Tasks form a tree. Every write is attributed to a named identity and recorded as an event, so history is replayable and multiple agents can coordinate through durable short-TTL claims.
 
 QUICKSTART
 
   1. Initialize:  job init
-     Records your $USER as the default identity; subsequent writes
-     need no --as.
+     Records your $USER as the default identity; subsequent writes need no --as.
 
   2. Open with status:  job status
-     Session preamble (identity + counts) and a per-root rollup of the
-     top-level forest, ending with a "Next:" hint at the first claimable
-     leaf. Run at the start of every session — it's both the identity
-     check and the landscape briefing.
+     Run at the start of every session — it's both the identity check and the landscape briefing.
 
   3. Plan (for multi-task work):
 
@@ -125,13 +119,19 @@ QUICKSTART
              - title: Second subtask
        ` + "```" + `
 
-     Then:  job import plan.md      (preview first with --dry-run)
+     Then:     job import plan.md (preview first with --dry-run)
+
+     Plans can indicate labels and blockers. See the full schema using 'job schema'
 
   4. Work:     job claim-next              (grab the next available leaf)
-               job note <id> -m "progress" (auto-extends the claim)
-               job done <id> -m "notes"
+               job note <id> -m "progress"
+               job done <id> -m "completion notes"
+               job done <id> -m "notes" --claim-next  (closes <id> with a note and opens the next available leaf)
 
-  5. Observe:  job ls                      (actionable tasks)
+  5. Observe:  job ls                      (actionable tasks in tree view)
+               job ls all                  (include all tasks)
+               job ls <i>                  (print the children of a task)
+               job show <id>               (full description and children; --ancestors prepends parent chain)
                job log <id>                (event history)
 
 IDENTITY
@@ -144,15 +144,13 @@ IDENTITY
     job identity set <name>         change the default (itself requires --as)
     job init --strict               opt out of defaults; require --as on every write
 
-  Identity is free-form. Two agents using the same name share
-  attribution; pick a stable unique name per agent in multi-agent
-  workflows.
+  Unless --strict is set, you can usually skip --as, reserving it only for sub-agents; pass unique names to agents to use with --as.
 
 VERBS (grouped by role)
 
   Setup:        init, identity, schema
   Planning:     add, import, edit, block, move, label
-  Reserved label:  "decision" → surfaces as Decision: in status until done/canceled
+    Reserved label:  "decision" → surfaces as "Decision:" in status until done/canceled
   Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
   Observation:  ls, show, log, status, next, next all, tail
   Web UI:       serve (read-only dashboard, binds 127.0.0.1:7823 by default)
@@ -163,33 +161,28 @@ VERBS (grouped by role)
 
   Short flags:
     -m  free-text body (note -m, done -m, cancel -m)
-    -d  --desc       -t  --title (edit) / --timeout (tail)
-    -l  --label      -p  --parent (import)
-    -n  --dry-run    -s  --since (log)
-    -e  --events     -u  --users     -q  --quiet     -y  --yes
-    Letters reserved by convention (-r recursive, -f force, -v verbose,
-    -h help) are intentionally NOT reused for unrelated semantics.
+    -d  --desc
+    -t  --title (edit) / --timeout (tail)
+    -l  --label
+    -p  --parent (import)
+    -n  --dry-run
+    -s  --since (log)
+    -e  --events
+    -u  --users
+    -q  --quiet
+    -y  --yes
 
   For full options on any verb:  job <verb> --help
 
 CLAIMS
 
-  Claims default to 30m. Any write to a claimed task by its holder
-  (note, edit, label add/remove) auto-extends the TTL, so routine
-  progress-logging keeps the claim fresh without explicit heartbeats.
-  Reach for ` + "`heartbeat`" + ` only during a genuine pause ("thinking, not
-  writing"). Extensions never shorten a longer explicit duration.
+  Claims default to 30m. Any write to a claimed task by its holder (note, edit, label add/remove) auto-extends the TTL. Reach for ` + "`heartbeat`" + ` only during a genuine pause ("thinking, not writing").
 
-  After a successful ` + "`done`" + `, the ack ends with a "Next:" hint naming
-  the suggested next claimable leaf. The walk prefers forward siblings,
-  then earlier siblings, walking up the closed task's ancestor chain
-  before crossing root trees — follow the hint to stay inside the
-  current plan.
+  After a successful ` + "`done`" + `, the ack ends with a "Next:" hint naming the next suggested leaf. The walk prefers forward siblings, then earlier siblings, walking up the closed task's ancestor chain before crossing root trees; follow the hint to stay inside the current plan.
 
 OUTPUT
 
-  Markdown by default; ` + "`--format=json`" + ` on any read verb for
-  machine-parsable output.
+  Markdown by default; ` + "`--format=json`" + ` on any read verb for machine-parsable output.
 
 ORCHESTRATION
 

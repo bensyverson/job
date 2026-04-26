@@ -16,12 +16,10 @@ func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls [parent]",
 		Aliases: []string{"list", "tree"},
-		Short:   "List tasks",
+		Short:   "List tasks in tree format",
 		Long: `List tasks. By default shows only actionable (available, unblocked, unclaimed) tasks.
 
-Scope: when given a parent, ls returns the full subtree under that parent
-(not just direct children). Combine with the filters below to narrow the
-recursive walk.
+Scope: when given a parent, ls returns the full subtree under that parent (not just direct children). Combine with the filters below to narrow the recursive walk.
 
 Use --all to include done, claimed, and blocked tasks.
 Use --label <name> to filter to tasks carrying that label.

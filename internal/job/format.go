@@ -197,6 +197,17 @@ func nowUnix() int64 {
 	return CurrentNowFunc().Unix()
 }
 
+// RenderAncestorBrief writes a compact ancestor preamble block: ID, Title,
+// and (if present) Description. Used by `show --ancestors` to give the
+// reader the parent chain's context without the full per-task briefing.
+func RenderAncestorBrief(w io.Writer, t *Task) {
+	fmt.Fprintf(w, "ID:           %s\n", t.ShortID)
+	fmt.Fprintf(w, "Title:        %s\n", t.Title)
+	if t.Description != "" {
+		fmt.Fprintf(w, "Description:  %s\n", unwrapProse(t.Description))
+	}
+}
+
 func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 	fmt.Fprintf(w, "ID:           %s\n", info.Task.ShortID)
 	fmt.Fprintf(w, "Title:        %s\n", info.Task.Title)

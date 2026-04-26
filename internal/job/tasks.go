@@ -1389,6 +1389,44 @@ func RunInfo(db *sql.DB, shortID string) (*TaskInfo, error) {
 	}, nil
 }
 
+// GetAncestors walks the parent chain of the given task and returns the
+// ancestors in root-first order (root, ..., parent). The named task is not
+// included. Returns an empty slice for a root task.
+func GetAncestors(db *sql.DB, shortID string) ([]*Task, error) {
+	task, err := GetTaskByShortID(db, shortID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, fmt.Errorf("task %q not found", shortID)
+	}
+
+	var chain []*Task
+	cur := task
+	for cur.ParentID != nil {
+		row := db.QueryRow(`
+			SELECT id, short_id, parent_id, title, description, status, sort_order,
+			       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
+			FROM tasks WHERE id = ? AND deleted_at IS NULL
+		`, *cur.ParentID)
+		p, err := scanTask(row)
+		if err == sql.ErrNoRows {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		chain = append(chain, p)
+		cur = p
+	}
+
+	// Reverse to root-first order.
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain, nil
+}
+
 // getNotesForTask returns the chronological list of `noted` events for a
 // task, with the body extracted from the event detail JSON.
 func getNotesForTask(db *sql.DB, taskID int64) ([]NoteEntry, error) {

@@ -1,0 +1,299 @@
+// Tests for internal/web/assets/js/plan-scrub-render.mjs.
+//
+// The render layer is a pure HTML-string emitter. Driver code parses
+// the result with DOMParser and swaps the <section> into the live
+// page (mirrors plan-live.js's fetch-and-swap idiom). String output
+// keeps tests DOM-free.
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  renderPlanSection,
+  renderFilterBar,
+  escapeHTML,
+} from "../assets/js/plan-scrub-render.mjs";
+
+// --- escapeHTML ---
+
+test("escapeHTML: escapes <, >, &, \", '", () => {
+  assert.equal(escapeHTML(`<a href="x" class='y'>&copy;</a>`),
+    "&lt;a href=&#34;x&#34; class=&#39;y&#39;&gt;&amp;copy;&lt;/a&gt;");
+});
+
+// --- renderPlanSection ---
+
+test("renderPlanSection: empty roots emit the c-plan-empty placeholder", () => {
+  const html = renderPlanSection([]);
+  assert.match(html, /<section class="c-section" aria-label="Plan">/);
+  assert.match(html, /c-plan-empty/);
+  assert.match(html, /No tasks yet\./);
+});
+
+test("renderPlanSection: one node emits a row with id, status pill, and labels", () => {
+  const node = {
+    shortID: "ABC12",
+    url: "/tasks/ABC12",
+    title: "Hello & world",
+    description: "",
+    displayStatus: "todo",
+    actor: "alice",
+    labels: [{ name: "web", url: "/plan?label=web" }],
+    relTime: "5m",
+    isoTime: "2026-04-26T12:00:00.000Z",
+    blockedBy: [],
+    notes: [],
+    children: [],
+    depth: 0,
+    hasChildren: false,
+    collapsible: false,
+    collapsed: false,
+  };
+  const html = renderPlanSection([node]);
+  assert.match(html, /id="task-ABC12"/);
+  assert.match(html, /data-plan-task="ABC12"/);
+  assert.match(html, /c-status-pill--todo/);
+  // HTML-escaped title.
+  assert.match(html, /Hello &amp; world/);
+  // Avatar slot with actor.
+  assert.match(html, /data-actor="alice"/);
+  // Label chip with URL + name.
+  assert.match(html, /href="\/plan\?label=web"/);
+  assert.match(html, /data-label="web"/);
+  // Time element with iso datetime + rel text.
+  assert.match(html, /<time datetime="2026-04-26T12:00:00\.000Z">5m<\/time>/);
+});
+
+test("renderPlanSection: collapsible row emits disclosure button, leaf gets placeholder span", () => {
+  const leaf = {
+    shortID: "L0001",
+    url: "/tasks/L0001",
+    title: "leaf",
+    description: "",
+    displayStatus: "todo",
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [],
+    notes: [],
+    children: [],
+    depth: 0,
+    hasChildren: false,
+    collapsible: false,
+    collapsed: false,
+  };
+  const branch = { ...leaf, shortID: "B0001", title: "branch", hasChildren: true, collapsible: true };
+  const html = renderPlanSection([branch, leaf]);
+  // Branch has a disclosure button.
+  assert.match(html, /<button class="c-plan-row__disclosure"/);
+  // Leaf row carries a placeholder span (the empty <span></span> for grid alignment).
+  assert.match(html, /id="task-L0001"[^>]*>\s*<span><\/span>/);
+});
+
+test("renderPlanSection: collapsed row carries data-collapsed=true and the c-plan-row--collapsed class", () => {
+  const node = {
+    shortID: "ABC12",
+    url: "/tasks/ABC12",
+    title: "T",
+    description: "",
+    displayStatus: "done",
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [],
+    notes: [],
+    children: [],
+    depth: 0,
+    hasChildren: false,
+    collapsible: true,
+    collapsed: true,
+  };
+  const html = renderPlanSection([node]);
+  assert.match(html, /data-collapsed="true"/);
+  assert.match(html, /c-plan-row--collapsed/);
+});
+
+test("renderPlanSection: blocked-by line lists comma-separated id pills with title attrs", () => {
+  const node = {
+    shortID: "T0001",
+    url: "/tasks/T0001",
+    title: "T",
+    description: "",
+    displayStatus: "blocked",
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [
+      { shortID: "B0001", url: "#task-B0001", title: "Blocker A" },
+      { shortID: "B0002", url: "#task-B0002", title: "" },
+    ],
+    notes: [],
+    children: [],
+    depth: 0,
+    hasChildren: false,
+    collapsible: false,
+    collapsed: false,
+  };
+  const html = renderPlanSection([node]);
+  assert.match(html, /Blocked by/);
+  assert.match(html, /href="#task-B0001"[^>]*title="Blocker A"/);
+  // No title attribute when title is empty.
+  assert.match(html, /href="#task-B0002"[^>]*>B0002</);
+  assert.doesNotMatch(html, /href="#task-B0002"[^>]*title=/);
+});
+
+test("renderPlanSection: notes group renders as <details> with one row per note", () => {
+  const node = {
+    shortID: "T0001",
+    url: "/tasks/T0001",
+    title: "T",
+    description: "",
+    displayStatus: "todo",
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [],
+    notes: [
+      {
+        actor: "alice",
+        relTime: "1m",
+        isoTime: "2026-04-26T12:00:00.000Z",
+        text: "first <note>",
+        displayStatus: "todo",
+      },
+      {
+        actor: "bob",
+        relTime: "30s",
+        isoTime: "2026-04-26T12:01:00.000Z",
+        text: "second",
+        displayStatus: "todo",
+      },
+    ],
+    children: [],
+    depth: 0,
+    hasChildren: false,
+    collapsible: true,
+    collapsed: false,
+  };
+  const html = renderPlanSection([node]);
+  assert.match(html, /<details class="c-plan-notes-group"/);
+  assert.match(html, /2 notes/);
+  // Note text is HTML-escaped inside the <pre>.
+  assert.match(html, /first &lt;note&gt;/);
+  // Each note renders an actor + time.
+  assert.match(html, /c-plan-note__actor">alice</);
+  assert.match(html, /c-plan-note__actor">bob</);
+});
+
+test("renderPlanSection: subtree renders children recursively under c-plan-subtree", () => {
+  const child = {
+    shortID: "C0001",
+    url: "/tasks/C0001",
+    title: "child",
+    description: "",
+    displayStatus: "todo",
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [],
+    notes: [],
+    children: [],
+    depth: 1,
+    hasChildren: false,
+    collapsible: false,
+    collapsed: false,
+  };
+  const parent = {
+    shortID: "P0001",
+    url: "/tasks/P0001",
+    title: "parent",
+    description: "",
+    displayStatus: "todo",
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [],
+    notes: [],
+    children: [child],
+    depth: 0,
+    hasChildren: true,
+    collapsible: true,
+    collapsed: false,
+  };
+  const html = renderPlanSection([parent]);
+  assert.match(html, /<div class="c-plan-subtree">/);
+  assert.match(html, /id="task-C0001"/);
+  // Parent row appears before child row.
+  assert.ok(html.indexOf("task-P0001") < html.indexOf("task-C0001"));
+});
+
+test("renderPlanSection: status pill icon + label match the SSR template", () => {
+  const make = (status) => ({
+    shortID: "T",
+    url: "/tasks/T",
+    title: "x",
+    description: "",
+    displayStatus: status,
+    actor: "",
+    labels: [],
+    relTime: "",
+    isoTime: "",
+    blockedBy: [],
+    notes: [],
+    children: [],
+    depth: 0,
+    hasChildren: false,
+    collapsible: false,
+    collapsed: false,
+  });
+  // Each status maps to its label.
+  for (const [status, label] of [
+    ["done", "Done"],
+    ["blocked", "Blocked"],
+    ["active", "Active"],
+    ["canceled", "Canceled"],
+    ["todo", "Todo"],
+  ]) {
+    const html = renderPlanSection([make(status)]);
+    assert.match(html, new RegExp(`c-status-pill c-status-pill--${status}`));
+    assert.match(html, new RegExp(`>${label}<`));
+  }
+});
+
+// --- renderFilterBar ---
+
+test("renderFilterBar: emits Active/Archived/All tabs with active class on current show", () => {
+  const html = renderFilterBar({
+    showTabs: [
+      { label: "Active", url: "/plan", active: true },
+      { label: "Archived", url: "/plan?show=archived", active: false },
+      { label: "All", url: "/plan?show=all", active: false },
+    ],
+    allURL: "/plan",
+    allActive: true,
+    labels: [],
+  });
+  assert.match(html, /<a href="\/plan" class="c-tab c-tab--active">Active<\/a>/);
+  assert.match(html, /<a href="\/plan\?show=archived" class="c-tab">Archived<\/a>/);
+});
+
+test("renderFilterBar: emits label pills with active class and any-pill", () => {
+  const html = renderFilterBar({
+    showTabs: [],
+    allURL: "/plan",
+    allActive: false,
+    labels: [
+      { name: "web", url: "/plan?label=web", active: true },
+      { name: "alpha", url: "/plan?label=alpha,web", active: false },
+    ],
+  });
+  assert.match(html, /c-label-pill c-label-pill--all">any<\/a>/);
+  assert.match(html, /c-label-pill c-label-pill--active" data-label="web"/);
+  assert.match(html, /c-label-pill" data-label="alpha"/);
+});

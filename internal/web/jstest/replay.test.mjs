@@ -393,6 +393,168 @@ test("applyEvent noted: replaces description with description_after", () => {
   assert.equal(after.tasks.get("ABC12").description, "before\n\n[note] after");
 });
 
+test("applyEvent noted: appends a note to task.notes", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        description: "",
+        status: "available",
+        sortOrder: 0,
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const event = {
+    id: 20,
+    task_id: "ABC12",
+    actor: "alice",
+    created_at: 1700000000,
+    event_type: "noted",
+    detail: { description_after: "first", text: "first" },
+  };
+  const after = applyEvent(before, event);
+  assert.deepStrictEqual(after.tasks.get("ABC12").notes, [
+    { actor: "alice", ts: 1700000000, text: "first" },
+  ]);
+});
+
+test("applyEvent noted: appends in chronological order across multiple events", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        description: "",
+        status: "available",
+        sortOrder: 0,
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const f1 = applyEvent(before, {
+    id: 21,
+    task_id: "ABC12",
+    actor: "alice",
+    created_at: 1700000000,
+    event_type: "noted",
+    detail: { description_after: "first", text: "first" },
+  });
+  const f2 = applyEvent(f1, {
+    id: 22,
+    task_id: "ABC12",
+    actor: "bob",
+    created_at: 1700000060,
+    event_type: "noted",
+    detail: {
+      description_after: "first\n\n[2 mins later] second",
+      text: "second",
+    },
+  });
+  assert.deepStrictEqual(f2.tasks.get("ABC12").notes, [
+    { actor: "alice", ts: 1700000000, text: "first" },
+    { actor: "bob", ts: 1700000060, text: "second" },
+  ]);
+});
+
+test("applyEvent noted: missing detail.text is skipped (no empty notes)", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        description: "",
+        status: "available",
+        sortOrder: 0,
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 23,
+    task_id: "ABC12",
+    actor: "alice",
+    created_at: 1700000000,
+    event_type: "noted",
+    detail: { description_after: "x" }, // no text
+  });
+  assert.deepStrictEqual(after.tasks.get("ABC12").notes, []);
+});
+
+test("initialFrame: hydrates per-task notes from the JSON island", () => {
+  const f = initialFrame({
+    headEventId: 5,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        description: "first\n\n[then] second",
+        status: "available",
+        sortOrder: 0,
+        notes: [
+          { actor: "alice", ts: 1700000000, text: "first" },
+          { actor: "bob", ts: 1700000060, text: "second" },
+        ],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  assert.deepStrictEqual(f.tasks.get("ABC12").notes, [
+    { actor: "alice", ts: 1700000000, text: "first" },
+    { actor: "bob", ts: 1700000060, text: "second" },
+  ]);
+});
+
+test("initialFrame: missing notes defaults to []", () => {
+  const f = initialFrame({
+    headEventId: 5,
+    tasks: [
+      { shortId: "ABC12", title: "T", description: "", status: "available", sortOrder: 0 },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  assert.deepStrictEqual(f.tasks.get("ABC12").notes, []);
+});
+
+test("applyEvent noted: does not mutate the prior frame's notes array", () => {
+  // Cloning isolation: pushing to the new frame's notes array must
+  // not retroactively mutate the prior frame the cache may still hold.
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        description: "",
+        status: "available",
+        sortOrder: 0,
+        notes: [{ actor: "alice", ts: 1700000000, text: "first" }],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 30,
+    task_id: "ABC12",
+    actor: "bob",
+    created_at: 1700000060,
+    event_type: "noted",
+    detail: { description_after: "x", text: "second" },
+  });
+  assert.equal(before.tasks.get("ABC12").notes.length, 1);
+  assert.equal(after.tasks.get("ABC12").notes.length, 2);
+});
+
 test("applyEvent claim_expired: clears claim; status -> available", () => {
   const before = initialFrame({
     headEventId: 0,

@@ -45,6 +45,13 @@
 //     blocks: Map<blockedShortId, Set<blockerShortId>>,
 //     claims: Map<shortId, { claimedBy, expiresAt }>,
 //   }
+//
+// TaskState.notes is an Array<{ actor, ts, text }> in chronological
+// order. The head frame from the JSON island ships with notes empty —
+// SSR renders notes server-side from the event log via loadPlanNotes,
+// so live mode doesn't need them. Scrubbing populates notes via the
+// forward fold of `noted` events from the genesis snapshot, which the
+// frame cache pins.
 
 function defaultTask(shortId) {
   return {
@@ -55,13 +62,18 @@ function defaultTask(shortId) {
     parentShortId: null,
     sortOrder: 0,
     labels: new Set(),
+    notes: [],
   };
 }
 
 function cloneFrame(frame) {
   const tasks = new Map();
   for (const [k, v] of frame.tasks) {
-    tasks.set(k, { ...v, labels: new Set(v.labels) });
+    tasks.set(k, {
+      ...v,
+      labels: new Set(v.labels),
+      notes: v.notes ? v.notes.slice() : [],
+    });
   }
   const blocks = new Map();
   for (const [k, set] of frame.blocks) {
@@ -83,6 +95,7 @@ export function initialFrame(payload) {
       ...t,
       parentShortId: t.parentShortId ?? null,
       labels: new Set(t.labels ?? []),
+      notes: Array.isArray(t.notes) ? t.notes.map((n) => ({ ...n })) : [],
     });
   }
   const blocks = new Map();
@@ -208,6 +221,19 @@ const FORWARD = {
     if (detail.description_after !== undefined) {
       t.description = detail.description_after;
     }
+    // Track the note as its own record so per-view glue can render
+    // c-plan-note rows in history mode without re-querying the event
+    // log. Skip empty text — the server treats empty notes as invalid
+    // input, but a defensive check keeps a malformed payload from
+    // injecting a blank row.
+    const text = typeof detail.text === "string" ? detail.text : "";
+    if (text === "") return;
+    t.notes = t.notes ? t.notes.slice() : [];
+    t.notes.push({
+      actor: event.actor,
+      ts: event.created_at,
+      text,
+    });
   },
 
   claim_expired(frame, event) {

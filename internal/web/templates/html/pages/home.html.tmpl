@@ -121,65 +121,7 @@
     <h2 id="s-graph" class="c-section__title">Dependency flow</h2>
     <a href="/plan" class="t-label-caps t-muted">Open full graph →</a>
   </div>
-  <div class="c-mini-graph">
-    {{- if .Graph.Empty -}}
-      <div class="c-empty">No active claims or upcoming work</div>
-    {{- else -}}
-      <div class="c-graph-canvas" style="position: relative; width: {{.Graph.CanvasW}}px; max-width: 100%; height: {{.Graph.CanvasH}}px">
-        <svg viewBox="0 0 {{.Graph.CanvasW}} {{.Graph.CanvasH}}" width="100%" height="{{.Graph.CanvasH}}"
-             style="position: absolute; inset: 0; color: var(--color-outline-strong)" aria-hidden="true">
-          <defs>
-            <marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
-            </marker>
-          </defs>
-          {{- range .Graph.Edges -}}
-            {{- if or .IsBlocker .IsClosure -}}
-              <path class="{{.CSSClass}}" d="{{.PathD}}" />
-            {{- else -}}
-              <path class="{{.CSSClass}}" d="{{.PathD}}" marker-end="url(#graph-arrow)" />
-            {{- end -}}
-          {{- end -}}
-        </svg>
-        {{- range .Graph.Nodes -}}
-          <a href="{{.URL}}" class="c-graph-node {{.StateClass}}{{if .IsForkAncestor}} c-graph-node--fork{{end}}"
-             style="position: absolute; left: {{.Left}}px; top: {{.Top}}px"
-             data-task-id="{{.ShortID}}"
-             title="{{.ShortID}} — {{.Title}}"
-             aria-label="{{.ShortID}} — {{.Title}}">
-            {{- if .IsDone -}}
-              <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-                <path d="M4 8l3 3 5-6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            {{- else if .IsActive -}}
-              <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <circle cx="8" cy="8" r="3" />
-              </svg>
-            {{- end -}}
-          </a>
-          {{- with .Bug -}}
-            <a href="{{.ActorURL}}" class="c-graph-node__bug c-graph-node__bug--detached"
-               style="position: absolute; left: {{.Left}}px; top: {{.Top}}px; --actor-color: {{.Color}}"
-               data-actor="{{.Actor}}"
-               title="Claimed by {{.Actor}}"
-               aria-label="Actor {{.Actor}}">{{.Letter}}</a>
-          {{- end -}}
-          <a href="{{.URL}}" class="c-graph-label"
-             style="left: {{.LabelLeft}}px; top: {{.LabelTop}}px"
-             title="{{.ShortID}} — {{.Title}}">{{.Title}}</a>
-        {{- end -}}
-        {{- range .Graph.Edges -}}
-          {{- if .IsClosure -}}
-            <span class="c-subway-closure" style="left: {{.ClosureLeft}}px; top: {{.ClosureTop}}px"
-                  aria-label="Connection closed — prior phase incomplete">⊘</span>
-          {{- end -}}
-        {{- end -}}
-        {{- range .Graph.Elisions -}}
-          <span class="c-subway-elision" style="left: {{.Left}}px; top: {{.Top}}px" aria-hidden="true">…</span>
-        {{- end -}}
-      </div>
-    {{- end -}}
-  </div>
+  {{template "home_graph" .Graph}}
 </section>
 
 <div class="c-grid-cols-4">
@@ -282,3 +224,63 @@
 
 </div>
 {{end}}
+
+{{define "home_graph"}}<div class="c-mini-graph">
+  {{- if .Empty -}}
+    <div class="c-empty">No active claims or upcoming work</div>
+  {{- else -}}
+    <div class="c-graph-canvas" style="position: relative; width: {{.CanvasW}}px; max-width: 100%; height: {{.CanvasH}}px">
+      <svg viewBox="0 0 {{.CanvasW}} {{.CanvasH}}" width="100%" height="{{.CanvasH}}"
+           style="position: absolute; inset: 0; color: var(--color-outline-strong)" aria-hidden="true">
+        <defs>
+          <marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+          </marker>
+        </defs>
+        {{- range .Edges -}}
+          {{- if or .IsBlocker .IsClosure -}}
+            <path class="{{.CSSClass}}" d="{{.PathD}}" />
+          {{- else -}}
+            <path class="{{.CSSClass}}" d="{{.PathD}}" marker-end="url(#graph-arrow)" />
+          {{- end -}}
+        {{- end -}}
+      </svg>
+      {{- range .Nodes -}}
+        <a href="{{.URL}}" class="c-graph-node {{.StateClass}}{{if .IsForkAncestor}} c-graph-node--fork{{end}}"
+           style="position: absolute; left: {{.Left}}px; top: {{.Top}}px"
+           data-task-id="{{.ShortID}}"
+           title="{{.ShortID}} — {{.Title}}"
+           aria-label="{{.ShortID}} — {{.Title}}">
+          {{- if .IsDone -}}
+            <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+              <path d="M4 8l3 3 5-6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          {{- else if .IsActive -}}
+            <svg class="c-graph-node__glyph" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <circle cx="8" cy="8" r="3" />
+            </svg>
+          {{- end -}}
+        </a>
+        {{- with .Bug -}}
+          <a href="{{.ActorURL}}" class="c-graph-node__bug c-graph-node__bug--detached"
+             style="position: absolute; left: {{.Left}}px; top: {{.Top}}px; --actor-color: {{.Color}}"
+             data-actor="{{.Actor}}"
+             title="Claimed by {{.Actor}}"
+             aria-label="Actor {{.Actor}}">{{.Letter}}</a>
+        {{- end -}}
+        <a href="{{.URL}}" class="c-graph-label"
+           style="left: {{.LabelLeft}}px; top: {{.LabelTop}}px"
+           title="{{.ShortID}} — {{.Title}}">{{.Title}}</a>
+      {{- end -}}
+      {{- range .Edges -}}
+        {{- if .IsClosure -}}
+          <span class="c-subway-closure" style="left: {{.ClosureLeft}}px; top: {{.ClosureTop}}px"
+                aria-label="Connection closed — prior phase incomplete">⊘</span>
+        {{- end -}}
+      {{- end -}}
+      {{- range .Elisions -}}
+        <span class="c-subway-elision" style="left: {{.Left}}px; top: {{.Top}}px" aria-hidden="true">…</span>
+      {{- end -}}
+    </div>
+  {{- end -}}
+</div>{{end}}

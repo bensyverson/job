@@ -2342,6 +2342,16 @@ a.c-graph-node__bug:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 300ms ease, filter 300ms ease;
+}
+
+/* Pending state: scrubber moved the cursor and the graph is being
+   refetched server-side. Dim + blur honestly signals "this graph
+   doesn't reflect the cursor yet"; the 300ms transition matches the
+   debounce so the visual effect doesn't feel jumpy. */
+.c-mini-graph.is-pending {
+  opacity: 0.4;
+  filter: blur(2px);
 }
 
 /* Mini-graph edges (SVG paths under the node discs). Base is the

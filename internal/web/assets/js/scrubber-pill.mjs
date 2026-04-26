@@ -22,8 +22,12 @@
 
 import {
   xToEventId,
+  eventIdToX,
   computeDensityBars,
   formatHistoryBannerText,
+  parseAtFromQuery,
+  composeURLWithAt,
+  composeURLWithoutAt,
 } from "./scrubber-cursor.mjs";
 
 const PAGE_SCRUBBING_CLASS = "page--scrubbing";
@@ -90,13 +94,34 @@ function updateBanner(doc, event) {
   }
 }
 
-async function applyCursor(doc, xFrac) {
+// syncURL updates the address bar to reflect the current scrub state
+// without adding a history entry per drag tick. Browser back/forward
+// still works because the state changes on enter/exit are pushed
+// (replaceState during drag, pushState on exit). Falls back to a
+// no-op when window.history is unavailable (node tests, sandboxed
+// embeds).
+function syncURL(eventId, mode = "replace") {
+  if (typeof window === "undefined" || !window.history) return;
+  const href = window.location.href;
+  const next = eventId == null ? composeURLWithoutAt(href) : composeURLWithAt(href, eventId);
+  const fn = mode === "push" ? "pushState" : "replaceState";
+  try {
+    window.history[fn]({}, "", next);
+  } catch {
+    // Cross-origin / sandboxed iframes may reject history ops. Treat
+    // as a no-op — the scrubber still works in-page; URL just won't
+    // reflect state.
+  }
+}
+
+async function applyCursor(doc, xFrac, { updateURL = true } = {}) {
   if (events.length === 0 || !buf) return;
   const eventId = xToEventId(xFrac, events, nowMs);
   if (eventId === 0) return;
   const event = events.find((e) => e.id === eventId);
   const frame = await buf.frameAt(eventId);
   updateBanner(doc, event);
+  if (updateURL) syncURL(eventId, "replace");
   doc.dispatchEvent(
     new CustomEvent("jobs:scrubber-frame", { detail: { frame, event } }),
   );
@@ -143,18 +168,24 @@ async function ensureInitialized(doc) {
   renderDensityBars(doc);
 }
 
-export async function enterScrubbing(doc = document) {
+export async function enterScrubbing(doc = document, { atEventId = null } = {}) {
   await ensureInitialized(doc);
   const page = findPageRoot(doc);
   page.classList.add(PAGE_SCRUBBING_CLASS);
   toggleEls(doc, false);
   setPillLabel(doc, "Scrubbing");
-  // Default cursor at "now" — entering scrubbing without a drag
-  // means "I want to see what just happened." A subsequent drag
-  // moves it back in time.
-  setCursor(doc, 1);
-  if (events.length > 0) {
-    updateBanner(doc, events[events.length - 1]);
+  // If a specific eventId is requested (cold-load with ?at=N), seek
+  // there. Otherwise default to "now" — entering scrubbing without a
+  // drag means "I want to see what just happened."
+  if (atEventId != null && events.length > 0) {
+    const xFrac = eventIdToX(atEventId, events, nowMs);
+    setCursor(doc, xFrac);
+    await applyCursor(doc, xFrac, { updateURL: false });
+  } else {
+    setCursor(doc, 1);
+    if (events.length > 0) {
+      updateBanner(doc, events[events.length - 1]);
+    }
   }
 }
 
@@ -164,6 +195,7 @@ export function exitScrubbing(doc = document) {
   toggleEls(doc, true);
   setPillLabel(doc, "Live");
   setCursor(doc, 1);
+  syncURL(null, "push");
   doc.dispatchEvent(new CustomEvent("jobs:scrubber-live"));
 }
 
@@ -219,12 +251,40 @@ export function wireScrubberPill(doc = document) {
     if (e.key === "Escape" && isScrubbing(doc)) exitScrubbing(doc);
   });
   wireDrag(doc);
+
+  // Browser back/forward sync. popstate fires when the user navigates
+  // through history; check the URL and re-enter or exit accordingly.
+  if (typeof window !== "undefined") {
+    window.addEventListener("popstate", () => {
+      const at = parseAtFromQuery(window.location.search);
+      if (at != null) {
+        enterScrubbing(doc, { atEventId: at });
+      } else if (isScrubbing(doc)) {
+        exitScrubbing(doc);
+      }
+    });
+  }
+}
+
+// hydrateFromURL is the cold-load entry point: if the page loaded
+// with ?at=N in the URL, enter scrubbing mode and seek there. Called
+// once from the auto-init below; exposed for tests.
+export function hydrateFromURL(doc = document, search = "") {
+  const at = parseAtFromQuery(search);
+  if (at == null) return;
+  enterScrubbing(doc, { atEventId: at });
 }
 
 if (typeof document !== "undefined") {
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => wireScrubberPill());
-  } else {
+  function init() {
     wireScrubberPill();
+    if (typeof window !== "undefined") {
+      hydrateFromURL(document, window.location.search);
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
 }

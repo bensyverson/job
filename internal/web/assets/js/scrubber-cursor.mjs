@@ -102,3 +102,39 @@ export function formatHistoryBannerText(event, nowMs) {
   const iso = new Date(event.created_at * 1000).toISOString().replace("T", " ").slice(0, 19);
   return `?at=${event.id} · ${age} · ${iso}`;
 }
+
+// parseAtFromQuery extracts a positive integer ?at value from a URL
+// query string. Returns null for missing, empty, non-numeric, or
+// non-positive inputs — the caller treats null as "live, no scrub
+// state in URL." Same shape as the server's parseAtParam in
+// internal/web/handlers so client and server agree on what counts as
+// a valid ?at.
+export function parseAtFromQuery(searchString) {
+  if (!searchString) return null;
+  const params = new URLSearchParams(searchString);
+  const raw = params.get("at");
+  if (!raw) return null;
+  // Reject 1.5, 1e3, hex, etc. — only a plain positive integer.
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n > 0 ? n : null;
+}
+
+// composeURLWithAt returns a same-origin path-and-query string with
+// ?at=<eventId> set, preserving every other query parameter and the
+// hash fragment. Pure: takes a path-or-URL string in, returns a
+// string out — no DOM, no location.
+export function composeURLWithAt(href, eventId) {
+  const u = new URL(href, "http://placeholder.invalid/");
+  u.searchParams.set("at", String(eventId));
+  return u.pathname + u.search + u.hash;
+}
+
+// composeURLWithoutAt is the inverse: drops ?at, preserves the rest.
+// Returns the path with no trailing "?" when ?at was the only param.
+export function composeURLWithoutAt(href) {
+  const u = new URL(href, "http://placeholder.invalid/");
+  u.searchParams.delete("at");
+  const search = u.searchParams.toString();
+  return u.pathname + (search ? "?" + search : "") + u.hash;
+}

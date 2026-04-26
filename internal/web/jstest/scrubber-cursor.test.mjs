@@ -15,6 +15,9 @@ import {
   computeDensityBars,
   formatHistoryBannerText,
   formatAge,
+  parseAtFromQuery,
+  composeURLWithAt,
+  composeURLWithoutAt,
 } from "../assets/js/scrubber-cursor.mjs";
 
 // Helper: build an events array with a fixed offset back from `now`.
@@ -125,4 +128,51 @@ test("formatHistoryBannerText: composes id, age, and ISO timestamp", () => {
   assert.match(text, /\?at=1234/);
   assert.match(text, /6h ago/);
   assert.match(text, /\d{4}-\d{2}-\d{2}/);
+});
+
+// --- URL helpers ---
+
+test("parseAtFromQuery: positive integer returns the event id", () => {
+  assert.equal(parseAtFromQuery("?at=42"), 42);
+});
+
+test("parseAtFromQuery: missing / empty / non-numeric / non-positive returns null", () => {
+  assert.equal(parseAtFromQuery(""), null);
+  assert.equal(parseAtFromQuery("?other=42"), null);
+  assert.equal(parseAtFromQuery("?at="), null);
+  assert.equal(parseAtFromQuery("?at=foo"), null);
+  assert.equal(parseAtFromQuery("?at=0"), null);
+  assert.equal(parseAtFromQuery("?at=-1"), null);
+  assert.equal(parseAtFromQuery("?at=1.5"), null);
+});
+
+test("parseAtFromQuery: composes with other query params", () => {
+  assert.equal(parseAtFromQuery("?actor=alice&at=99&type=done"), 99);
+});
+
+test("composeURLWithAt: sets ?at on a clean URL", () => {
+  const got = composeURLWithAt("/plan", 42);
+  assert.equal(got, "/plan?at=42");
+});
+
+test("composeURLWithAt: replaces an existing ?at, preserves others", () => {
+  const got = composeURLWithAt("/log?actor=alice&at=10&type=done", 42);
+  // URLSearchParams ordering: existing keys are preserved, replaced
+  // value updates in place. New keys append.
+  assert.equal(got, "/log?actor=alice&at=42&type=done");
+});
+
+test("composeURLWithoutAt: removes ?at, preserves others", () => {
+  const got = composeURLWithoutAt("/log?actor=alice&at=10&type=done");
+  assert.equal(got, "/log?actor=alice&type=done");
+});
+
+test("composeURLWithoutAt: returns clean path when ?at was the only param", () => {
+  const got = composeURLWithoutAt("/plan?at=42");
+  assert.equal(got, "/plan");
+});
+
+test("composeURL helpers preserve hash fragments", () => {
+  assert.equal(composeURLWithAt("/log#bottom", 42), "/log?at=42#bottom");
+  assert.equal(composeURLWithoutAt("/log?at=42#bottom"), "/log#bottom");
 });

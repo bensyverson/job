@@ -5,10 +5,13 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
+	"html/template"
 	"net/http"
 
 	"github.com/bensyverson/jobs/internal/web/broadcast"
+	"github.com/bensyverson/jobs/internal/web/initial"
 	"github.com/bensyverson/jobs/internal/web/templates"
 )
 
@@ -30,4 +33,20 @@ func renderPage(deps Deps, w http.ResponseWriter, page string, data any) {
 	if err := deps.Templates.Render(w, page, data); err != nil {
 		InternalError(deps, w, "render "+page, err)
 	}
+}
+
+// newChrome builds a Chrome bag for a layout-rendering page. Loads
+// the JSON island from the DB so the time-travel scrubber's JS can
+// hydrate without an extra fetch. Fragment endpoints that don't use
+// the layout (e.g. /tasks/{id}/peek) construct a Chrome literal
+// directly without calling this — they don't need the island.
+func newChrome(ctx context.Context, deps Deps, activeTab string) (templates.Chrome, error) {
+	raw, err := initial.LoadJSON(ctx, deps.DB)
+	if err != nil {
+		return templates.Chrome{}, err
+	}
+	return templates.Chrome{
+		ActiveTab:        activeTab,
+		InitialFrameJSON: template.JS(raw),
+	}, nil
 }

@@ -473,7 +473,7 @@ func TestActors_AtFiltersEventWalkToUpperBound(t *testing.T) {
 	atEarly := eventIDForTaskCreate(t, db, idLate) - 1
 
 	deps := newLogDeps(t, db)
-	body := fetchActorsQuery(t, deps, "at="+strconv.FormatInt(atEarly, 10))
+	body := stripInitialFrame(fetchActorsQuery(t, deps, "at="+strconv.FormatInt(atEarly, 10)))
 
 	if !strings.Contains(body, "alice-early") {
 		t.Errorf("?at=%d should still render alice-early (event id <= at)", atEarly)

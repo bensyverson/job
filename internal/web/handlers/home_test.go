@@ -360,6 +360,35 @@ func TestHome_ActiveClaims_OrdersNewestFirst(t *testing.T) {
 	}
 }
 
+func TestHome_RendersInitialFrameJSONIsland(t *testing.T) {
+	db := setupLogTestDB(t)
+	homeSeedTask(t, db, "abc12", "Island task", "available", time.Now().Add(-1*time.Minute))
+
+	deps := newLogDeps(t, db)
+	body := fetchHome(t, deps)
+
+	const open = `<script type="application/json" id="initial-frame">`
+	idx := strings.Index(body, open)
+	if idx < 0 {
+		t.Fatalf("initial-frame island missing from /")
+	}
+	end := strings.Index(body[idx:], "</script>")
+	if end < 0 {
+		t.Fatalf("unterminated initial-frame island")
+	}
+	payload := body[idx+len(open) : idx+end]
+
+	// HTML-safe encoding: a literal '<' inside the payload would risk
+	// </script> injection. The encoder escapes it as <.
+	if strings.Contains(payload, "<") {
+		t.Errorf("island payload contains literal '<' (XSS risk):\n%s", payload)
+	}
+	// Sanity: the seeded task title is in the payload (escaped form).
+	if !strings.Contains(payload, "Island task") {
+		t.Errorf("island payload missing seeded task title:\n%s", payload)
+	}
+}
+
 func TestHome_ActiveClaims_IncludesClaimedAtForLiveTicker(t *testing.T) {
 	db := setupLogTestDB(t)
 	deps := newLogDeps(t, db)

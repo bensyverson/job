@@ -110,10 +110,15 @@ func ActorSingle(deps Deps) http.Handler {
 			return
 		}
 
+		chrome, err := newChrome(r.Context(), deps, "actors")
+		if err != nil {
+			InternalError(deps, w, "actor single initial frame", err)
+			return
+		}
 		q := url.Values{}
 		q.Set("actor", name)
 		data := ActorSinglePageData{
-			Chrome:     templates.Chrome{ActiveTab: "actors"},
+			Chrome:     chrome,
 			Name:       name,
 			Initial:    render.InitialOf(name),
 			Stats:      stats,

@@ -71,7 +71,7 @@ func TestLog_ActorFilter_HidesOtherActors(t *testing.T) {
 	mustAdd(t, db, "bob", "bob-task", nil, nil)
 
 	deps := newLogDeps(t, db)
-	body := fetchLog(t, deps, "actor=alice")
+	body := stripInitialFrame(fetchLog(t, deps, "actor=alice"))
 
 	if !strings.Contains(body, "alice-task") {
 		t.Errorf("/log?actor=alice should include alice-task")
@@ -221,7 +221,7 @@ func TestLog_PaginationLoadMoreFiltersOlderEvents(t *testing.T) {
 	beforeID := rest[:end]
 
 	// Page 2 (next 5 older): should include strictly fewer events.
-	body = fetchLog(t, deps, "limit=5&before="+beforeID)
+	body = stripInitialFrame(fetchLog(t, deps, "limit=5&before="+beforeID))
 	rows := strings.Count(body, `class="c-log-row__time"`)
 	if rows != 5 {
 		t.Errorf("page 2 should render 5 rows, got %d", rows)
@@ -353,7 +353,7 @@ func TestLog_AtFiltersToUpperBoundInclusive(t *testing.T) {
 	at := eventIDForTaskCreate(t, db, idSecond)
 
 	deps := newLogDeps(t, db)
-	body := fetchLog(t, deps, "at="+strconv.FormatInt(at, 10))
+	body := stripInitialFrame(fetchLog(t, deps, "at="+strconv.FormatInt(at, 10)))
 
 	if !strings.Contains(body, "first-task") {
 		t.Errorf("?at=%d should include first-task (event id < at)", at)
@@ -428,7 +428,7 @@ func TestLog_AtComposesWithActorFilter(t *testing.T) {
 	at := atLast - 1
 
 	deps := newLogDeps(t, db)
-	body := fetchLog(t, deps, "actor=alice&at="+strconv.FormatInt(at, 10))
+	body := stripInitialFrame(fetchLog(t, deps, "actor=alice&at="+strconv.FormatInt(at, 10)))
 
 	if !strings.Contains(body, "alice-1") {
 		t.Errorf("?actor=alice&at=%d should include alice-1", at)
@@ -502,4 +502,23 @@ func mustContain(t *testing.T, body, needle string) {
 	if !strings.Contains(body, needle) {
 		t.Errorf("missing %q in body\n---\n%s", needle, body)
 	}
+}
+
+// stripInitialFrame returns the body with the time-travel JSON island
+// removed, so substring checks for task titles only match what was
+// rendered in the visible page — not what's serialized into the
+// scrubber's hydration island. The island carries every non-deleted
+// task by design (so reverse-fold works), which would otherwise make
+// "this task should NOT appear" assertions spuriously fail.
+func stripInitialFrame(body string) string {
+	const open = `<script type="application/json" id="initial-frame">`
+	start := strings.Index(body, open)
+	if start < 0 {
+		return body
+	}
+	end := strings.Index(body[start:], `</script>`)
+	if end < 0 {
+		return body
+	}
+	return body[:start] + body[start+end+len(`</script>`):]
 }

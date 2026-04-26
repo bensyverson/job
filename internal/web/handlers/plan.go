@@ -173,8 +173,13 @@ func Plan(deps Deps) http.Handler {
 		addLabelURLs := buildAddLabelURLs(roots, labels, selected, show)
 		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, titlesByShortID, addLabelURLs, now, 0)
 
+		chrome, err := newChrome(r.Context(), deps, "plan")
+		if err != nil {
+			InternalError(deps, w, "plan initial frame", err)
+			return
+		}
 		data := PlanPageData{
-			Chrome:    templates.Chrome{ActiveTab: "plan"},
+			Chrome:    chrome,
 			Roots:     planRoots,
 			HasTasks:  len(planRoots) > 0,
 			Labels:    buildPlanLabelChips(stripNames, selected, show),

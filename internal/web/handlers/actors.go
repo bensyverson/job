@@ -98,8 +98,13 @@ func Actors(deps Deps) http.Handler {
 			InternalError(deps, w, "actors columns", err)
 			return
 		}
+		chrome, err := newChrome(r.Context(), deps, "actors")
+		if err != nil {
+			InternalError(deps, w, "actors initial frame", err)
+			return
+		}
 		data := ActorsPageData{
-			Chrome:  templates.Chrome{ActiveTab: "actors"},
+			Chrome:  chrome,
 			Columns: cols,
 		}
 		renderPage(deps, w, "actors", data)

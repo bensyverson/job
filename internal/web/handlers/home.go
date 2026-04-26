@@ -225,8 +225,14 @@ func Home(deps Deps) http.Handler {
 			return
 		}
 
+		chrome, err := newChrome(r.Context(), deps, "home")
+		if err != nil {
+			InternalError(deps, w, "home initial frame", err)
+			return
+		}
+
 		data := HomePageData{
-			Chrome:            templates.Chrome{ActiveTab: "home"},
+			Chrome:            chrome,
 			Activity:          buildActivityCard(sig.Activity),
 			NewlyBlocked:      buildNewlyBlockedCard(sig.NewlyBlocked),
 			LongestClaim:      buildLongestClaimCard(sig.LongestClaim),

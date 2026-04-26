@@ -444,7 +444,7 @@ func TestPlan_LabelFilter_MultiSelectIsORSemantic(t *testing.T) {
 	_ = mustAdd(t, db, "claude", "Other only", nil, []string{"other"})
 
 	deps := newPlanDeps(t, db)
-	body := fetchPlan(t, deps, "label=web,dashboard")
+	body := stripInitialFrame(fetchPlan(t, deps, "label=web,dashboard"))
 
 	// Both web-only and dashboard-only tasks should be visible (OR);
 	// other-labeled tasks should drop out.

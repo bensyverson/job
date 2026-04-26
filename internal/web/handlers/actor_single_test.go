@@ -163,7 +163,7 @@ func TestActorSingle_EventListShowsOnlyThisActor(t *testing.T) {
 	mustAdd(t, db, "bob", "bob-task", nil, nil)
 
 	deps := newLogDeps(t, db)
-	body := mustFetchActorSingle(t, deps, "alice")
+	body := stripInitialFrame(mustFetchActorSingle(t, deps, "alice"))
 
 	mustContain(t, body, `alice-task`)
 	if strings.Contains(body, `bob-task`) {

@@ -143,8 +143,13 @@ func Log(deps Deps) http.Handler {
 		}
 		labels := topLabelsByFreq(labelFreqs, filters.Label, 10)
 
+		chrome, err := newChrome(r.Context(), deps, "log")
+		if err != nil {
+			InternalError(deps, w, "log initial frame", err)
+			return
+		}
 		data := LogPageData{
-			Chrome:      templates.Chrome{ActiveTab: "log"},
+			Chrome:      chrome,
 			Filters:     filters,
 			Events:      events,
 			EventTypes:  buildTypeChips(filters),

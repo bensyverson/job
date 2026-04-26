@@ -140,8 +140,14 @@ func loadTaskPageData(deps Deps, w http.ResponseWriter, r *http.Request) (TaskPa
 		return TaskPageData{}, false
 	}
 
+	chrome, err := newChrome(r.Context(), deps, "")
+	if err != nil {
+		InternalError(deps, w, "task initial frame", err)
+		return TaskPageData{}, false
+	}
+
 	return TaskPageData{
-		Chrome:         templates.Chrome{ActiveTab: ""},
+		Chrome:         chrome,
 		ShortID:        task.ShortID,
 		Title:          task.Title,
 		Description:    task.Description,

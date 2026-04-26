@@ -19,6 +19,9 @@
 </div>
 <live-region src="{{block "live-region-src" .}}/events{{end}}"></live-region>
 <peek-sheet></peek-sheet>
+{{- if .InitialFrameJSON}}
+<script type="application/json" id="initial-frame">{{.InitialFrameJSON}}</script>
+{{- end}}
 <script src="{{asset "js/colors.js"}}"></script>
 <script src="{{asset "js/chrome.js"}}"></script>
 <script src="{{asset "js/live.js"}}"></script>

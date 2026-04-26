@@ -33,6 +33,15 @@ type Chrome struct {
 	// Valid values: "home", "plan", "actors", "log", or empty for
 	// views that aren't a top-level tab (e.g. /tasks/<id>).
 	ActiveTab string
+	// InitialFrameJSON is the head-frame snapshot the time-travel
+	// scrubber's JS bootstrap reads from a <script type="application/
+	// json" id="initial-frame"> island in the layout. Already encoded
+	// HTML-safe by internal/web/initial.LoadJSON; the layout pastes
+	// it through with template.JS to skip html/template's auto-
+	// escaping inside the <script> context. Empty / nil means "no
+	// island" — the layout omits the script tag entirely. Fragment
+	// renders (e.g. /tasks/{id}/peek) leave it nil.
+	InitialFrameJSON template.JS
 }
 
 // Engine holds one compiled *template.Template per page. Each is a

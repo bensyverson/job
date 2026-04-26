@@ -17,6 +17,7 @@ import {
   applyEvent,
   reverseEvent,
   FrameCache,
+  ReplayBuffer,
 } from "../assets/js/replay.mjs";
 
 // --- helpers ---
@@ -790,4 +791,158 @@ test("FrameCache: shouldSnapshot fires every snapshotEvery events from anchor", 
   assert.equal(cache.shouldSnapshot(10, 0), true);
   assert.equal(cache.shouldSnapshot(20, 0), true);
   assert.equal(cache.shouldSnapshot(25, 0), false);
+});
+
+// --- ReplayBuffer ---
+//
+// ReplayBuffer wires the reducer and cache together with an injected
+// async event-fetcher. Tests here use a synchronous fake fetcher
+// backed by an in-memory event log, so we can verify behavior without
+// any network. Production wires fetchEvents to GET /events?since=X.
+
+// A simple builder for synthetic event sequences: each call appends
+// one event and returns the events log + the head frame produced by
+// applying every event in order from an initialFrame. Matches the
+// shape ReplayBuffer expects.
+function buildEventLog(steps) {
+  const events = [];
+  let frame = initialFrame({ headEventId: 0, tasks: [], blocks: [], claims: [] });
+  for (const [i, step] of steps.entries()) {
+    const event = { id: i + 1, ...step };
+    events.push(event);
+    frame = applyEvent(frame, event);
+  }
+  return { events, headFrame: frame };
+}
+
+// A fake fetcher that serves events from an in-memory log. Models the
+// /events?since=X&limit=N contract: returns events with id > since,
+// up to limit rows. Records calls so tests can assert prefetch /
+// caching behavior.
+function fakeFetcher(events) {
+  const calls = [];
+  return {
+    calls,
+    async fetchEvents({ since = 0, limit = 500 } = {}) {
+      calls.push({ since, limit });
+      return events
+        .filter((e) => e.id > since)
+        .slice(0, limit);
+    },
+  };
+}
+
+test("ReplayBuffer: frameAt(head) returns the head frame without fetching", async () => {
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "T", description: "", parent_id: "", sort_order: 0 },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  const got = await buf.frameAt(headFrame.eventId);
+  assert.equal(got.eventId, headFrame.eventId);
+  assert.equal(fetcher.calls.length, 0, "head lookup must not hit the fetcher");
+});
+
+test("ReplayBuffer: frameAt(earlier id) replays back from head", async () => {
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "T", description: "", parent_id: "", sort_order: 0 },
+    },
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "claimed",
+      detail: { duration: "30m", expires_at: 1500 },
+    },
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "released",
+      detail: { was_claimed_by: "alice", was_expires_at: 1500 },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  // At event id 2, alice still holds the claim (released hasn't fired).
+  const got = await buf.frameAt(2);
+  assert.equal(got.eventId, 2);
+  assert.equal(got.tasks.get("ABC12").status, "claimed");
+  assert.equal(got.claims.has("ABC12"), true);
+});
+
+test("ReplayBuffer: frameAt is memoized — repeated calls reuse the cache", async () => {
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "T", description: "", parent_id: "", sort_order: 0 },
+    },
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "claimed",
+      detail: { duration: "30m", expires_at: 1500 },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  await buf.frameAt(1);
+  const callsAfterFirst = fetcher.calls.length;
+  await buf.frameAt(1);
+  assert.equal(fetcher.calls.length, callsAfterFirst, "repeated frameAt must not refetch");
+});
+
+test("ReplayBuffer: range returns events in [fromId, toId] inclusive", async () => {
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "A",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "A", description: "", parent_id: "", sort_order: 0 },
+    },
+    {
+      task_id: "B",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "B", description: "", parent_id: "", sort_order: 0 },
+    },
+    {
+      task_id: "C",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "C", description: "", parent_id: "", sort_order: 0 },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  const range = await buf.range(2, 3);
+  assert.deepStrictEqual(
+    range.map((e) => e.id),
+    [2, 3],
+  );
 });

@@ -449,3 +449,134 @@ export class FrameCache {
     return (eventId - anchor) % this.snapshotEvery === 0;
   }
 }
+
+// ReplayBuffer wraps the reducer and frame cache with an injected
+// async event fetcher so the scrubber can ask "what did the world
+// look like at event N?" without round-tripping the full event log.
+//
+// Constructor: { headFrame, fetchEvents, snapshotEvery? }
+//   headFrame    — the live frame produced by initialFrame() at page
+//                  load. Pinned in the cache; the head answer is
+//                  zero-cost.
+//   fetchEvents  — async ({ since, limit }) -> Promise<Event[]>. The
+//                  contract mirrors GET /events?since=X&limit=N: the
+//                  function must return events with id > since,
+//                  ordered ascending, up to limit rows.
+//   snapshotEvery — optional cadence override; defaults to 50.
+//
+// Methods:
+//   async frameAt(target)  -> Frame at event id `target`.
+//   async range(from, to)  -> Event[] with id in [from, to] inclusive.
+//
+// Internal events are cached in a Map<id, Event> so repeated lookups
+// don't refetch. The cache grows monotonically in v1; eviction is a
+// later concern (event-volume bounded by the dashboard's local-first
+// scope).
+export class ReplayBuffer {
+  constructor({ headFrame, fetchEvents, snapshotEvery = 50 }) {
+    if (!headFrame) throw new Error("ReplayBuffer: headFrame required");
+    if (typeof fetchEvents !== "function") {
+      throw new Error("ReplayBuffer: fetchEvents must be a function");
+    }
+    this.headFrame = headFrame;
+    this.fetchEvents = fetchEvents;
+    this.frames = new FrameCache({ snapshotEvery });
+    // Pin head and genesis frames. Genesis (event 0, empty world)
+    // bounds backward replays; head bounds forward replays.
+    this.frames.set(headFrame);
+    if (headFrame.eventId !== 0) {
+      this.frames.set(
+        initialFrame({ headEventId: 0, tasks: [], blocks: [], claims: [] }),
+      );
+    }
+    this.events = new Map();
+    this._fetchPromise = null;
+  }
+
+  // Lazily loads events through the head event id. Subsequent calls
+  // are no-ops; concurrent calls share the same in-flight promise so
+  // we never issue two parallel fetches.
+  async _ensureEventsLoaded() {
+    if (this._fetchPromise) return this._fetchPromise;
+    this._fetchPromise = (async () => {
+      const fetched = await this.fetchEvents({
+        since: 0,
+        limit: this.headFrame.eventId,
+      });
+      for (const e of fetched) this.events.set(e.id, e);
+    })();
+    return this._fetchPromise;
+  }
+
+  async frameAt(target) {
+    if (target === this.headFrame.eventId) return this.headFrame;
+    await this._ensureEventsLoaded();
+
+    // Pick replay direction. Forward from nearest snapshot <= target,
+    // or backward from nearest snapshot >= target — whichever is fewer
+    // events. Snapshot-at-exact-target is already handled by
+    // nearestAtOrBefore returning that snapshot and the forward loop
+    // running zero iterations.
+    const before = this.frames.nearestAtOrBefore(target);
+    const after = this.frames.nearestAtOrAfter(target);
+    const distFwd = before ? target - before.eventId : Infinity;
+    const distBwd = after ? after.eventId - target : Infinity;
+
+    let frame;
+    if (distFwd <= distBwd && before) {
+      frame = this._replayForward(before, target);
+    } else if (after) {
+      frame = this._replayBackward(after, target, before);
+    } else if (before) {
+      frame = this._replayForward(before, target);
+    } else {
+      // No anchors at all — shouldn't happen because we pin head and
+      // genesis. Defensive fallback to a fresh genesis frame.
+      frame = initialFrame({ headEventId: 0, tasks: [], blocks: [], claims: [] });
+    }
+
+    this.frames.set(frame);
+    return frame;
+  }
+
+  _replayForward(anchor, target) {
+    let frame = anchor;
+    for (let id = anchor.eventId + 1; id <= target; id++) {
+      const e = this.events.get(id);
+      if (!e) continue; // gap; should not happen after _ensureEventsLoaded
+      frame = applyEvent(frame, e);
+      if (this.frames.shouldSnapshot(id, anchor.eventId)) this.frames.set(frame);
+    }
+    return frame;
+  }
+
+  _replayBackward(anchor, target, fallbackBefore) {
+    let frame = anchor;
+    for (let id = anchor.eventId; id > target; id--) {
+      const e = this.events.get(id);
+      if (!e) continue;
+      const reversed = reverseEvent(frame, e);
+      if (reversed === null) {
+        // An event in this range can't be reversed (pre-breadcrumb
+        // or inherently lossy like noted). Fall back to forward
+        // replay from the nearest snapshot <= target.
+        const start =
+          fallbackBefore ??
+          initialFrame({ headEventId: 0, tasks: [], blocks: [], claims: [] });
+        return this._replayForward(start, target);
+      }
+      frame = reversed;
+    }
+    return frame;
+  }
+
+  async range(fromId, toId) {
+    await this._ensureEventsLoaded();
+    const out = [];
+    for (let id = fromId; id <= toId; id++) {
+      const e = this.events.get(id);
+      if (e) out.push(e);
+    }
+    return out;
+  }
+}

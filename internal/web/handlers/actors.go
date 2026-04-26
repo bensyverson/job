@@ -75,10 +75,25 @@ var stateChangingTypes = map[string]bool{
 
 // Actors renders the column-per-actor board view at /actors. Single-
 // actor /actors/{name} and live updates land in later phase tasks.
+//
+// Accepts ?at=<event_id> as a time-travel upper bound: the event walk
+// is scoped to events with id <= at, and IsClaim/ClaimCount are
+// derived from the walk itself rather than the live tasks.claimed_by
+// column so the column reflects claim state as of that moment.
+// /actors/{name} stays live-only — the hero stats and 24h timeline
+// rely on wall-clock now() in ways we deliberately do not thread a
+// synthetic "now" through.
 func Actors(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		at, invalid := parseAtParam(r.URL.Query())
+		if invalid {
+			RenderError(deps, w, http.StatusBadRequest,
+				"Bad request",
+				"?at must be a positive integer event id.")
+			return
+		}
 		now := time.Now()
-		cols, err := loadActorColumns(r.Context(), deps.DB, now)
+		cols, err := loadActorColumns(r.Context(), deps.DB, now, at)
 		if err != nil {
 			InternalError(deps, w, "actors columns", err)
 			return
@@ -98,21 +113,32 @@ func Actors(deps Deps) http.Handler {
 //   - Count `noted` events separately as a notes badge.
 //   - Track each actor's most-recent event time for column ordering
 //     and "last seen" status text.
+//   - Track per-task current claimer (set on `claimed`, cleared on
+//     `released` / `done` / `canceled` / `claim_expired` / `reopened`)
+//     so IsClaim is correct at any upper bound, not just live.
 //
-// A card is marked IsClaim when the task's current claimed_by matches
-// the actor — those cards dock to the visual bottom of the column
-// (DOM-first, since CSS uses column-reverse).
-func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time) ([]ActorColumn, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT e.actor, e.event_type, e.created_at,
-		       t.id, t.short_id, t.title, t.description,
-		       t.status, t.claimed_by
+// A card is marked IsClaim when the task's effective claimer at the
+// end of the walk matches the actor — those cards dock to the visual
+// bottom of the column (DOM-first, since CSS uses column-reverse).
+//
+// atUpperBound is the time-travel anchor: when > 0, the walk is
+// restricted to events with id <= atUpperBound. Zero means "live."
+func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time, atUpperBound int64) ([]ActorColumn, error) {
+	query := `
+		SELECT e.id, e.actor, e.event_type, e.created_at,
+		       t.id, t.short_id, t.title, t.description
 		FROM events e
 		JOIN tasks t ON t.id = e.task_id
 		WHERE e.actor <> ''
-		  AND t.deleted_at IS NULL
-		ORDER BY e.created_at ASC, e.id ASC
-	`)
+		  AND t.deleted_at IS NULL`
+	args := []any{}
+	if atUpperBound > 0 {
+		query += " AND e.id <= ?"
+		args = append(args, atUpperBound)
+	}
+	query += `
+		ORDER BY e.created_at ASC, e.id ASC`
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -123,10 +149,8 @@ func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time) ([]ActorCo
 		taskID int64
 	}
 	type pairAccum struct {
-		card       ActorCard
-		hasState   bool
-		taskStatus string
-		claimedBy  sql.NullString
+		card     ActorCard
+		hasState bool
 	}
 	type actorAccum struct {
 		lastSeen   int64
@@ -137,12 +161,16 @@ func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time) ([]ActorCo
 	actors := make(map[string]*actorAccum)
 	pairOrder := make(map[string][]pairKey)
 	seenPair := make(map[pairKey]bool)
+	// Per-task current claimer, derived from the event walk so claim
+	// state is correct at any moment in history. Empty string means
+	// "no current claim." On a `claimed` event the actor becomes the
+	// claimer; release/done/canceled/claim_expired/reopened clear it.
+	currentClaimer := make(map[int64]string)
 
 	for rows.Next() {
-		var actor, eventType, shortID, title, desc, status string
-		var createdAt, taskID int64
-		var claimedBy sql.NullString
-		if err := rows.Scan(&actor, &eventType, &createdAt, &taskID, &shortID, &title, &desc, &status, &claimedBy); err != nil {
+		var eventID, createdAt, taskID int64
+		var actor, eventType, shortID, title, desc string
+		if err := rows.Scan(&eventID, &actor, &eventType, &createdAt, &taskID, &shortID, &title, &desc); err != nil {
 			return nil, err
 		}
 		key := pairKey{actor: actor, taskID: taskID}
@@ -162,17 +190,24 @@ func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time) ([]ActorCo
 				pairOrder[actor] = append(pairOrder[actor], key)
 			}
 		}
-		p.taskStatus = status
-		p.claimedBy = claimedBy
 
-		if eventType == "noted" {
+		switch {
+		case eventType == "noted":
 			p.card.NoteCount++
-		} else if stateChangingTypes[eventType] {
+		case stateChangingTypes[eventType]:
 			p.card.StateClass = "c-actor-card--" + eventType
 			p.card.Verb = eventType
 			p.card.VerbClass = "c-log-row__verb--" + eventType
 			p.card.EventAt = createdAt
 			p.hasState = true
+		}
+
+		// Maintain per-task claim state from the event stream.
+		switch eventType {
+		case "claimed":
+			currentClaimer[taskID] = actor
+		case "released", "done", "canceled", "claim_expired", "reopened":
+			delete(currentClaimer, taskID)
 		}
 
 		a, ok := actors[actor]
@@ -197,7 +232,7 @@ func loadActorColumns(ctx context.Context, db *sql.DB, now time.Time) ([]ActorCo
 				continue
 			}
 			card := p.card
-			if p.taskStatus == "claimed" && p.claimedBy.Valid && p.claimedBy.String == actorName {
+			if currentClaimer[key.taskID] == actorName {
 				card.IsClaim = true
 				a.claimCount++
 			}

@@ -101,3 +101,41 @@ func TestParseLogFilters_TableDriven(t *testing.T) {
 		})
 	}
 }
+
+// TestParseLogFilters_At covers the new ?at upper-bound event filter.
+// Unlike since/before/limit (forgiving — malformed values silently zero),
+// ?at follows the time-travel scope: a present-but-unparseable value sets
+// AtInvalid so the handler can return 400. Empty / absent ?at means "no
+// upper bound" (live). Non-positive values are also flagged invalid since
+// 0 is the sentinel for "unset" and event ids start at 1.
+func TestParseLogFilters_At(t *testing.T) {
+	cases := []struct {
+		name        string
+		raw         string
+		wantAt      int64
+		wantInvalid bool
+	}{
+		{name: "absent → zero, valid", raw: "", wantAt: 0, wantInvalid: false},
+		{name: "empty value → zero, valid", raw: "at=", wantAt: 0, wantInvalid: false},
+		{name: "positive int → set, valid", raw: "at=42", wantAt: 42, wantInvalid: false},
+		{name: "non-numeric → zero, invalid", raw: "at=foo", wantAt: 0, wantInvalid: true},
+		{name: "zero → invalid (0 is sentinel)", raw: "at=0", wantAt: 0, wantInvalid: true},
+		{name: "negative → invalid", raw: "at=-1", wantAt: 0, wantInvalid: true},
+		{name: "huge positive → set, valid", raw: "at=999999999", wantAt: 999999999, wantInvalid: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := url.ParseQuery(tc.raw)
+			if err != nil {
+				t.Fatalf("url.ParseQuery(%q): %v", tc.raw, err)
+			}
+			got := handlers.ParseLogFilters(q)
+			if got.At != tc.wantAt {
+				t.Errorf("At = %d, want %d", got.At, tc.wantAt)
+			}
+			if got.AtInvalid != tc.wantInvalid {
+				t.Errorf("AtInvalid = %v, want %v", got.AtInvalid, tc.wantInvalid)
+			}
+		})
+	}
+}

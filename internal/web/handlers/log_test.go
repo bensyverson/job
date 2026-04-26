@@ -300,6 +300,147 @@ func TestLog_ClaimExpiredActorRendersAsSystemNotLink(t *testing.T) {
 	}
 }
 
+// --- ?at time-travel tests (R0Ro4) ---
+
+// fetchLogStatus returns the status code and body so tests can assert
+// non-200 responses (the regular fetchLog helper t.Fatal's on non-200).
+func fetchLogStatus(t *testing.T, deps handlers.Deps, query string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/log?"+query, nil)
+	w := httptest.NewRecorder()
+	handlers.Log(deps).ServeHTTP(w, req)
+	return w.Code, w.Body.String()
+}
+
+// maxEventID returns the current max event id in the test DB. Used to
+// fix `?at` boundaries in tests that need to compare against absolute
+// event ids the seed produced.
+func maxEventID(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	var id int64
+	if err := db.QueryRow(`SELECT COALESCE(MAX(id), 0) FROM events`).Scan(&id); err != nil {
+		t.Fatalf("maxEventID: %v", err)
+	}
+	return id
+}
+
+// eventIDForTaskCreate returns the id of the `created` event for a
+// given short task id — the most reliable way to pin `?at` to a known
+// state ("just before" / "at" / "after" a particular task's creation).
+func eventIDForTaskCreate(t *testing.T, db *sql.DB, shortID string) int64 {
+	t.Helper()
+	var id int64
+	err := db.QueryRow(`
+		SELECT e.id FROM events e
+		JOIN tasks t ON t.id = e.task_id
+		WHERE t.short_id = ? AND e.event_type = 'created'
+		LIMIT 1
+	`, shortID).Scan(&id)
+	if err != nil {
+		t.Fatalf("eventIDForTaskCreate(%q): %v", shortID, err)
+	}
+	return id
+}
+
+func TestLog_AtFiltersToUpperBoundInclusive(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "first-task", nil, nil)
+	idSecond := mustAdd(t, db, "alice", "second-task", nil, nil)
+	mustAdd(t, db, "alice", "third-task", nil, nil)
+
+	// Pin ?at to second-task's created event id. Inclusive: rows for
+	// first and second appear; third does not.
+	at := eventIDForTaskCreate(t, db, idSecond)
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "at="+strconv.FormatInt(at, 10))
+
+	if !strings.Contains(body, "first-task") {
+		t.Errorf("?at=%d should include first-task (event id < at)", at)
+	}
+	if !strings.Contains(body, "second-task") {
+		t.Errorf("?at=%d should include second-task (event id == at, inclusive)", at)
+	}
+	if strings.Contains(body, "third-task") {
+		t.Errorf("?at=%d should NOT include third-task (event id > at)", at)
+	}
+}
+
+func TestLog_AtAboveHeadRendersAsLive(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "live-task", nil, nil)
+
+	// at far above any real event id behaves as if there were no filter.
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "at=999999999")
+
+	if !strings.Contains(body, "live-task") {
+		t.Errorf("?at past head should render the same as live")
+	}
+}
+
+func TestLog_AtMalformedReturns400(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "task", nil, nil)
+	deps := newLogDeps(t, db)
+
+	for _, raw := range []string{"at=foo", "at=0", "at=-1", "at=1.5"} {
+		t.Run(raw, func(t *testing.T) {
+			code, _ := fetchLogStatus(t, deps, raw)
+			if code != 400 {
+				t.Errorf("GET /log?%s: status %d, want 400", raw, code)
+			}
+		})
+	}
+}
+
+func TestLog_AtScopesTotalEventsCounter(t *testing.T) {
+	db := setupLogTestDB(t)
+	idA := mustAdd(t, db, "alice", "a", nil, nil)
+	mustAdd(t, db, "alice", "b", nil, nil)
+	mustAdd(t, db, "alice", "c", nil, nil)
+
+	// Pin ?at to the first event. TotalEvents should reflect 1, not 3.
+	at := eventIDForTaskCreate(t, db, idA)
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "at="+strconv.FormatInt(at, 10))
+
+	// The total-events counter renders inline as part of the log meta
+	// strip. The exact wording can vary, but "1 event" should be
+	// derivable; "3 events" should not appear in that meta region.
+	// We assert by looking at the page header copy that includes the
+	// total — searching for the exact strings the template emits.
+	if strings.Contains(body, "3 events") || strings.Contains(body, "of 3") {
+		t.Errorf("?at=%d should not surface the live-mode 3 events count", at)
+	}
+}
+
+func TestLog_AtComposesWithActorFilter(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-1", nil, nil)
+	mustAdd(t, db, "bob", "bob-1", nil, nil)
+	idLast := mustAdd(t, db, "alice", "alice-2", nil, nil)
+	atLast := eventIDForTaskCreate(t, db, idLast)
+
+	// Walk back one event from alice-2 — bob-1 is the most recent
+	// alice/bob mix before alice-2.
+	at := atLast - 1
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "actor=alice&at="+strconv.FormatInt(at, 10))
+
+	if !strings.Contains(body, "alice-1") {
+		t.Errorf("?actor=alice&at=%d should include alice-1", at)
+	}
+	if strings.Contains(body, "bob-1") {
+		t.Errorf("?actor=alice&at=%d should NOT include bob-1 (filtered by actor)", at)
+	}
+	if strings.Contains(body, "alice-2") {
+		t.Errorf("?actor=alice&at=%d should NOT include alice-2 (event id > at)", at)
+	}
+}
+
 // --- helpers ---
 
 func mustAdd(t *testing.T, db *sql.DB, actor, title string, parent *string, labels []string) string {

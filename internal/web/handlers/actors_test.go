@@ -442,3 +442,116 @@ func TestActors_EmptyDatabaseRendersEmptyBoard(t *testing.T) {
 	}
 	mustContain(t, body, `c-actors-board`)
 }
+
+// --- ?at time-travel tests (R0Ro4) ---
+
+func fetchActorsStatus(t *testing.T, deps handlers.Deps, query string) (int, string) {
+	t.Helper()
+	url := "/actors"
+	if query != "" {
+		url += "?" + query
+	}
+	req := httptest.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	handlers.Actors(deps).ServeHTTP(w, req)
+	return w.Code, w.Body.String()
+}
+
+func fetchActorsQuery(t *testing.T, deps handlers.Deps, query string) string {
+	t.Helper()
+	code, body := fetchActorsStatus(t, deps, query)
+	if code != 200 {
+		t.Fatalf("GET /actors?%s: status %d, body=%s", query, code, body)
+	}
+	return body
+}
+
+func TestActors_AtFiltersEventWalkToUpperBound(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-early", nil, nil)
+	idLate := mustAdd(t, db, "bob", "bob-late", nil, nil)
+	atEarly := eventIDForTaskCreate(t, db, idLate) - 1
+
+	deps := newLogDeps(t, db)
+	body := fetchActorsQuery(t, deps, "at="+strconv.FormatInt(atEarly, 10))
+
+	if !strings.Contains(body, "alice-early") {
+		t.Errorf("?at=%d should still render alice-early (event id <= at)", atEarly)
+	}
+	if strings.Contains(body, "bob-late") {
+		t.Errorf("?at=%d should NOT render bob-late (event id > at)", atEarly)
+	}
+	if strings.Contains(body, `data-actor="bob"`) {
+		t.Errorf("?at=%d should not produce a bob column at all (no events <= at)", atEarly)
+	}
+}
+
+func TestActors_AtAboveHeadRendersAsLive(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-task", nil, nil)
+
+	deps := newLogDeps(t, db)
+	body := fetchActorsQuery(t, deps, "at=999999999")
+
+	mustContain(t, body, `data-actor="alice"`)
+	mustContain(t, body, `alice-task`)
+}
+
+func TestActors_AtMalformedReturns400(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "alice-task", nil, nil)
+	deps := newLogDeps(t, db)
+
+	for _, raw := range []string{"at=foo", "at=0", "at=-1"} {
+		t.Run(raw, func(t *testing.T) {
+			code, _ := fetchActorsStatus(t, deps, raw)
+			if code != 400 {
+				t.Errorf("GET /actors?%s: status %d, want 400", raw, code)
+			}
+		})
+	}
+}
+
+// In ?at mode, claim docking must reflect claim state at that moment,
+// not the live tasks.claimed_by column. alice claims, then releases —
+// pinned at the moment of the claim, the card should still be a claim.
+func TestActors_AtDerivesClaimFromEventWalk(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	mustClaim(t, db, id, "alice")
+
+	// Capture the claim's event id before releasing.
+	var atClaim int64
+	if err := db.QueryRow(`
+		SELECT e.id FROM events e JOIN tasks t ON t.id = e.task_id
+		WHERE t.short_id = ? AND e.event_type = 'claimed'
+	`, id).Scan(&atClaim); err != nil {
+		t.Fatalf("query claimed event: %v", err)
+	}
+
+	if err := job.RunRelease(db, id, "alice"); err != nil {
+		t.Fatalf("RunRelease: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+
+	// Live mode: card sits in history (not docked).
+	live := fetchActorsQuery(t, deps, "")
+	if strings.Contains(live, `c-log-row__verb--released`) == false {
+		t.Errorf("live view should show the released verb")
+	}
+
+	// ?at=<claim event>: pinned at the moment of the claim, the card
+	// should appear as the actor's active claim — verb = claimed, and
+	// the column status text should report 1 claim.
+	body := fetchActorsQuery(t, deps, "at="+strconv.FormatInt(atClaim, 10))
+	if !strings.Contains(body, `c-log-row__verb--claimed`) {
+		t.Errorf("?at=<claim event> should render the card with verb=claimed:\n%s", body)
+	}
+	if strings.Contains(body, `c-log-row__verb--released`) {
+		t.Errorf("?at=<claim event> should NOT render the released verb (release happens after at)")
+	}
+	if !strings.Contains(body, `1 claim`) {
+		t.Errorf("?at=<claim event> should report 1 claim in the column status, got body:\n%s", body)
+	}
+}

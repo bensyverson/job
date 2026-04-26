@@ -31,6 +31,11 @@ type LogFilters struct {
 	// Limit caps the number of rows returned. <=0 means "use the
 	// default" (defaultLogLimit).
 	Limit int
+	// At is the time-travel upper bound: only events with id <= At are
+	// included. Zero means "no upper bound" (live). Set together with
+	// AtInvalid so callers can distinguish "absent" from "malformed."
+	At        int64
+	AtInvalid bool
 }
 
 // LogChip is one clickable chip in the log-view filter bar. HRef is a
@@ -113,6 +118,12 @@ var knownEventTypes = []string{
 func Log(deps Deps) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		filters := ParseLogFilters(r.URL.Query())
+		if filters.AtInvalid {
+			RenderError(deps, w, http.StatusBadRequest,
+				"Bad request",
+				"?at must be a positive integer event id.")
+			return
+		}
 
 		events, totalEvents, hasMore, err := loadLogEvents(deps.DB, filters)
 		if err != nil {
@@ -182,7 +193,10 @@ func moreURL(f LogFilters, oldestID int64) string {
 // fallback of a unix-seconds integer. Malformed since values are
 // silently dropped — we'd rather render with a zero since than return
 // a 400 for a bookmarked URL that drifted. Same forgiveness applies
-// to before and limit: garbage parses to zero / default.
+// to before and limit: garbage parses to zero / default. ?at is the
+// exception — it's the time-travel anchor and we want callers to
+// distinguish "absent" from "malformed" so the handler can 400 on
+// nonsense rather than silently render a different page.
 func ParseLogFilters(q url.Values) LogFilters {
 	f := LogFilters{
 		Actor: q.Get("actor"),
@@ -207,7 +221,25 @@ func ParseLogFilters(q url.Values) LogFilters {
 			f.Limit = n
 		}
 	}
+	f.At, f.AtInvalid = parseAtParam(q)
 	return f
+}
+
+// parseAtParam returns the time-travel upper bound parsed from the ?at
+// query value. Empty / absent → (0, false) ("no upper bound, valid").
+// Present-but-unparseable, zero, or negative → (0, true) ("invalid")
+// so handlers can 400 rather than silently render a different page.
+// Shared by /log and /actors.
+func parseAtParam(q url.Values) (at int64, invalid bool) {
+	raw := q.Get("at")
+	if raw == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, true
+	}
+	return id, false
 }
 
 // loadLogEvents fetches events scoped to the task filter (or globally
@@ -221,6 +253,19 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, has
 	raw, err := job.GetEventsForTaskTree(db, f.Task)
 	if err != nil {
 		return nil, 0, false, err
+	}
+	// In ?at mode, the total counter is also scoped to the at-window —
+	// "showing N of M events" should reflect the moment we're pinned to,
+	// not the live universe. Done before the per-event filter loop so
+	// the total reflects only the upper-bound clamp, not actor/type/etc.
+	if f.At > 0 {
+		clamped := raw[:0]
+		for _, e := range raw {
+			if e.ID <= f.At {
+				clamped = append(clamped, e)
+			}
+		}
+		raw = clamped
 	}
 	total = len(raw)
 

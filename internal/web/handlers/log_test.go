@@ -441,6 +441,84 @@ func TestLog_AtComposesWithActorFilter(t *testing.T) {
 	}
 }
 
+func TestLog_AtComposesWithTypeFilter(t *testing.T) {
+	// ?type filters by event_type; ?at clamps the event-id walk. The
+	// two are independent axes and should AND together: only events
+	// with id <= at AND event_type == ?type appear.
+	db := setupLogTestDB(t)
+	idA := mustAdd(t, db, "alice", "task-a", nil, nil)
+	mustClaim(t, db, idA, "alice")
+	mustAdd(t, db, "alice", "task-b", nil, nil) // created event, post-claim
+	atClaim := maxEventID(t, db) - 1            // pin to the claim event of task-a
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchLog(t, deps, "type=claimed&at="+strconv.FormatInt(atClaim, 10)))
+
+	// The claimed event for task-a is included; the created events
+	// for task-a and task-b are filtered out by ?type=claimed.
+	if !strings.Contains(body, "task-a") {
+		t.Errorf("?type=claimed&at=%d should surface task-a (its claim event matches both filters)", atClaim)
+	}
+	// task-b's only event is its `created`, which is filtered out.
+	if strings.Contains(body, "task-b") {
+		t.Errorf("?type=claimed&at=%d should NOT surface task-b (no claim event)", atClaim)
+	}
+}
+
+func TestLog_AtComposesWithLabelFilter(t *testing.T) {
+	// Label filter resolves to a task-id set, then events on those
+	// tasks are kept. Combined with ?at, the intersection is "events
+	// on label-X tasks with id <= at."
+	db := setupLogTestDB(t)
+	idLabeled := mustAdd(t, db, "alice", "labeled-task", nil, []string{"web"})
+	mustAdd(t, db, "alice", "plain-task", nil, nil)
+	idLater := mustAdd(t, db, "alice", "later-labeled", nil, []string{"web"})
+	atMid := eventIDForTaskCreate(t, db, idLater) - 1
+	_ = idLabeled
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchLog(t, deps, "label=web&at="+strconv.FormatInt(atMid, 10)))
+
+	if !strings.Contains(body, "labeled-task") {
+		t.Errorf("?label=web&at=%d should include labeled-task", atMid)
+	}
+	if strings.Contains(body, "plain-task") {
+		t.Errorf("?label=web&at=%d should NOT include plain-task (no matching label)", atMid)
+	}
+	if strings.Contains(body, "later-labeled") {
+		t.Errorf("?label=web&at=%d should NOT include later-labeled (event id > at)", atMid)
+	}
+}
+
+func TestLog_AtComposesWithTaskFilter(t *testing.T) {
+	// ?task scopes to a single task's tree; ?at clamps the event-id
+	// walk. Events outside the tree are filtered before ?at applies,
+	// so the returned set is "events on task X with id <= at."
+	db := setupLogTestDB(t)
+	idA := mustAdd(t, db, "alice", "task-a", nil, nil)
+	mustAdd(t, db, "alice", "task-b", nil, nil) // separate task
+	mustClaim(t, db, idA, "alice")              // late event on task-a
+
+	atCreate := eventIDForTaskCreate(t, db, idA)
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchLog(t, deps, "task="+idA+"&at="+strconv.FormatInt(atCreate, 10)))
+
+	if !strings.Contains(body, "task-a") {
+		t.Errorf("?task=%s&at=%d should include task-a's creation event", idA, atCreate)
+	}
+	if strings.Contains(body, "task-b") {
+		t.Errorf("?task=%s&at=%d should NOT include task-b (different task tree)", idA, atCreate)
+	}
+	// task-a's claim is event id > atCreate; the verb must not appear.
+	rows := splitLogRows(body)
+	for _, r := range rows {
+		if strings.Contains(r, "claimed") {
+			t.Errorf("?task=%s&at=%d should NOT include the post-at claim event, got row:\n%s", idA, atCreate, r)
+		}
+	}
+}
+
 // --- helpers ---
 
 func mustAdd(t *testing.T, db *sql.DB, actor, title string, parent *string, labels []string) string {

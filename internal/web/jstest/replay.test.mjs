@@ -1108,3 +1108,144 @@ test("ReplayBuffer: range returns events in [fromId, toId] inclusive", async () 
     [2, 3],
   );
 });
+
+// --- ReplayBuffer edge cases (Kqxr0) ---
+//
+// These guard the corners that the happy-path tests don't exercise:
+// the genesis frame, navigating past head, empty range queries, and
+// the reverse-fold fallback through `noted` events.
+
+test("ReplayBuffer: frameAt(0) returns the pinned genesis frame", async () => {
+  // The constructor pins event 0 (empty world) when headEventId > 0;
+  // a cursor seek to 0 should resolve from cache without replaying.
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "T", description: "", parent_id: "", sort_order: 0 },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  const got = await buf.frameAt(0);
+  assert.equal(got.eventId, 0);
+  assert.equal(got.tasks.size, 0, "genesis has no tasks");
+  assert.equal(got.blocks.size, 0);
+  assert.equal(got.claims.size, 0);
+});
+
+test("ReplayBuffer: frameAt past head clamps to head (no events to replay forward)", async () => {
+  // Nothing exists past head, so forward replay finds no events and
+  // simply returns the anchor frame. Defensive: a stale URL with an
+  // ?at= above the live head shouldn't blow up.
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "T", description: "", parent_id: "", sort_order: 0 },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  const got = await buf.frameAt(headFrame.eventId + 1000);
+  // We accept "stays at head" as the contract: the task created at id 1
+  // is still present.
+  assert.equal(got.tasks.has("ABC12"), true);
+});
+
+test("ReplayBuffer: range(from, to) with from > to returns []", async () => {
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "A",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "A", description: "", parent_id: "", sort_order: 0 },
+    },
+  ]);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fakeFetcher(events).fetchEvents,
+  });
+  const out = await buf.range(5, 1);
+  assert.deepStrictEqual(out, []);
+});
+
+test("ReplayBuffer: range past head returns []", async () => {
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "A",
+      actor: "alice",
+      event_type: "created",
+      detail: { title: "A", description: "", parent_id: "", sort_order: 0 },
+    },
+  ]);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fakeFetcher(events).fetchEvents,
+  });
+  const out = await buf.range(headFrame.eventId + 1, headFrame.eventId + 50);
+  assert.deepStrictEqual(out, []);
+});
+
+test("ReplayBuffer: backward replay through `noted` falls back to forward replay from genesis", async () => {
+  // `noted` is intentionally non-reversible (the description side
+  // would need a description_before payload to undo exactly). When
+  // the cursor walks backward across one, _replayBackward returns
+  // null and the buffer falls back to forward replay from the nearest
+  // earlier snapshot — genesis here. The result must still be correct,
+  // including the partial notes list at the cursor position.
+  const { events, headFrame } = buildEventLog([
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      created_at: 1700000000,
+      event_type: "created",
+      detail: { title: "T", description: "", parent_id: "", sort_order: 0 },
+    },
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      created_at: 1700000010,
+      event_type: "noted",
+      detail: { description_after: "first note", text: "first" },
+    },
+    {
+      task_id: "ABC12",
+      actor: "alice",
+      created_at: 1700000020,
+      event_type: "noted",
+      detail: { description_after: "first note\n\n[t] second", text: "second" },
+    },
+  ]);
+  const fetcher = fakeFetcher(events);
+  const buf = new ReplayBuffer({
+    headFrame,
+    fetchEvents: fetcher.fetchEvents,
+  });
+
+  // Seek backward to event 1 (just after creation, before the first
+  // note). Forward path requires the reverse-through-noted fallback.
+  const got = await buf.frameAt(1);
+  assert.equal(got.eventId, 1);
+  const t = got.tasks.get("ABC12");
+  assert.equal(t.notes.length, 0, "no notes yet at event 1");
+  assert.equal(t.description, "");
+
+  // Seek forward to event 2 (after first note only). The frame must
+  // hold exactly that one note — proving the fallback didn't over- or
+  // under-shoot the cursor.
+  const got2 = await buf.frameAt(2);
+  assert.equal(got2.eventId, 2);
+  assert.equal(got2.tasks.get("ABC12").notes.length, 1);
+  assert.equal(got2.tasks.get("ABC12").notes[0].text, "first");
+});

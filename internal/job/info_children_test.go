@@ -60,7 +60,7 @@ func TestRenderInfoMarkdown_NoChildren_OmitsChildrenSection(t *testing.T) {
 func TestRenderInfoMarkdown_ManyChildren_FallbackCount(t *testing.T) {
 	db := SetupTestDB(t)
 	parent := MustAdd(t, db, "", "Big parent")
-	for i := 0; i < 11; i++ {
+	for i := range 11 {
 		MustAdd(t, db, parent, fmt.Sprintf("Child %d", i))
 	}
 
@@ -105,7 +105,7 @@ func TestRenderInfoMarkdown_ChildShowsBlockerAndLabel(t *testing.T) {
 	got := buf.String()
 
 	gatedLine := ""
-	for _, line := range strings.Split(got, "\n") {
+	for line := range strings.SplitSeq(got, "\n") {
 		if strings.Contains(line, gated) {
 			gatedLine = line
 			break

@@ -140,7 +140,7 @@ func expireStaleClaims(db *sql.DB, actor string) error {
 func expireStaleClaimsInTx(tx dbtx, actor string) error {
 	now := CurrentNowFunc().Unix()
 	rows, err := tx.Query(
-		"SELECT id, claimed_by FROM tasks WHERE status = 'claimed' AND claim_expires_at < ? AND deleted_at IS NULL",
+		"SELECT id, claimed_by, claim_expires_at FROM tasks WHERE status = 'claimed' AND claim_expires_at < ? AND deleted_at IS NULL",
 		now,
 	)
 	if err != nil {
@@ -150,18 +150,23 @@ func expireStaleClaimsInTx(tx dbtx, actor string) error {
 	type expired struct {
 		id        int64
 		claimedBy *string
+		expiresAt int64
 	}
 	var expiredClaims []expired
 	for rows.Next() {
 		var e expired
 		var claimedBy sql.NullString
-		if err := rows.Scan(&e.id, &claimedBy); err != nil {
+		var expiresAt sql.NullInt64
+		if err := rows.Scan(&e.id, &claimedBy, &expiresAt); err != nil {
 			rows.Close()
 			return err
 		}
 		if claimedBy.Valid {
 			cb := claimedBy.String
 			e.claimedBy = &cb
+		}
+		if expiresAt.Valid {
+			e.expiresAt = expiresAt.Int64
 		}
 		expiredClaims = append(expiredClaims, e)
 	}
@@ -183,6 +188,7 @@ func expireStaleClaimsInTx(tx dbtx, actor string) error {
 		}
 		if err := recordEvent(tx, e.id, "claim_expired", actor, map[string]any{
 			"was_claimed_by": wasClaimedBy,
+			"was_expires_at": e.expiresAt,
 		}); err != nil {
 			return err
 		}
@@ -277,6 +283,21 @@ func RunClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 	now := CurrentNowFunc().Unix()
 	expiresAt := now + seconds
 
+	// Capture override breadcrumbs before mutating: when --force takes
+	// over an active claim, was_claimed_by / was_expires_at let
+	// consumers reverse-fold to the prior holder.
+	overrode := task.Status == "claimed" && force
+	var overriddenBy string
+	var overriddenExpires int64
+	if overrode {
+		if task.ClaimedBy != nil {
+			overriddenBy = *task.ClaimedBy
+		}
+		if task.ClaimExpiresAt != nil {
+			overriddenExpires = *task.ClaimExpiresAt
+		}
+	}
+
 	if _, err := tx.Exec(
 		"UPDATE tasks SET status = 'claimed', claimed_by = ?, claim_expires_at = ?, updated_at = ? WHERE id = ?",
 		actor, expiresAt, now, task.ID,
@@ -284,10 +305,15 @@ func RunClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "claimed", actor, map[string]any{
+	detail := map[string]any{
 		"duration":   duration,
 		"expires_at": expiresAt,
-	}); err != nil {
+	}
+	if overrode {
+		detail["was_claimed_by"] = overriddenBy
+		detail["was_expires_at"] = overriddenExpires
+	}
+	if err := recordEvent(tx, task.ID, "claimed", actor, detail); err != nil {
 		return err
 	}
 
@@ -325,6 +351,14 @@ func RunRelease(db *sql.DB, shortID, actor string) error {
 	}
 
 	now := CurrentNowFunc().Unix()
+	var wasClaimedBy string
+	if task.ClaimedBy != nil {
+		wasClaimedBy = *task.ClaimedBy
+	}
+	var wasExpiresAt int64
+	if task.ClaimExpiresAt != nil {
+		wasExpiresAt = *task.ClaimExpiresAt
+	}
 	if _, err := tx.Exec(
 		"UPDATE tasks SET status = 'available', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
 		now, task.ID,
@@ -332,7 +366,10 @@ func RunRelease(db *sql.DB, shortID, actor string) error {
 		return err
 	}
 
-	if err := recordEvent(tx, task.ID, "released", actor, map[string]any{}); err != nil {
+	if err := recordEvent(tx, task.ID, "released", actor, map[string]any{
+		"was_claimed_by": wasClaimedBy,
+		"was_expires_at": wasExpiresAt,
+	}); err != nil {
 		return err
 	}
 

@@ -144,18 +144,27 @@ func executeCancel(
 		// Cancel cascaded descendants first.
 		for _, child := range p.cascadeTasks {
 			wasStatus := child.Status
+			childDetail := map[string]any{
+				"reason":                   reason,
+				"cascade":                  true,
+				"cascade_closed_by_parent": p.target.shortID,
+				"was_status":               wasStatus,
+			}
+			if wasStatus == "claimed" {
+				if child.ClaimedBy != nil {
+					childDetail["was_claimed_by"] = *child.ClaimedBy
+				}
+				if child.ClaimExpiresAt != nil {
+					childDetail["was_expires_at"] = *child.ClaimExpiresAt
+				}
+			}
 			if _, err := tx.Exec(
 				"UPDATE tasks SET status = 'canceled', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
 				now, child.ID,
 			); err != nil {
 				return nil, nil, err
 			}
-			if err := recordEvent(tx, child.ID, "canceled", actor, map[string]any{
-				"reason":                   reason,
-				"cascade":                  true,
-				"cascade_closed_by_parent": p.target.shortID,
-				"was_status":               wasStatus,
-			}); err != nil {
+			if err := recordEvent(tx, child.ID, "canceled", actor, childDetail); err != nil {
 				return nil, nil, err
 			}
 			if err := recordBlocksUnblockedOnCancel(tx, child.ID, child.ShortID, actor); err != nil {
@@ -163,19 +172,29 @@ func executeCancel(
 			}
 		}
 
-		wasStatus := p.target.task.Status
-		if _, err := tx.Exec(
-			"UPDATE tasks SET status = 'canceled', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
-			now, p.target.task.ID,
-		); err != nil {
-			return nil, nil, err
-		}
-		if err := recordEvent(tx, p.target.task.ID, "canceled", actor, map[string]any{
+		targetTask := p.target.task
+		wasStatus := targetTask.Status
+		targetDetail := map[string]any{
 			"reason":         reason,
 			"cascade":        cascade,
 			"cascade_closed": p.cascadeShorts,
 			"was_status":     wasStatus,
-		}); err != nil {
+		}
+		if wasStatus == "claimed" {
+			if targetTask.ClaimedBy != nil {
+				targetDetail["was_claimed_by"] = *targetTask.ClaimedBy
+			}
+			if targetTask.ClaimExpiresAt != nil {
+				targetDetail["was_expires_at"] = *targetTask.ClaimExpiresAt
+			}
+		}
+		if _, err := tx.Exec(
+			"UPDATE tasks SET status = 'canceled', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
+			now, targetTask.ID,
+		); err != nil {
+			return nil, nil, err
+		}
+		if err := recordEvent(tx, targetTask.ID, "canceled", actor, targetDetail); err != nil {
 			return nil, nil, err
 		}
 		if err := recordBlocksUnblockedOnCancel(tx, p.target.task.ID, p.target.shortID, actor); err != nil {

@@ -151,6 +151,10 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string, labels
 		if parent.ClaimedBy != nil {
 			prior = *parent.ClaimedBy
 		}
+		var priorExpires int64
+		if parent.ClaimExpiresAt != nil {
+			priorExpires = *parent.ClaimExpiresAt
+		}
 		if _, err := tx.Exec(
 			"UPDATE tasks SET status = 'available', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
 			now, parent.ID,
@@ -160,7 +164,8 @@ func RunAdd(db *sql.DB, parentShortID, title, desc, beforeShortID string, labels
 		if err := recordEvent(tx, parent.ID, "released", actor, map[string]any{
 			"auto_released":      true,
 			"triggered_by_child": shortID,
-			"prior_claimant":     prior,
+			"was_claimed_by":     prior,
+			"was_expires_at":     priorExpires,
 		}); err != nil {
 			return nil, err
 		}
@@ -344,6 +349,7 @@ func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, triggerKin
 			destination = "done"
 		}
 
+		wasStatus := p.Status
 		if _, err := tx.Exec(
 			"UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
 			destination, now, p.ID,
@@ -359,6 +365,18 @@ func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, triggerKin
 			"trigger_kind":   triggerKind,
 			"triggered_by":   triggerShortID,
 			"cascade_status": destination,
+			"was_status":     wasStatus,
+		}
+		// Auto-closed parents are typically not claimed (adding any open
+		// child auto-releases a parent's claim), but record the
+		// breadcrumbs anyway in case some path skipped that release.
+		if wasStatus == "claimed" {
+			if p.ClaimedBy != nil {
+				eventDetail["was_claimed_by"] = *p.ClaimedBy
+			}
+			if p.ClaimExpiresAt != nil {
+				eventDetail["was_expires_at"] = *p.ClaimExpiresAt
+			}
 		}
 		if err := recordEvent(tx, p.ID, destination, actor, eventDetail); err != nil {
 			return nil, err
@@ -481,16 +499,26 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 	for _, p := range plans {
 		// Close cascaded descendants first.
 		for _, child := range p.cascadeTasks {
+			childDetail := map[string]any{
+				"cascade":                  true,
+				"cascade_closed_by_parent": p.target.shortID,
+				"was_status":               child.Status,
+			}
+			if child.Status == "claimed" {
+				if child.ClaimedBy != nil {
+					childDetail["was_claimed_by"] = *child.ClaimedBy
+				}
+				if child.ClaimExpiresAt != nil {
+					childDetail["was_expires_at"] = *child.ClaimExpiresAt
+				}
+			}
 			if _, err := tx.Exec(
 				"UPDATE tasks SET status = 'done', updated_at = ? WHERE id = ?",
 				now, child.ID,
 			); err != nil {
 				return nil, nil, err
 			}
-			if err := recordEvent(tx, child.ID, "done", actor, map[string]any{
-				"cascade":                  true,
-				"cascade_closed_by_parent": p.target.shortID,
-			}); err != nil {
+			if err := recordEvent(tx, child.ID, "done", actor, childDetail); err != nil {
 				return nil, nil, err
 			}
 			if err := recordBlocksUnblockedOn(tx, child.ID, child.ShortID, actor); err != nil {
@@ -499,9 +527,11 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 		}
 
 		// Close the explicit target.
+		targetTask := p.target.task
+		wasStatus := targetTask.Status
 		if _, err := tx.Exec(
 			"UPDATE tasks SET status = 'done', completion_note = ?, updated_at = ? WHERE id = ?",
-			noteVal, now, p.target.task.ID,
+			noteVal, now, targetTask.ID,
 		); err != nil {
 			return nil, nil, err
 		}
@@ -509,11 +539,20 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 			"note":           noteVal,
 			"cascade":        cascade,
 			"cascade_closed": p.cascadeShorts,
+			"was_status":     wasStatus,
+		}
+		if wasStatus == "claimed" {
+			if targetTask.ClaimedBy != nil {
+				detail["was_claimed_by"] = *targetTask.ClaimedBy
+			}
+			if targetTask.ClaimExpiresAt != nil {
+				detail["was_expires_at"] = *targetTask.ClaimExpiresAt
+			}
 		}
 		if resultVal != nil {
 			detail["result"] = resultVal
 		}
-		if err := recordEvent(tx, p.target.task.ID, "done", actor, detail); err != nil {
+		if err := recordEvent(tx, targetTask.ID, "done", actor, detail); err != nil {
 			return nil, nil, err
 		}
 		if err := recordBlocksUnblockedOn(tx, p.target.task.ID, p.target.shortID, actor); err != nil {

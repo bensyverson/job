@@ -14,21 +14,10 @@
   collapse state).
 */
 
-// escapeHTML maps the five HTML-significant characters into their
-// numeric entity forms. Matches Go's html/template default escaping
-// closely enough to keep titles and note bodies safe inside attribute
-// and text positions alike. Decimal entities for quotes match Go's
-// output (&#34; / &#39;) so snapshot diffs stay clean if we ever
-// snapshot-test SSR output side-by-side.
-export function escapeHTML(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&#34;")
-    .replace(/'/g, "&#39;");
-}
+// escapeHTML re-exported from scrub-util so plan-scrub-render's public
+// API stays put while actors-scrub-render shares the same helper.
+export { escapeHTML } from "./scrub-util.mjs";
+import { escapeHTML } from "./scrub-util.mjs";
 
 // --- status pill ---
 

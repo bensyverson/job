@@ -12,6 +12,13 @@
   PlanNode trees the renderer walks; no DOM, no globals, no async.
 */
 
+import { relativeTime as _relativeTime } from "./scrub-util.mjs";
+
+// re-exported so existing imports continue to resolve from
+// plan-scrub-build. Implementation lives in scrub-util.mjs for sharing
+// with actors-scrub.
+export const relativeTime = _relativeTime;
+
 // displayStatus collapses a raw task status + has-blockers flag into
 // the four visual categories the c-status-pill renders.
 export function displayStatus(raw, hasOpenBlockers) {
@@ -27,26 +34,6 @@ export function displayStatus(raw, hasOpenBlockers) {
     default:
       return raw;
   }
-}
-
-// relativeTime formats `then - now` as a compact label matching the
-// Go RelativeTime ladder ("just now", "5s", "2m", "1h 5m", "3d 2h").
-// Both args are unix seconds; passing `cursorEvent.created_at` and a
-// task's updated-at second value is the typical use.
-export function relativeTime(nowSec, thenSec) {
-  let d = nowSec - thenSec;
-  if (d < 0) d = -d;
-  if (d < 1) return "just now";
-  if (d < 60) return `${Math.floor(d)}s`;
-  if (d < 3600) return `${Math.floor(d / 60)}m`;
-  if (d < 86400) {
-    const h = Math.floor(d / 3600);
-    const m = Math.floor((d - h * 3600) / 60);
-    return m === 0 ? `${h}h` : `${h}h ${m}m`;
-  }
-  const days = Math.floor(d / 86400);
-  const remH = Math.floor((d - days * 86400) / 3600);
-  return remH === 0 ? `${days}d` : `${days}d ${remH}h`;
 }
 
 // buildForestFromFrame walks the flat tasks Map and assembles a tree

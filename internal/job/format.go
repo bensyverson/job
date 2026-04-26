@@ -15,6 +15,12 @@ import (
 // right body landed; short enough to keep the ack on one line.
 const notePreviewMax = 60
 
+// childInlineCap caps the inline child list rendered by `show <id>`.
+// At or below the cap, every child renders as one line. Above it,
+// `show` emits a count line and points at `job ls <id>` to keep the
+// briefing scannable on long-running parents.
+const childInlineCap = 10
+
 // NotePreview builds the body preview shown on note/done/cancel acks.
 // Returns the rune count of the stored body and a single-line preview
 // clamped to notePreviewMax runes. Newlines and tabs collapse to spaces;
@@ -210,22 +216,26 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 		fmt.Fprintf(w, "Parent:       (root)\n")
 	}
 	if len(info.Children) > 0 {
-		done := 0
-		for _, c := range info.Children {
-			if c.Status == "done" {
-				done++
+		// Above the cap: the inline list would crowd the briefing, so
+		// collapse to a single count line that names the canonical drill-
+		// down command. Mirrors the cap rule documented in `show --help`.
+		if len(info.Children) > childInlineCap {
+			fmt.Fprintf(w, "Children:     %d (use 'job ls %s' to see all)\n", len(info.Children), info.Task.ShortID)
+		} else {
+			fmt.Fprintln(w, "Children:")
+			for _, c := range info.Children {
+				node := &TaskNode{Task: c}
+				checkbox := "[ ]"
+				if c.Status == "done" {
+					checkbox = "[x]"
+				}
+				fmt.Fprintf(w, "  - %s `%s` %s", checkbox, c.ShortID, c.Title)
+				if parens := listStateParens(node, info.ChildBlockers, info.ChildLabels); parens != "" {
+					fmt.Fprintf(w, " %s", parens)
+				}
+				fmt.Fprintln(w)
 			}
 		}
-		fmt.Fprintf(w, "Children:     %d", len(info.Children))
-		if done > 0 {
-			fmt.Fprintf(w, " (%d done", done)
-			remaining := len(info.Children) - done
-			if remaining > 0 {
-				fmt.Fprintf(w, ", %d open", remaining)
-			}
-			fmt.Fprintf(w, ")")
-		}
-		fmt.Fprintln(w)
 	}
 	if len(info.Blockers) > 0 {
 		var ids []string
@@ -324,17 +334,24 @@ func RenderInfoJSON(w io.Writer, info *TaskInfo) {
 		Actor     string `json:"actor"`
 		CreatedAt int64  `json:"created_at"`
 	}
+	type childJSON struct {
+		ID       string   `json:"id"`
+		Title    string   `json:"title"`
+		Status   string   `json:"status"`
+		Blockers []string `json:"blockers,omitempty"`
+		Labels   []string `json:"labels,omitempty"`
+	}
 	type infoJSON struct {
-		ID          string     `json:"id"`
-		Title       string     `json:"title"`
-		Description string     `json:"description"`
-		Status      string     `json:"status"`
-		Parent      *string    `json:"parent,omitempty"`
-		Children    int        `json:"children"`
-		Blockers    []string   `json:"blockers,omitempty"`
-		Labels      []string   `json:"labels"`
-		Notes       []noteJSON `json:"notes"`
-		CreatedAt   int64      `json:"created_at"`
+		ID          string      `json:"id"`
+		Title       string      `json:"title"`
+		Description string      `json:"description"`
+		Status      string      `json:"status"`
+		Parent      *string     `json:"parent,omitempty"`
+		Children    []childJSON `json:"children"`
+		Blockers    []string    `json:"blockers,omitempty"`
+		Labels      []string    `json:"labels"`
+		Notes       []noteJSON  `json:"notes"`
+		CreatedAt   int64       `json:"created_at"`
 	}
 
 	var parentID *string
@@ -356,13 +373,25 @@ func RenderInfoJSON(w io.Writer, info *TaskInfo) {
 		notes = append(notes, noteJSON{Text: n.Text, Actor: n.Actor, CreatedAt: n.CreatedAt})
 	}
 
+	children := make([]childJSON, 0, len(info.Children))
+	for _, c := range info.Children {
+		entry := childJSON{ID: c.ShortID, Title: c.Title, Status: c.Status}
+		if blks := info.ChildBlockers[c.ShortID]; len(blks) > 0 {
+			entry.Blockers = blks
+		}
+		if lbls := info.ChildLabels[c.ID]; len(lbls) > 0 {
+			entry.Labels = lbls
+		}
+		children = append(children, entry)
+	}
+
 	obj := infoJSON{
 		ID:          info.Task.ShortID,
 		Title:       info.Task.Title,
 		Description: info.Task.Description,
 		Status:      info.Task.Status,
 		Parent:      parentID,
-		Children:    len(info.Children),
+		Children:    children,
 		Blockers:    blockers,
 		Labels:      labels,
 		Notes:       notes,

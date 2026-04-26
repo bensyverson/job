@@ -1064,7 +1064,7 @@ func TestHelp_MentionsCurrentVerbs(t *testing.T) {
 	wantVerbs := []string{
 		"init", "schema", "add", "import", "edit", "block",
 		"move", "claim", "claim-next", "release", "note", "done", "reopen",
-		"cancel", "list", "info", "log", "status", "next", "tail",
+		"cancel", "ls", "show", "log", "status", "next", "tail",
 		"heartbeat", "label",
 	}
 	for _, v := range wantVerbs {

@@ -131,7 +131,7 @@ QUICKSTART
                job note <id> -m "progress" (auto-extends the claim)
                job done <id> -m "notes"
 
-  5. Observe:  job list                    (actionable tasks)
+  5. Observe:  job ls                      (actionable tasks)
                job log <id>                (event history)
 
 IDENTITY
@@ -154,7 +154,7 @@ VERBS (grouped by role)
   Planning:     add, import, edit, block, move, label
   Reserved label:  "decision" → surfaces as Decision: in status until done/canceled
   Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
-  Observation:  list, info, log, status, next, next all, tail
+  Observation:  ls, show, log, status, next, next all, tail
   Web UI:       serve (read-only dashboard, binds 127.0.0.1:7823 by default)
 
   Grammar:
@@ -198,6 +198,22 @@ ORCHESTRATION
     job tail <id> --format=json        # streaming JSON-lines event stream
     job tail --until-close <id>        # block until <id> closes
 `
+
+// renderClaimBriefing prints the `show <id>` briefing after a successful
+// claim ack, separated by a blank line. The ack's first line stays the
+// scriptable signal (scripts grep for "Claimed:"); the briefing folds
+// the universal `claim X && show X` pattern into one call. Errors fetching
+// the briefing are silently swallowed: the claim already succeeded and is
+// already acknowledged — the briefing is the friendly add-on, not the
+// load-bearing output.
+func renderClaimBriefing(w io.Writer, db *sql.DB, shortID string) {
+	info, err := job.RunInfo(db, shortID)
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(w)
+	job.RenderInfoMarkdown(w, info)
+}
 
 func openDBFromCmd() (*sql.DB, error) {
 	path := job.ResolveDBPath(dbPath)

@@ -224,11 +224,17 @@ func TestClaimNext_PrefersLeafOverParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim-next: %v", err)
 	}
-	if strings.Contains(stdout, parent) {
-		t.Errorf("claim-next should not claim parent:\n%s", stdout)
+	// The first line is the scriptable ack ("Claimed: <id> ...") and
+	// names which task got claimed. Full stdout also contains the
+	// briefing, which legitimately names the parent on a `Parent:` line
+	// — so substring-matching the whole buffer for the parent ID is the
+	// wrong check after briefing was added.
+	first := firstLine(stdout)
+	if strings.Contains(first, parent) {
+		t.Errorf("claim-next should not claim parent (first line names the claim target):\n%s", first)
 	}
-	if !strings.Contains(stdout, c1) {
-		t.Errorf("claim-next should claim leaf %s:\n%s", c1, stdout)
+	if !strings.Contains(first, c1) {
+		t.Errorf("claim-next should claim leaf %s:\n%s", c1, first)
 	}
 }
 

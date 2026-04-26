@@ -11,8 +11,18 @@ func newClaimCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim <id> [duration]",
 		Short: "Claim a task (duration optional, default 30m)",
-		Long:  "Claim a task, marking it as in-progress. Duration defaults to 30m. Supported units: s, m, h, d. Use --force to override an existing claim.",
-		Args:  cobra.RangeArgs(1, 2),
+		Long: `Claim a task, marking it as in-progress. Duration defaults to 30m. Supported units: s, m, h, d. Use --force to override an existing claim.
+
+The ack's first line is the scriptable signal ("Claimed: <id> '<title>'
+(expires in <dur>)") followed by the full 'show <id>' briefing — claiming
+is the moment you want every detail you'd otherwise have to fetch with a
+follow-up 'show'.
+
+Tip: use 'job claim-next [parent] [duration]' to find and claim the next
+available leaf in one step, and 'job done <id> --claim-next' for the
+close-and-advance loop ('done <id>' followed atomically by claiming the
+next leaf).`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -56,6 +66,7 @@ func newClaimCmd() *cobra.Command {
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n", shortID, title, durStr)
 			}
+			renderClaimBriefing(cmd.OutOrStdout(), db, shortID)
 			return nil
 		},
 	}

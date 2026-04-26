@@ -53,9 +53,9 @@ func newClaimNextCmd() *cobra.Command {
 					durStr = duration
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n", task.ShortID, task.Title, durStr)
-				if task.Description != "" {
-					fmt.Fprintf(cmd.OutOrStdout(), "\n  %s\n", task.Description)
-				}
+				// The briefing includes Description; the bespoke description
+				// echo this command used to emit is now redundant.
+				renderClaimBriefing(cmd.OutOrStdout(), db, task.ShortID)
 			}
 			return nil
 		},

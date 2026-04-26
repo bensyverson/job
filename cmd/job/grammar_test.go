@@ -9,16 +9,19 @@ import (
 
 // R3 — Consistent verb grammar + typo aliases with helper warnings.
 //
-// Canonical forms after R3:
+// Canonical forms:
 //   - block add <blocked> by <blocker>
 //   - block remove <blocked> by <blocker>
+//   - list                                   → alias of `ls`
+//   - info <id>                              → alias of `show <id>`
 //
 // Legacy aliases that still work but emit a one-line stderr deprecation
 // notice on every invocation:
 //   - block <blocked> by <blocker>           → block add ... by ...
 //   - unblock <blocked> from <blocker>       → block remove ... by ...
-//   - ls                                     → list
-//   - show <id>                              → info <id>
+//
+// `ls`/`list` and `show`/`info` are silent aliases of each other —
+// neither prints a "prefer the canonical form" note.
 
 func TestBlockAdd_Canonical(t *testing.T) {
 	dbFile := setupCLI(t)
@@ -105,7 +108,7 @@ func TestUnblock_LegacyAlias_Works(t *testing.T) {
 	}
 }
 
-func TestLs_AliasForList(t *testing.T) {
+func TestLs_Canonical_NoNotice(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	job.MustAdd(t, db, "", "Alpha")
@@ -116,32 +119,50 @@ func TestLs_AliasForList(t *testing.T) {
 		t.Fatalf("ls: %v\nstderr=%s", err, stderr)
 	}
 	if !strings.Contains(stdout, "Alpha") {
-		t.Errorf("ls should list tasks like list:\n%s", stdout)
+		t.Errorf("ls should list tasks:\n%s", stdout)
 	}
-	if !strings.Contains(stderr, "list") {
-		t.Errorf("stderr should warn that 'ls' is an alias for 'list':\n%s", stderr)
-	}
-	if !strings.Contains(stderr, "alias") {
-		t.Errorf("stderr should mention alias status:\n%s", stderr)
+	if stderr != "" {
+		t.Errorf("canonical 'ls' should emit no stderr notice, got:\n%s", stderr)
 	}
 }
 
-func TestList_NoAliasNotice(t *testing.T) {
+func TestTree_AliasOfLs_NoNotice(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	job.MustAdd(t, db, "", "Alpha")
 	db.Close()
 
-	_, stderr, err := runCLI(t, dbFile, "list")
+	stdout, stderr, err := runCLI(t, dbFile, "tree")
 	if err != nil {
-		t.Fatalf("list: %v", err)
+		t.Fatalf("tree: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Alpha") {
+		t.Errorf("tree should list tasks like ls:\n%s", stdout)
 	}
 	if stderr != "" {
-		t.Errorf("canonical 'list' should emit no stderr notice, got:\n%s", stderr)
+		t.Errorf("`tree` is a silent alias of `ls`; expected no stderr notice, got:\n%s", stderr)
 	}
 }
 
-func TestShow_AliasForInfo(t *testing.T) {
+func TestList_AliasOfLs_NoNotice(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	job.MustAdd(t, db, "", "Alpha")
+	db.Close()
+
+	stdout, stderr, err := runCLI(t, dbFile, "list")
+	if err != nil {
+		t.Fatalf("list: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Alpha") {
+		t.Errorf("list should list tasks like ls:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("`list` is a silent alias of `ls`; expected no stderr notice, got:\n%s", stderr)
+	}
+}
+
+func TestShow_Canonical_NoNotice(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	id := job.MustAdd(t, db, "", "Hello")
@@ -152,28 +173,28 @@ func TestShow_AliasForInfo(t *testing.T) {
 		t.Fatalf("show: %v\nstderr=%s", err, stderr)
 	}
 	if !strings.Contains(stdout, "Hello") {
-		t.Errorf("show should render info output:\n%s", stdout)
+		t.Errorf("show should render task details:\n%s", stdout)
 	}
-	if !strings.Contains(stderr, "info") {
-		t.Errorf("stderr should warn that 'show' is an alias for 'info':\n%s", stderr)
-	}
-	if !strings.Contains(stderr, "alias") {
-		t.Errorf("stderr should mention alias status:\n%s", stderr)
+	if stderr != "" {
+		t.Errorf("canonical 'show' should emit no stderr notice, got:\n%s", stderr)
 	}
 }
 
-func TestInfo_NoAliasNotice(t *testing.T) {
+func TestInfo_AliasOfShow_NoNotice(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	id := job.MustAdd(t, db, "", "Hello")
 	db.Close()
 
-	_, stderr, err := runCLI(t, dbFile, "info", id)
+	stdout, stderr, err := runCLI(t, dbFile, "info", id)
 	if err != nil {
-		t.Fatalf("info: %v", err)
+		t.Fatalf("info: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Hello") {
+		t.Errorf("info should render task details like show:\n%s", stdout)
 	}
 	if stderr != "" {
-		t.Errorf("canonical 'info' should emit no stderr notice, got:\n%s", stderr)
+		t.Errorf("`info` is a silent alias of `show`; expected no stderr notice, got:\n%s", stderr)
 	}
 }
 

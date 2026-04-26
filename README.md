@@ -37,7 +37,7 @@ job add "Ship v1" "Write tests"
 job add 5xZie "Fix CI"
 
 # See what needs doing (reads need no identity)
-job list
+job ls
 
 # Complete a task
 job done <id>
@@ -60,7 +60,7 @@ job log <id>
 
 ## Identity
 
-Every write is attributed to a named identity. Reads (`list`, `info`, `next`, `log`, `tail`, `status`) work without one.
+Every write is attributed to a named identity. Reads (`ls`, `show`, `next`, `log`, `tail`, `status`) work without one.
 
 Resolution chain, first match wins:
 
@@ -94,7 +94,7 @@ Multiple agents can work in the same directory simultaneously. Each passes its o
 
 ## Commands
 
-**Grammar.** Multi-operation verbs (`label`, `block`) take a subcommand: `job label add ...`, `job block add ...`. Single-operation verbs take a positional id and flags: `job claim <id>`, `job done <id> -m "..."`. Aliases are kept for the older shapes (`job block <blocked> by <blocker>`, `job unblock <blocked> from <blocker>`, `job ls`, `job show <id>`); they still work and emit a one-line stderr notice naming the canonical form.
+**Grammar.** Multi-operation verbs (`label`, `block`) take a subcommand: `job label add ...`, `job block add ...`. Single-operation verbs take a positional id and flags: `job claim <id>`, `job done <id> -m "..."`. The legacy block shapes (`job block <blocked> by <blocker>`, `job unblock <blocked> from <blocker>`) still work and emit a one-line stderr notice naming the canonical form. `job list` and `job info` are silent aliases of `job ls` and `job show` — both names work, neither prints a warning.
 
 **Short flags.** `-m` is the free-text body across commands that take one (`note -m`, `done -m`, `cancel -m`). Common single-letter flags follow the obvious mapping: `-d`/`-t` for `--desc`/`--title`, `-l` for `--label`, `-p` for `--parent`, `-n` for `--dry-run`, `-s` for `--since`, `-e`/`-u`/`-q` for tail's `--events`/`--users`/`--quiet`, `-y` for `--yes`. Letters with strong prior meaning (`-r` recursive, `-f` force, `-v` verbose, `-h` help) are intentionally not reused for unrelated semantics.
 
@@ -109,7 +109,7 @@ Multiple agents can work in the same directory simultaneously. Each passes its o
 
 Every command accepts `--db <path>` to use a different database file. You can also set `JOBS_DB`.
 
-When neither is set, `job` walks up from the current directory looking for a `.jobs.db` in an ancestor directory — the same way `git` finds `.git`. That means you can run `job list` from anywhere inside your project. If no ancestor has one, `job` falls back to the literal `.jobs.db` in the current directory (so `job init` keeps working unchanged).
+When neither is set, `job` walks up from the current directory looking for a `.jobs.db` in an ancestor directory — the same way `git` finds `.git`. That means you can run `job ls` from anywhere inside your project. If no ancestor has one, `job` falls back to the literal `.jobs.db` in the current directory (so `job init` keeps working unchanged).
 
 All writes additionally require `--as <name>` (see [Identity](#identity)).
 
@@ -125,15 +125,15 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 
 | Command | Description |
 |---------|-------------|
-| `job list [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. Done tasks render as structural lines (`- [x] \`<id>\` Title`) without inline note bodies — labels and blockers stay scannable. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job ls` is a deprecated alias. |
-| `job info <id> [id ...]` | Show full details for one or more tasks, separated by a blank line. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `--format=json` returns a JSON array. `job show <id>` is a deprecated alias. |
+| `job ls [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. Done tasks render as structural lines (`- [x] \`<id>\` Title`) without inline note bodies — labels and blockers stay scannable. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job list` and `job tree` are silent aliases. |
+| `job show <id> [id ...]` | Show full details for one or more tasks, separated by a blank line. When the task has 1–10 direct children, a `Children:` section lists them inline as a markdown checklist (same shape as `job ls` rows, including blockers / claim / labels in parens); above 10 it collapses to a count line pointing at `job ls <id>`. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `--format=json` returns a JSON array; the `children` field is an array of `{id,title,status,blockers?,labels?}` objects. `job info <id>` is a silent alias. |
 | `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. `-l, --label <name>` filters. |
 | `job status` | Session briefing: claimed / open / done tally + identity line, then a per-root rollup of the top-level forest (one row per top-level task with its own subtree counts). Ends with a `Next:` hint naming the globally-next claimable leaf, `Stale:` lines for any claims past their TTL, and `Decision:` lines for any open tasks labeled `decision` (human-decision pending). With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. |
-| `job status <id>` | Two-level rollup of a task and its direct children: headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`, with zero-count tokens suppressed) plus one rollup line per direct child. When every direct child is a leaf, the per-child block collapses — the headline already says everything worth saying — and only claimed rows surface (the "who's working on what" signal). Fully-complete subtrees append `closed <timestamp>`. Ends with `Next:` / `Stale:` / `Decision:` trailers scoped to the subtree, followed by the actionable task list (identical to `job list <id>`). `job summary [id]` is a deprecated alias. |
+| `job status <id>` | Two-level rollup of a task and its direct children: headline counts (`<done> of <total> done · <N> blocked · <N> available · <N> in flight`, with zero-count tokens suppressed) plus one rollup line per direct child. When every direct child is a leaf, the per-child block collapses — the headline already says everything worth saying — and only claimed rows surface (the "who's working on what" signal). Fully-complete subtrees append `closed <timestamp>`. Ends with `Next:` / `Stale:` / `Decision:` trailers scoped to the subtree, followed by the actionable task list (identical to `job ls <id>`). `job summary [id]` is a deprecated alias. |
 
 All support `--format=json` (except `status`, which is always plain text).
 
-List output is GitHub-Flavored Markdown with checkbox items, so pasting `job list all` into a PR or issue renders as a task list:
+List output is GitHub-Flavored Markdown with checkbox items, so pasting `job ls all` into a PR or issue renders as a task list:
 
 ```
 - [ ] `87TNz` Phase 1 — Data model
@@ -183,7 +183,7 @@ After a successful `done`, the ack ends with a `Next:` hint naming the suggested
 
 | Command | Description |
 |---------|-------------|
-| `job claim <id> [duration]` | Claim a task. Duration defaults to `30m`. Units: `s`, `m`, `h`, `d`. Ack echoes the title for confirmation: `Claimed: <id> "<title>" (expires in <dur>)`. |
+| `job claim <id> [duration]` | Claim a task. Duration defaults to `30m`. Units: `s`, `m`, `h`, `d`. Ack echoes the title for confirmation: `Claimed: <id> "<title>" (expires in <dur>)`. The full `show <id>` briefing follows the ack, so `claim` is also the briefing — no follow-up `show` needed. The first line stays the load-bearing scriptable signal (scripts grepping for `Claimed:` keep working); same flow for `claim-next` and `done --claim-next`. |
 | `job release <id>` | Release a claim. |
 | `job claim-next [parent] [duration]` | Find and claim the next available leaf in one step. Pass `--include-parents` to claim any available task. |
 | `job heartbeat <id> [<id>...]` | Extend your live claim(s) by 30 minutes. Rarely needed — any write to a task you hold (`note`, `edit`, `label add`, `label remove`) auto-extends the claim. Reach for `heartbeat` only for the "I'm thinking, not writing" case. |
@@ -217,11 +217,11 @@ Tasks carry free-form, flat labels. Labels are local to each task — there's no
 |---------|-------------|
 | `job label add <id> <name> [<name>...]` | Add one or more labels. Variadic, idempotent, atomic. |
 | `job label remove <id> <name> [<name>...]` | Remove one or more labels. Idempotent. |
-| `job list --label <name>` | Filter the list to tasks carrying the label. |
+| `job ls --label <name>` | Filter the list to tasks carrying the label. |
 | `job next --label <name>` | Pick the next available task carrying the label. |
 | `job next all --label <name>` | The whole claimable frontier, scoped to the label. |
 
-Labels show up on `job info <id>` and inline in `job list` parentheses. They can also be set at import time via the YAML `labels: [...]` key.
+Labels show up on `job show <id>` and inline in `job ls` parentheses. They can also be set at import time via the YAML `labels: [...]` key.
 
 The `decision` label is a convention: tasks labeled `decision` represent questions that must be answered before work can proceed. Open `decision` tasks surface as `Decision: <id> "<title>"` lines in `job status` (global and scoped), making pending human decisions visible alongside `Next:` and `Stale:`.
 

@@ -17,8 +17,13 @@ func newDoneCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "done <id> [<id>...]",
 		Short: "Mark one or more tasks as done",
-		Long:  "Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Use --claim-next to atomically claim the next available leaf after closing, collapsing the close-then-advance flow into one call. Idempotent: already-done tasks are reported, not re-recorded.",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Idempotent: already-done tasks are reported, not re-recorded.
+
+Tip: pass --claim-next to atomically close this task and claim the next
+available leaf, collapsing the close-then-advance flow into one call. The
+ack ends with the same briefing that 'job claim' / 'job show' produces,
+so you don't need a follow-up 'show' on the new claim.`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
 			if err != nil {
@@ -129,6 +134,7 @@ func newDoneCmd() *cobra.Command {
 			if claimed != nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n",
 					claimed.ShortID, claimed.Title, job.FormatDuration(job.DefaultClaimTTLSeconds))
+				renderClaimBriefing(cmd.OutOrStdout(), db, claimed.ShortID)
 			} else if claimRaceTaken != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "Next leaf unavailable: %s\n", claimRaceTaken)
 			}

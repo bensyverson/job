@@ -1279,12 +1279,14 @@ func descendToClaimableLeaf(db *sql.DB, t *Task) (*Task, error) {
 }
 
 type TaskInfo struct {
-	Task     *Task
-	Parent   *Task
-	Children []*Task
-	Blockers []*Task
-	Labels   []string
-	Notes    []NoteEntry
+	Task          *Task
+	Parent        *Task
+	Children      []*Task
+	ChildBlockers map[string][]string // child short-ID → blocker short-IDs
+	ChildLabels   map[int64][]string  // child task ID → labels (for `RenderMarkdownList` reuse)
+	Blockers      []*Task
+	Labels        []string
+	Notes         []NoteEntry
 }
 
 // NoteEntry is a single rendered note pulled from the event stream.
@@ -1352,13 +1354,38 @@ func RunInfo(db *sql.DB, shortID string) (*TaskInfo, error) {
 		return nil, err
 	}
 
+	childBlockers := map[string][]string{}
+	childLabels := map[int64][]string{}
+	if len(children) > 0 {
+		childIDs := make([]int64, 0, len(children))
+		for _, c := range children {
+			childIDs = append(childIDs, c.ID)
+		}
+		bm, err := GetBlockersForTaskIDs(db, childIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range children {
+			if blks := bm[c.ID]; len(blks) > 0 {
+				childBlockers[c.ShortID] = blks
+			}
+		}
+		lm, err := GetLabelsForTaskIDs(db, childIDs)
+		if err != nil {
+			return nil, err
+		}
+		childLabels = lm
+	}
+
 	return &TaskInfo{
-		Task:     task,
-		Parent:   parent,
-		Children: children,
-		Blockers: blockers,
-		Labels:   labels,
-		Notes:    notes,
+		Task:          task,
+		Parent:        parent,
+		Children:      children,
+		ChildBlockers: childBlockers,
+		ChildLabels:   childLabels,
+		Blockers:      blockers,
+		Labels:        labels,
+		Notes:         notes,
 	}, nil
 }
 

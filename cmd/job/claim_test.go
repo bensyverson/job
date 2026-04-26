@@ -7,6 +7,11 @@ import (
 	job "github.com/bensyverson/jobs/internal/job"
 )
 
+// `claim`'s first line is the load-bearing scriptable signal — scripts
+// grep for "Claimed:" — so these tests assert the exact first-line
+// shape, then independently confirm the briefing follows. The briefing
+// itself is covered in claim_briefing_test.go.
+
 func TestClaim_Md_Shape_EchoesTitleAndDefaultTTL(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
@@ -17,9 +22,9 @@ func TestClaim_Md_Shape_EchoesTitleAndDefaultTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	want := "Claimed: " + id + " \"Write the thing\" (expires in 30m)\n"
-	if stdout != want {
-		t.Errorf("got %q, want %q", stdout, want)
+	wantFirst := "Claimed: " + id + " \"Write the thing\" (expires in 30m)\n"
+	if firstLine(stdout) != wantFirst {
+		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}
 }
 
@@ -33,9 +38,9 @@ func TestClaim_Md_Shape_WithExplicitDuration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	want := "Claimed: " + id + " \"Long task\" (expires in 2h)\n"
-	if stdout != want {
-		t.Errorf("got %q, want %q", stdout, want)
+	wantFirst := "Claimed: " + id + " \"Long task\" (expires in 2h)\n"
+	if firstLine(stdout) != wantFirst {
+		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}
 }
 
@@ -52,9 +57,9 @@ func TestClaim_Md_Shape_ForceOverrideEchoesTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alice claim --force: %v", err)
 	}
-	want := "Claimed: " + id + " \"Contended task\" (overrode previous claim by bob, expires in 30m)\n"
-	if stdout != want {
-		t.Errorf("got %q, want %q", stdout, want)
+	wantFirst := "Claimed: " + id + " \"Contended task\" (overrode previous claim by bob, expires in 30m)\n"
+	if firstLine(stdout) != wantFirst {
+		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}
 	if !strings.Contains(stdout, `"Contended task"`) {
 		t.Errorf("force-override ack must echo title:\n%s", stdout)

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "==> go vet"
+go vet ./...
+
+echo "==> go fix"
+# `go fix` can rewrite files in place without printing to stdout (the
+# Go 1.22+ loop modernizers in particular). Capturing stdout the way an
+# earlier version of this hook did wasn't enough — silent rewrites
+# slipped through and landed as follow-up commits. Compare the worktree
+# against the staged set instead: any modification by `go fix` to a
+# file already part of this commit is a hard fail with a re-stage hint.
+go fix ./... > /dev/null
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$staged" ]; then
+  # `git diff -- <staged paths>` reports unstaged changes scoped to those
+  # paths; unrelated worktree edits don't trip the hook.
+  modified=$(git diff --name-only -- $staged)
+  if [ -n "$modified" ]; then
+    echo "go fix modified staged files:"
+    echo "$modified"
+    echo ""
+    echo "Re-stage and commit again:"
+    echo "  git add $(echo $modified | tr '\n' ' ') && git commit ..."
+    exit 1
+  fi
+fi
+
+echo "==> gofmt"
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+  echo "gofmt needs to format these files:"
+  echo "$unformatted"
+  echo ""
+  echo "Run: gofmt -w ."
+  exit 1
+fi
+
+echo "==> go mod tidy"
+go mod tidy
+if ! git diff --quiet go.mod go.sum 2>/dev/null; then
+  echo "go.mod or go.sum changed after go mod tidy"
+  echo "Run: go mod tidy && git add go.mod go.sum"
+  exit 1
+fi
+
+echo "==> go test"
+go test ./...
+
+echo "==> go build"
+go build ./...
+
+echo ""
+echo "All checks passed."

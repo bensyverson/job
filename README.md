@@ -17,11 +17,22 @@ This drops the `job` binary into `$HOME/go/bin` (or `$GOBIN` if set). Make sure 
 ```sh
 make install        # go install ./cmd/job
 make build          # local binary at ./job
-make run ARGS="list --mine"
+make run ARGS="ls --mine"
 make test
 ```
 
 See the [Makefile](Makefile) for every target, or run `make help`.
+
+If you plan to contribute, point Git at the repo's vendored hooks once
+per clone:
+
+```sh
+git config core.hooksPath scripts/git-hooks
+```
+
+This activates the pre-commit hook (`scripts/git-hooks/pre-commit`),
+which runs `go vet`, `go fix`, `gofmt`, `go mod tidy`, the test suite,
+and `go build` before every commit and aborts on any change.
 
 ## Get started
 

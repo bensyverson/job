@@ -21,6 +21,12 @@
       </div>
       <h1 id="task-title">{{.Title}}</h1>
     </div>
+    <button class="c-bell" data-task-bell="{{.ShortID}}" aria-label="Notify when this task is done" aria-pressed="false" title="Browser notification on completion">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+        <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+      </svg>
+    </button>
   </header>
 </section>
 
@@ -92,10 +98,15 @@
   <div class="stack stack-gap-sm">
     {{range .History}}
     <div class="row row-gap-sm t-body-sm">
+      {{if .Actor}}
       <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
         <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
       </a>
       <span class="t-body-sm">{{.Verb}} <strong>{{.Actor}}</strong>{{if .Note}} — {{.Note}}{{end}}</span>
+      {{else}}
+      <span class="c-avatar c-avatar-sm" aria-hidden="true"></span>
+      <span class="t-body-sm t-muted">{{.Verb}}{{if .Note}} — {{.Note}}{{end}}</span>
+      {{end}}
       <time class="t-dim t-data-id" style="margin-left: auto" datetime="{{.ISOTime}}">{{.RelTime}} ago</time>
     </div>
     {{else}}

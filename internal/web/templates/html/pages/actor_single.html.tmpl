@@ -89,7 +89,7 @@
           {{if .Title}}<span class="c-log-row__title">{{.Title}}</span>{{end}}
           {{if .Note}}<span class="c-log-row__note">{{.Note}}</span>{{end}}
         </span>
-        <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.ShortID}}"></a>
+        <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.ShortID}}"></a>
       </div>
     {{- else -}}
       <div class="c-log-row c-log-row--empty" role="listitem">

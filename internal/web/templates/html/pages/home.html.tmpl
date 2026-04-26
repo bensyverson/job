@@ -197,7 +197,7 @@
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <span class="c-panel-row__title">{{.TaskTitle}}</span>
             <span class="c-panel-row__meta">{{.AgeText}}</span>
-            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+            <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
           </div>
         {{- end -}}
       {{- else -}}
@@ -221,7 +221,7 @@
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <span class="c-panel-row__title">{{.TaskTitle}}</span>
             <span class="c-panel-row__meta" data-claim-idle>{{.DurationText}}</span>
-            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+            <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
           </div>
         {{- end -}}
       {{- else -}}
@@ -244,7 +244,7 @@
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <span class="c-panel-row__title">{{.TaskTitle}}</span>
             <span class="c-panel-row__meta">{{.AgeText}}</span>
-            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+            <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
           </div>
         {{- end -}}
       {{- else -}}
@@ -269,7 +269,7 @@
               <span class="c-panel-row__title">{{.TaskTitle}}</span>
               <span class="c-panel-row__meta">waiting on {{range $i, $b := .Blockers}}{{if $i}}, {{end}}<a href="{{$b.URL}}" class="c-id-pill">{{$b.ShortID}}</a>{{end}}</span>
             </div>
-            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+            <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
           </div>
         {{- end -}}
       {{- else -}}

@@ -23,6 +23,25 @@ func newEngine(t *testing.T) *templates.Engine {
 	return e
 }
 
+func TestLayoutMountsPeekSheetAndScript(t *testing.T) {
+	e := newEngine(t)
+	var buf bytes.Buffer
+	if err := e.Render(&buf, "home", &homeTemplateData{}); err != nil {
+		t.Fatalf("Render home: %v", err)
+	}
+	body := buf.String()
+	for _, want := range []string{
+		`<peek-sheet`,
+		`/static/js/peek-sheet`,
+		`/static/js/peek-click`,
+		`/static/js/peek-bell`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("layout missing %q", want)
+		}
+	}
+}
+
 // homeTemplateData mirrors the shape of handlers.HomePageData just
 // closely enough for the home template to render without missing-field
 // errors. Duplicated here rather than imported from handlers because

@@ -49,7 +49,7 @@
   <div class="c-plan-row__title">
     <div class="c-plan-row__title-line">
       <span class="c-plan-row__title-text{{if eq .Depth 0}} t-heading-lg{{else if eq .Depth 1}} t-heading-md{{end}}">{{.Title}}</span>
-      <a href="{{.URL}}" class="c-id-pill">{{.ShortID}}</a>
+      <a href="{{.URL}}" data-peek class="c-id-pill">{{.ShortID}}</a>
       {{range .Labels}}<a href="{{.URL}}" class="c-label-pill" data-label="{{.Name}}">{{.Name}}</a>{{end}}
     </div>
     {{if .Description}}<div class="c-plan-row__desc">{{.Description}}</div>{{end}}
@@ -63,7 +63,7 @@
   </span>
   <span class="c-plan-row__timestamp">{{if .RelTime}}<time datetime="{{.ISOTime}}">{{.RelTime}}</time>{{else}}—{{end}}</span>
   {{if .BlockedBy}}
-  <span class="c-plan-row__blocked-by">Blocked by {{range $i, $b := .BlockedBy}}{{if $i}}, {{end}}<a href="{{$b.URL}}" class="c-id-pill"{{if $b.Title}} title="{{$b.Title}}"{{end}}>{{$b.ShortID}}</a>{{end}}</span>
+  <span class="c-plan-row__blocked-by">Blocked by {{range $i, $b := .BlockedBy}}{{if $i}}, {{end}}<a href="{{$b.URL}}" data-peek class="c-id-pill"{{if $b.Title}} title="{{$b.Title}}"{{end}}>{{$b.ShortID}}</a>{{end}}</span>
   {{end}}
 </div>
 {{if .Notes}}

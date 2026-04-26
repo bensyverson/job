@@ -37,7 +37,7 @@
             {{- if .TaskDesc -}}
               <p class="c-actor-card__desc">{{.TaskDesc}}</p>
             {{- end -}}
-            <a href="{{.TaskURL}}" class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
+            <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
           </article>
         {{- end -}}
       </div>

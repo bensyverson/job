@@ -1521,12 +1521,28 @@ a.c-log-row__actor {
 
 /* ---------- Peek sheet ---------- */
 
+/* The <peek-sheet> host is always display:contents so its children
+   (underlay + sheet), once inserted on open, immediately enter the
+   render tree at their off-screen default. A subsequent state flip to
+   "open" then animates them in via the transitions below. Using
+   display:none for the idle state would skip the starting frame and
+   the open-slide would never run. */
+peek-sheet {
+  display: contents;
+}
+
 .c-peek-underlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(2px);
   z-index: 10;
+  opacity: 0;
+  transition: opacity var(--motion-duration-base) var(--motion-ease-out);
+}
+
+peek-sheet[data-state="open"] .c-peek-underlay {
+  opacity: 1;
 }
 
 .c-peek-sheet {
@@ -1544,6 +1560,19 @@ a.c-log-row__actor {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
+  transform: translateX(100%);
+  transition: transform var(--motion-duration-base) var(--motion-ease-out);
+}
+
+peek-sheet[data-state="open"] .c-peek-sheet {
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c-peek-underlay,
+  .c-peek-sheet {
+    transition: none;
+  }
 }
 
 .c-peek-sheet__header {

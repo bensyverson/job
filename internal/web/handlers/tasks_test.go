@@ -73,6 +73,80 @@ func TestTask_BlockedTask_RendersBlockedStatus(t *testing.T) {
 	mustContain(t, body, "The blocker")
 }
 
+func TestTask_BlockedAndUnblockedHistoryReadsAsByActor(t *testing.T) {
+	db := setupLogTestDB(t)
+	subject := mustAdd(t, db, "alice", "Subject", nil, nil)
+	blocker := mustAdd(t, db, "alice", "Blocker", nil, nil)
+	if err := job.RunBlock(db, subject, blocker, "alice"); err != nil {
+		t.Fatalf("RunBlock: %v", err)
+	}
+	if err := job.RunUnblock(db, subject, blocker, "alice"); err != nil {
+		t.Fatalf("RunUnblock: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	w := fetchTask(t, deps, subject)
+	body := w.Body.String()
+
+	// Both verbs must include "by" so the rendered row reads
+	// "blocked by alice" / "unblocked by alice", not the previous
+	// "blocked alice" / "unblocked alice".
+	mustContain(t, body, `blocked by <strong>alice</strong>`)
+	mustContain(t, body, `unblocked by <strong>alice</strong>`)
+}
+
+func TestTask_HistoryDoesNotLeakReasonField(t *testing.T) {
+	db := setupLogTestDB(t)
+	subject := mustAdd(t, db, "alice", "Subject", nil, nil)
+	blocker := mustAdd(t, db, "alice", "Blocker", nil, nil)
+	if err := job.RunBlock(db, subject, blocker, "alice"); err != nil {
+		t.Fatalf("RunBlock: %v", err)
+	}
+	if err := job.RunUnblock(db, subject, blocker, "alice"); err != nil {
+		t.Fatalf("RunUnblock: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	w := fetchTask(t, deps, subject)
+	body := w.Body.String()
+
+	// The unblock event records reason="manual" internally; that
+	// field is system categorization and should never reach the
+	// rendered history row as user prose.
+	if strings.Contains(body, "manual") {
+		t.Errorf("history should not surface internal reason values; got body containing 'manual'")
+	}
+	if strings.Contains(body, "blocker_done") {
+		t.Errorf("history should not surface internal reason values; got body containing 'blocker_done'")
+	}
+}
+
+func TestTask_ClaimExpiredHistoryReadsCleanly(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
+	taskID := taskIDForShortID(t, db, id)
+	// Synthesize a claim_expired event (the sweep records the
+	// expiring actor; the dashboard should still render it as a
+	// system-attributed event).
+	if _, err := db.Exec(`INSERT INTO events (task_id, event_type, actor, detail, created_at) VALUES (?, 'claim_expired', 'alice', '', ?)`, taskID, 1); err != nil {
+		t.Fatalf("seed claim_expired: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	w := fetchTask(t, deps, id)
+	body := w.Body.String()
+
+	// Verb reads naturally — no trailing "by" with no name, no raw
+	// "claim_expired" enum.
+	if strings.Contains(body, `claim_expired by`) {
+		t.Errorf("claim_expired history row should not read 'claim_expired by'")
+	}
+	if strings.Contains(body, `claim expired by </span>`) || strings.Contains(body, `expired by </span>`) {
+		t.Errorf("claim_expired history row should not have a dangling 'by'")
+	}
+	mustContain(t, body, `claim expired`)
+}
+
 func TestTask_HistoryShowsEvents(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "Historied", nil, nil)

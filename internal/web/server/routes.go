@@ -47,6 +47,7 @@ func NewMux(ctx context.Context, cfg Config) http.Handler {
 	mux.Handle("GET /actors", handlers.Actors(deps))
 	mux.Handle("GET /actors/{name}", handlers.ActorSingle(deps))
 	mux.Handle("GET /tasks/{id}", handlers.Task(deps))
+	mux.Handle("GET /tasks/{id}/peek", handlers.Peek(deps))
 	mux.Handle("GET /log", handlers.Log(deps))
 	mux.Handle("GET /events", handlers.Events(deps))
 	mux.Handle("GET /labels/{name}", handlers.Plan(deps))

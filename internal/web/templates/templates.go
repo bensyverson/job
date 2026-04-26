@@ -92,6 +92,19 @@ func (e *Engine) Render(w io.Writer, pageName string, data any) error {
 	return t.ExecuteTemplate(w, "layout", data)
 }
 
+// RenderFragment writes a single named template directly, skipping
+// the layout wrap. Used by fragment endpoints (e.g. /tasks/<id>/peek)
+// that return HTML scoped to a target rather than a full page. The
+// blockName is the template's defined block name (e.g. "peek"); errors
+// when the page is unknown.
+func (e *Engine) RenderFragment(w io.Writer, pageName, blockName string, data any) error {
+	t, ok := e.pages[pageName]
+	if !ok {
+		return fmt.Errorf("templates: unknown page %q", pageName)
+	}
+	return t.ExecuteTemplate(w, blockName, data)
+}
+
 // buildFuncMap returns the shared template functions. `asset` resolves
 // a logical path to its fingerprinted URL; it panics on miss so that a
 // template typo surfaces loudly in tests rather than emitting a broken

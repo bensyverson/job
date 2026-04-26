@@ -1,0 +1,174 @@
+{{- /* Peek sheet fragment. Returned by GET /tasks/<id>/peek as a
+     bare fragment — no <html>, header, footer, or scripts. The peek
+     WebComponent (Phase 7) drops this into a sheet it owns. The full
+     /tasks/<id> page renders the same data through layout chrome.
+
+     Two named templates:
+
+       "peek"        the populated sheet body for a real task
+       "peek-error"  a small status-shaped fragment for 404 / 500
+*/ -}}
+
+{{define "peek"}}
+<aside class="c-peek-sheet" role="complementary" aria-labelledby="peek-title">
+  <div class="c-peek-sheet__header">
+    <div class="stack stack-gap-xs" style="min-width: 0; flex: 1">
+      <div class="row row-gap-sm">
+        <a href="/tasks/{{.ShortID}}" class="c-id-pill">{{.ShortID}}</a>
+        {{template "status-pill" .Status}}
+      </div>
+      <h2 id="peek-title" class="c-peek-sheet__title">{{.Title}}</h2>
+    </div>
+    <div class="row row-gap-xs">
+      <button class="c-bell" data-task-bell="{{.ShortID}}" aria-label="Notify when this task is done" aria-pressed="false" title="Browser notification on completion">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />
+          <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke-linecap="round" />
+        </svg>
+      </button>
+      <button class="c-peek-sheet__close" aria-label="Close peek" data-peek-close>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  {{if .ClaimedBy}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Claimed by</div>
+    <a href="/actors/{{.ClaimedBy}}" class="c-log-row__actor" data-actor="{{.ClaimedBy}}">
+      <span class="c-avatar c-avatar-sm" data-actor="{{.ClaimedBy}}"></span>
+      <span>{{.ClaimedBy}}</span>
+    </a>
+  </div>
+  {{end}}
+
+  {{if .Labels}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Labels</div>
+    <div class="row row-gap-xs" style="flex-wrap: wrap">
+      {{range .Labels}}<a href="{{.URL}}" class="c-label-pill" data-label="{{.Name}}">{{.Name}}</a>{{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Parent}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Parent</div>
+    <div class="row row-gap-sm">
+      <a href="{{.Parent.URL}}" data-peek class="c-id-pill">{{.Parent.ShortID}}</a>
+      <span class="t-body-sm">{{.Parent.Title}}</span>
+    </div>
+  </div>
+  {{end}}
+
+  {{if .BlockedBy}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Blocked by</div>
+    <div class="stack stack-gap-xs">
+      {{range .BlockedBy}}
+      <div class="row row-gap-sm">
+        <a href="{{.URL}}" data-peek class="c-id-pill">{{.ShortID}}</a>
+        <span class="t-body-sm">{{.Title}}</span>
+        <span style="margin-left: auto">{{template "status-pill" .Status}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Blocking}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Blocks</div>
+    <div class="stack stack-gap-xs">
+      {{range .Blocking}}
+      <div class="row row-gap-sm">
+        <a href="{{.URL}}" data-peek class="c-id-pill">{{.ShortID}}</a>
+        <span class="t-body-sm">{{.Title}}</span>
+        <span style="margin-left: auto">{{template "status-pill" .Status}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Description}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Description</div>
+    <pre class="c-note">{{.Description}}</pre>
+  </div>
+  {{end}}
+
+  {{if .CompletionNote}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Notes</div>
+    <pre class="c-note">{{.CompletionNote}}</pre>
+  </div>
+  {{end}}
+
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">History</div>
+    <div class="stack stack-gap-sm">
+      {{range .History}}
+      <div class="row row-gap-sm t-body-sm">
+        {{if .Actor}}
+        <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
+          <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
+        </a>
+        <span class="t-body-sm">{{.Verb}} <strong>{{.Actor}}</strong>{{if .Note}} — {{.Note}}{{end}}</span>
+        {{else}}
+        <span class="c-avatar c-avatar-sm" aria-hidden="true"></span>
+        <span class="t-body-sm t-muted">{{.Verb}}{{if .Note}} — {{.Note}}{{end}}</span>
+        {{end}}
+        <time class="t-dim t-data-id" style="margin-left: auto" datetime="{{.ISOTime}}">{{.RelTime}} ago</time>
+      </div>
+      {{else}}
+      <span class="t-muted t-body-sm">No events yet.</span>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="row row-gap-sm">
+    <a href="/tasks/{{.ShortID}}" class="c-button c-button--primary">Open full page</a>
+    <span class="t-muted t-body-sm" style="margin-left: var(--space-sm)">⌘-click any task to skip the peek</span>
+  </div>
+</aside>
+{{end}}
+
+{{define "peek-error"}}
+<aside class="c-peek-sheet c-peek-sheet--error" role="complementary">
+  <div class="c-peek-sheet__header">
+    <h2 class="c-peek-sheet__title">Not available</h2>
+    <button class="c-peek-sheet__close" aria-label="Close peek" data-peek-close>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
+      </svg>
+    </button>
+  </div>
+  <div class="c-peek-sheet__section">
+    <p class="t-muted t-body-sm">{{.Message}}</p>
+  </div>
+</aside>
+{{end}}
+
+{{- /* Status pill — duplicated from task.html.tmpl. The two pages
+     are sister templates that ship as different blocks of one
+     codebase; defining the helper here keeps the peek fragment self-
+     contained when rendered without the layout. */ -}}
+{{define "status-pill"}}
+  {{- $s := . -}}
+  <span class="c-status-pill c-status-pill--{{if eq $s "active"}}active{{else if eq $s "blocked"}}blocked{{else if eq $s "done"}}done{{else if eq $s "canceled"}}done{{else}}todo{{end}}">
+    {{- if eq $s "done" -}}
+      <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 5l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>Done
+    {{- else if eq $s "active" -}}
+      <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="3" /></svg>Active
+    {{- else if eq $s "blocked" -}}
+      <svg class="c-status-pill__icon" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="2.5" width="1.5" height="5" /><rect x="5.5" y="2.5" width="1.5" height="5" /></svg>Blocked
+    {{- else if eq $s "canceled" -}}
+      Canceled
+    {{- else -}}
+      Todo
+    {{- end -}}
+  </span>
+{{end}}

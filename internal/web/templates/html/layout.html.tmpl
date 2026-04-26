@@ -44,6 +44,14 @@
 <script src="{{asset "js/plan-collapse.js"}}"></script>
 <script src="{{asset "js/plan-live.js"}}"></script>
 <script src="{{asset "js/plan-keyboard.js"}}"></script>
+<script type="importmap">
+{
+  "imports": {
+    "/static/js/replay.mjs": "{{asset "js/replay.mjs"}}",
+    "/static/js/scrubber-cursor.mjs": "{{asset "js/scrubber-cursor.mjs"}}"
+  }
+}
+</script>
 <script type="module" src="{{asset "js/scrubber-bootstrap.mjs"}}"></script>
 <script type="module" src="{{asset "js/scrubber-pill.mjs"}}"></script>
 </body>

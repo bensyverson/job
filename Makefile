@@ -1,7 +1,7 @@
 BINARY := job
 PKG    := ./cmd/job
 
-.PHONY: build install run test fmt fix vet clean help
+.PHONY: build install run test test-js fmt fix vet clean help
 
 build:
 	go build -o $(BINARY) $(PKG)
@@ -15,6 +15,12 @@ run:
 
 test:
 	go test ./...
+
+# JS tests (Node 18+ built-in test runner). Tests live in
+# internal/web/jstest/, outside the asset embed so they aren't
+# served. They import production modules from internal/web/assets/js/.
+test-js:
+	node --test 'internal/web/jstest/*.test.mjs'
 
 fmt:
 	go fmt ./...
@@ -33,7 +39,8 @@ help:
 	@echo "  build    - compile ./$(BINARY) from $(PKG)"
 	@echo "  install  - go install to \$$GOBIN"
 	@echo "  run      - go run (pass args via ARGS=\"...\")"
-	@echo "  test     - run all tests"
+	@echo "  test     - run all Go tests"
+	@echo "  test-js  - run JS tests (node --test internal/web/jstest/)"
 	@echo "  fmt      - go fmt ./..."
 	@echo "  fix      - go fix ./..."
 	@echo "  vet      - go vet ./..."

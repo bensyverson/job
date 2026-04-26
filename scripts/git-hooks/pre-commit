@@ -50,6 +50,15 @@ fi
 echo "==> go test"
 go test ./...
 
+# JS tests run only when the node --test runner is available and the
+# jstest dir exists. Lets the hook pass on environments without Node;
+# in dev where Node is installed (the dashboard's design doc requires
+# nothing else), regressions block commits the same way Go ones do.
+if [ -d internal/web/jstest ] && command -v node > /dev/null; then
+  echo "==> node --test internal/web/jstest/*.test.mjs"
+  node --test 'internal/web/jstest/'*.test.mjs
+fi
+
 echo "==> go build"
 go build ./...
 

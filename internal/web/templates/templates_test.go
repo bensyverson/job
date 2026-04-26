@@ -195,6 +195,33 @@ func TestEngine_Render_FooterHasMetricsAndScrubberPill(t *testing.T) {
 	mustContain(t, out, `class="c-footer__heartbeat"`)
 }
 
+// The scrubber chrome (strip + history banner) ships rendered in the
+// page but hidden by default. JS reveals them when the user enters
+// scrubbing mode. Asserting the markup here keeps the layout in sync
+// with what scrubber-pill.mjs expects.
+func TestEngine_Render_ScrubberStripAndHistoryBannerPresentHidden(t *testing.T) {
+	out := renderHome(t, newEngine(t))
+	if !strings.Contains(out, `data-scrubber-strip`) {
+		t.Errorf("missing data-scrubber-strip section\n---\n%s", out)
+	}
+	if !strings.Contains(out, `data-scrubber-strip aria-label="Scrubber" hidden`) {
+		t.Errorf("scrubber strip should be hidden by default")
+	}
+	if !strings.Contains(out, `data-history-banner`) {
+		t.Errorf("missing data-history-banner")
+	}
+	if !strings.Contains(out, `data-history-banner hidden`) {
+		t.Errorf("history banner should be hidden by default")
+	}
+	// The cursor placeholder is in DOM so JS can position it without
+	// creating elements.
+	mustContain(t, out, `class="c-scrubber-strip__cursor"`)
+	// Return-to-live buttons live in both strip and banner.
+	if strings.Count(out, `data-scrubber-return`) < 2 {
+		t.Errorf("expected two data-scrubber-return buttons (strip + banner)")
+	}
+}
+
 func TestEngine_Render_UsesFingerprintedCSSURL(t *testing.T) {
 	m, err := assets.BuildManifest()
 	if err != nil {

@@ -7,8 +7,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -75,4 +78,40 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	return Serve(ctx, srv, ln)
+}
+
+// ListenWalk binds to addr; if the port is already in use, walks the
+// port number upward by one and tries again, up to maxAttempts times
+// total. Returns the first successful listener. Non-EADDRINUSE errors
+// (malformed addr, missing host, etc.) are surfaced immediately
+// without walking.
+//
+// Used by `job serve` so a stale dashboard on the default port doesn't
+// block a fresh `job serve` invocation. The CLI only walks when the
+// user accepted the default; an explicit --bind fails loud on conflict.
+func ListenWalk(addr string, maxAttempts int) (net.Listener, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	startPort, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("port %q: %w", portStr, err)
+	}
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	var lastErr error
+	for i := 0; i < maxAttempts; i++ {
+		cand := net.JoinHostPort(host, strconv.Itoa(startPort+i))
+		ln, err := net.Listen("tcp", cand)
+		if err == nil {
+			return ln, nil
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf("no free port in %d attempts starting at %s: %w", maxAttempts, addr, lastErr)
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,100 @@ func TestListen_BindError(t *testing.T) {
 		t.Fatal("Listen: expected error for malformed addr, got nil")
 	}
 }
+
+func TestListenWalk_HappyPath(t *testing.T) {
+	// A free port binds on the first try.
+	tmp, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("seed listen: %v", err)
+	}
+	port := tmp.Addr().(*net.TCPAddr).Port
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("close seed: %v", err)
+	}
+
+	addr := net.JoinHostPort("127.0.0.1", itoa(port))
+	ln, err := server.ListenWalk(addr, 5)
+	if err != nil {
+		t.Fatalf("ListenWalk(%q, 5): %v", addr, err)
+	}
+	defer ln.Close()
+	got := ln.Addr().(*net.TCPAddr).Port
+	if got != port {
+		t.Errorf("port = %d, want first-try %d", got, port)
+	}
+}
+
+func TestListenWalk_WalksPastInUsePort(t *testing.T) {
+	// Pre-bind two adjacent ports; ListenWalk should land on port+2.
+	first, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("seed first: %v", err)
+	}
+	defer first.Close()
+	port := first.Addr().(*net.TCPAddr).Port
+
+	second, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", itoa(port+1)))
+	if err != nil {
+		// Race: another process grabbed port+1. Skip — the walk-past
+		// behavior is still correct, we just can't assert the exact
+		// landing port here.
+		t.Skipf("could not seed adjacent port %d: %v", port+1, err)
+	}
+	defer second.Close()
+
+	addr := net.JoinHostPort("127.0.0.1", itoa(port))
+	ln, err := server.ListenWalk(addr, 5)
+	if err != nil {
+		t.Fatalf("ListenWalk(%q, 5): %v", addr, err)
+	}
+	defer ln.Close()
+	got := ln.Addr().(*net.TCPAddr).Port
+	if got != port+2 {
+		t.Errorf("walked to port %d, want %d (skipped two in-use ports)", got, port+2)
+	}
+}
+
+func TestListenWalk_ExhaustsAfterMaxAttempts(t *testing.T) {
+	// Pre-bind a contiguous range and ask for one fewer attempt than
+	// the range; ListenWalk must surface an error rather than walk
+	// indefinitely.
+	const bound = 3
+	listeners := make([]net.Listener, 0, bound)
+	first, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("seed first: %v", err)
+	}
+	listeners = append(listeners, first)
+	port := first.Addr().(*net.TCPAddr).Port
+	for i := 1; i < bound; i++ {
+		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", itoa(port+i)))
+		if err != nil {
+			t.Skipf("could not seed contiguous port %d: %v", port+i, err)
+		}
+		listeners = append(listeners, ln)
+	}
+	defer func() {
+		for _, ln := range listeners {
+			ln.Close()
+		}
+	}()
+
+	addr := net.JoinHostPort("127.0.0.1", itoa(port))
+	if _, err := server.ListenWalk(addr, bound); err == nil {
+		t.Fatalf("ListenWalk(%q, %d): expected error after exhausting attempts", addr, bound)
+	}
+}
+
+func TestListenWalk_DoesNotWalkOnNonAddrInUseError(t *testing.T) {
+	// Malformed addr — no walking, surface the parse error directly.
+	_, err := server.ListenWalk("127.0.0.1:not-a-port", 20)
+	if err == nil {
+		t.Fatal("ListenWalk: expected error on malformed addr, got nil")
+	}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func TestServe_RespondsToRequests(t *testing.T) {
 	// Home queries the DB for signal cards, so the server test needs

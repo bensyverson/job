@@ -30,6 +30,7 @@
   </div>
 </section>
 
+<section class="c-section" aria-label="Event log">
 <div class="c-log-live" aria-live="polite">
   <span class="c-log-live__dot"></span>
   <span>SSR snapshot · newest first</span>
@@ -64,6 +65,7 @@
     <span class="t-muted">No events match the current filters.</span>
   </div>
   {{end}}
-  {{if .HasMore}}<a class="c-log-more" href="{{.MoreURL}}">load older →</a>{{end}}
+  {{if .HasMore}}<a class="c-log-row c-log-row--more" href="{{.MoreURL}}" role="listitem">load older →</a>{{end}}
 </div>
+</section>
 {{end}}

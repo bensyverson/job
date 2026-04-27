@@ -198,7 +198,7 @@ func TestLog_PaginationCapsInitialRender(t *testing.T) {
 		t.Errorf("?limit=5 should render 5 rows, got %d", rows)
 	}
 	// HasMore affordance present.
-	mustContain(t, body, `c-log-more`)
+	mustContain(t, body, `c-log-row--more`)
 }
 
 func TestLog_PaginationLoadMoreFiltersOlderEvents(t *testing.T) {
@@ -241,7 +241,7 @@ func TestLog_PaginationOmitsLoadMoreWhenAllEventsFit(t *testing.T) {
 	deps := newLogDeps(t, db)
 	body := fetchLog(t, deps, "limit=10")
 
-	if strings.Contains(body, `c-log-more`) {
+	if strings.Contains(body, `c-log-row--more`) {
 		t.Errorf("with no more events to fetch, the load-more affordance should not render")
 	}
 }

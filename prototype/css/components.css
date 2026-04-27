@@ -102,11 +102,15 @@
 
 /* ---------- ID pill ---------- */
 
+/* Pill chrome is brighter than raised so it reads as a distinct chip
+   against any surface tier; text is muted so the short_id recedes
+   versus the task title sitting next to it. (Row contexts that need
+   the pill to inherit a status tint override .color elsewhere.) */
 .c-id-pill {
   display: inline-flex;
   align-items: center;
-  background: var(--color-surface-raised);
-  color: var(--color-on-surface);
+  background: var(--color-outline);
+  color: var(--color-on-surface-muted);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
@@ -120,7 +124,8 @@ a.c-id-pill {
 }
 
 a.c-id-pill:hover {
-  background: var(--color-outline);
+  background: var(--color-outline-strong);
+  color: var(--color-on-surface);
 }
 
 /* ---------- Label pill ---------- */
@@ -417,6 +422,24 @@ a.c-id-pill:hover {
 .c-log-row--canceled { color: var(--color-text-done); }
 .c-log-row--blocked { color: var(--color-text-blocked); }
 /* created and noted stay at default text-todo. */
+
+/* "Load older" footer — adopts row chrome (border-top, padding, hover)
+   so it reads as the natural last row of the list. Full-width, centered,
+   muted; only seen when the user has scrolled to the very bottom. */
+a.c-log-row--more {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  text-align: center;
+  text-decoration: none;
+  color: var(--color-on-surface-muted);
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: lowercase;
+}
+a.c-log-row--more:hover {
+  color: var(--color-on-surface);
+}
 
 .c-log-row .c-id-pill {
   color: inherit;
@@ -1688,6 +1711,14 @@ a.c-graph-node__bug:focus-visible {
   background: var(--color-surface-raised);
 }
 
+/* Collapsible rows toggle on row-body click (handled by
+   plan-collapse.js). The pointer cursor advertises that — leaf rows
+   stay default. Interactive children (links, buttons) override this
+   via their own styles, so peek/label/disclosure cursors are unchanged. */
+.c-plan-row[data-collapsed] {
+  cursor: pointer;
+}
+
 /* Row-state text tints — reinforce the pill by tinting the title text.
    Done fades into the visual background; active brightens toward white;
    blocked takes a warm wash; todo/default stays neutral on-surface. */
@@ -2120,6 +2151,14 @@ a.c-graph-node__bug:focus-visible {
   font-size: var(--font-data-id-size);
   color: var(--color-on-surface-muted);
   white-space: nowrap;
+}
+
+/* Blocked panel: the "waiting on …" line carries one or more blocker
+   pills and can run long when several blockers stack up. Allow it to
+   wrap so the column doesn't trigger horizontal scroll on /home. The
+   other panels stay single-line. */
+[data-home-blocked] .c-panel-row__meta {
+  white-space: normal;
 }
 
 /* ---------- Blocked list (vertical) ---------- */

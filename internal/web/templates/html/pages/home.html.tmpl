@@ -39,7 +39,6 @@
         <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--create"></span>{{.Activity.TotalCreate}} new</span>
         <span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--block"></span>{{.Activity.TotalBlock}} blocked</span>
       </div>
-      <div class="c-signal-card__underline"></div>
     </article>
 
     {{/* Newly blocked — count of block edges in the last 10 minutes. */}}
@@ -62,7 +61,7 @@
           <span class="t-muted">No new blocks</span>
         {{- end -}}
       </div>
-      <div class="c-signal-card__underline"></div>
+      {{if gt .NewlyBlocked.ProgressPct 0}}<div class="c-signal-card__underline"></div>{{end}}
     </article>
 
     {{/* Longest active claim. */}}
@@ -85,7 +84,7 @@
         <div class="c-signal-card__value">—</div>
         <div class="c-signal-card__context"><span class="t-muted">No active claims</span></div>
       {{- end -}}
-      <div class="c-signal-card__underline"></div>
+      {{if gt .LongestClaim.ProgressPct 0}}<div class="c-signal-card__underline"></div>{{end}}
     </article>
 
     {{/* Oldest available task. */}}
@@ -105,7 +104,7 @@
         <div class="c-signal-card__value">—</div>
         <div class="c-signal-card__context"><span class="t-muted">Nothing waiting</span></div>
       {{- end -}}
-      <div class="c-signal-card__underline"></div>
+      {{if gt .OldestTodo.ProgressPct 0}}<div class="c-signal-card__underline"></div>{{end}}
     </article>
 
   </div>

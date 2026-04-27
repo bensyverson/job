@@ -1,8 +1,14 @@
 /*
   plan-collapse.js — interactive collapse/expand for the /plan tree.
 
-  Click a .c-plan-row__disclosure button → flip data-collapsed on its
-  row. CSS does the visual hiding; this module is just state.
+  Click a .c-plan-row__disclosure button — or anywhere on the row body
+  that isn't itself an interactive element — to flip data-collapsed on
+  the row. CSS does the visual hiding; this module is just state.
+
+  Whole-row toggle: a click on the row's title text, description, or
+  empty chrome toggles the subtree. Clicks on links (the ID pill,
+  blocker pills, label pills) and buttons fall through to their native
+  behavior so peek and label-filter still work.
 
   Persistence:
   - Per-task collapse state lives in localStorage under jobs.plan.collapse
@@ -117,10 +123,7 @@
 
   // ---------- click handler ----------
 
-  function handleClick(event) {
-    var btn = event.target.closest(".c-plan-row__disclosure");
-    if (!btn) return;
-    var row = btn.closest(".c-plan-row");
+  function toggleRow(row) {
     if (!row) return;
     var shortID = row.getAttribute("data-plan-task");
     var collapsed = row.getAttribute("data-collapsed") === "true";
@@ -129,6 +132,27 @@
     var state = loadStorage();
     state[shortID] = !collapsed;
     saveStorage(state);
+  }
+
+  // A row click toggles when the user lands on inert chrome — title
+  // text, description, the row's padding. We bail on interactive
+  // descendants (links, buttons, inputs) so peek pills and label
+  // pills keep working.
+  function isInteractiveTarget(target) {
+    return !!(target && target.closest && target.closest("a, button, input, summary, [data-peek]"));
+  }
+
+  function handleClick(event) {
+    if (event.defaultPrevented) return;
+    var disclosure = event.target.closest(".c-plan-row__disclosure");
+    if (disclosure) {
+      toggleRow(disclosure.closest(".c-plan-row"));
+      return;
+    }
+    if (isInteractiveTarget(event.target)) return;
+    var row = event.target.closest(".c-plan-row[data-collapsed]");
+    if (!row) return;
+    toggleRow(row);
   }
 
   // ---------- hash navigation ----------

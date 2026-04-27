@@ -64,9 +64,15 @@ function renderActivityCard(a) {
     `<span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--create"></span>${a.TotalCreate} new</span>` +
     `<span class="c-hist-legend__item"><span class="c-hist-swatch c-hist-swatch--block"></span>${a.TotalBlock} blocked</span>` +
     "</div>" +
-    '<div class="c-signal-card__underline"></div>' +
     "</article>"
   );
+}
+
+// At ProgressPct 0 the gray underline track itself reads as a thick
+// bottom border on otherwise-quiet cards. Drop the element entirely
+// when there's no progress to show.
+function underlineHTML(progressPct) {
+  return progressPct > 0 ? '<div class="c-signal-card__underline"></div>' : "";
 }
 
 function renderNewlyBlockedCard(nb) {
@@ -87,7 +93,7 @@ function renderNewlyBlockedCard(nb) {
     "</div>" +
     `<div class="c-signal-card__value">${nb.Count}</div>` +
     `<div class="c-signal-card__context">${context}</div>` +
-    '<div class="c-signal-card__underline"></div>' +
+    underlineHTML(nb.ProgressPct) +
     "</article>"
   );
 }
@@ -114,7 +120,7 @@ function renderLongestClaimCard(lc) {
     "</div>" +
     value +
     context +
-    '<div class="c-signal-card__underline"></div>' +
+    underlineHTML(lc.ProgressPct) +
     "</article>"
   );
 }
@@ -139,7 +145,7 @@ function renderOldestTodoCard(ot) {
     "</div>" +
     value +
     context +
-    '<div class="c-signal-card__underline"></div>' +
+    underlineHTML(ot.ProgressPct) +
     "</article>"
   );
 }

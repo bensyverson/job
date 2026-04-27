@@ -192,6 +192,35 @@ test("renderSignals: oldest-todo absent shows em-dash + 'Nothing waiting'", () =
   assert.match(html, /Nothing waiting/);
 });
 
+// Hide the underline for cards with zero progress — at 0% the gray
+// track reads as a thick bottom border. The activity card has no
+// progress concept and never emits the underline.
+test("renderSignals: activity card never renders the underline", () => {
+  const html = renderSignals(defaultBag());
+  // Slice out just the activity card (first card) for an isolated check.
+  const activitySlice = html.slice(0, html.indexOf("Newly blocked"));
+  assert.doesNotMatch(activitySlice, /c-signal-card__underline/);
+});
+
+test("renderSignals: progress cards omit underline when ProgressPct is 0", () => {
+  const html = renderSignals(defaultBag());
+  // Three progress cards all at ProgressPct 0 → zero underline elements.
+  const matches = html.match(/c-signal-card__underline/g) || [];
+  assert.equal(matches.length, 0);
+});
+
+test("renderSignals: progress cards render underline when ProgressPct > 0", () => {
+  const html = renderSignals(
+    defaultBag({
+      NewlyBlocked: { Count: 2, Items: [], ProgressPct: 40 },
+      LongestClaim: { Present: false, ProgressPct: 60 },
+      OldestTodo: { Present: false, ProgressPct: 80 },
+    }),
+  );
+  const matches = html.match(/c-signal-card__underline/g) || [];
+  assert.equal(matches.length, 3);
+});
+
 // --- Active claims panel ---
 
 test("renderActiveClaims: section carries data-home-claims and meta count", () => {

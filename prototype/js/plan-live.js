@@ -58,6 +58,14 @@
       var doc = new DOMParser().parseFromString(html, "text/html");
       var fresh = doc.querySelector("main .c-section[aria-label='Plan']");
       if (!fresh) return;
+      // Capture the cursor row before the swap so the focus ring
+      // persists through the live refetch — without this, the focused
+      // row is yanked from the DOM and the ring vanishes.
+      var activeShortID =
+        window.JobsPlanKeyboard &&
+        typeof window.JobsPlanKeyboard.getActive === "function"
+          ? window.JobsPlanKeyboard.getActive()
+          : "";
       section.replaceWith(fresh);
       // Also refresh the filter strip — label frequencies and the
       // top-N membership shift as tasks open and close. Same scope
@@ -80,6 +88,18 @@
         typeof window.JobsPlanCollapse.applyStored === "function"
       ) {
         window.JobsPlanCollapse.applyStored();
+      }
+      if (window.JobsPlanKeyboard) {
+        if (
+          activeShortID &&
+          typeof window.JobsPlanKeyboard.setActive === "function"
+        ) {
+          window.JobsPlanKeyboard.setActive(activeShortID);
+        } else if (
+          typeof window.JobsPlanKeyboard.ensurePrimed === "function"
+        ) {
+          window.JobsPlanKeyboard.ensurePrimed();
+        }
       }
     } catch (_) {
       // Network blip; the next event triggers another refresh.

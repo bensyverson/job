@@ -2003,6 +2003,23 @@ a.c-graph-node__bug:focus-visible {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
+/* Active-row ring for keyboard nav. data-active is applied by
+   plan-keyboard.js and survives the section swap that plan-live.js
+   performs on every live event, so the cursor doesn't visually
+   disappear when the tree refetches mid-keystroke. We suppress the
+   browser-default outline on plain :focus so the two indicators don't
+   compete; data-active is set on every focusRow call, so the rings
+   are equivalent during normal nav. */
+.c-plan-row[data-active] {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 4px var(--focus-ring-outer-color);
+}
+
+.c-plan-row:focus {
+  outline: none;
+}
+
 .c-plan-row__disclosure {
   width: 16px;
   height: 16px;

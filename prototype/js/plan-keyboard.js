@@ -25,6 +25,14 @@
   Persistence: collapse toggles done via the keyboard write to the
   same localStorage key plan-collapse owns, so reload picks up the
   same state regardless of which surface drove the change.
+
+  Active row: the cursor row carries data-active in addition to
+  receiving browser focus. Styling targets data-active (not :focus)
+  so the ring survives transient focus loss — most importantly the
+  section swap that plan-live.js performs on every live event.
+  Escape clears data-active. window.JobsPlanKeyboard exposes
+  getActive/setActive so plan-live can restore the cursor after a
+  swap.
 */
 
 (function () {
@@ -67,10 +75,33 @@
       .forEach(function (r) {
         if (r !== row) r.tabIndex = -1;
       });
+    document
+      .querySelectorAll(".c-plan-row[data-active]")
+      .forEach(function (r) {
+        if (r !== row) r.removeAttribute("data-active");
+      });
     row.tabIndex = 0;
+    row.setAttribute("data-active", "true");
     row.focus();
     if (typeof row.scrollIntoView === "function") {
       row.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function clearActive() {
+    document
+      .querySelectorAll(".c-plan-row[data-active]")
+      .forEach(function (r) {
+        r.removeAttribute("data-active");
+      });
+    var active = document.activeElement;
+    if (
+      active &&
+      active.matches &&
+      active.matches(".c-plan-row[data-plan-task]") &&
+      typeof active.blur === "function"
+    ) {
+      active.blur();
     }
   }
 
@@ -83,6 +114,10 @@
     ) {
       return active;
     }
+    var marked = document.querySelector(
+      ".c-plan-row[data-active][data-plan-task]"
+    );
+    if (marked && rows.indexOf(marked) !== -1) return marked;
     return rows[0] || null;
   }
 
@@ -204,10 +239,33 @@
         focusRow(rows[rows.length - 1]);
         break;
       }
+      case "Escape": {
+        clearActive();
+        break;
+      }
       default:
         handled = false;
     }
 
     if (handled) ev.preventDefault();
   }
+
+  // Exposed for plan-live.js to preserve the cursor row across the
+  // section swap that fires on every live event.
+  window.JobsPlanKeyboard = {
+    getActive: function () {
+      var row = document.querySelector(
+        ".c-plan-row[data-active][data-plan-task]"
+      );
+      return row ? row.getAttribute("data-plan-task") : "";
+    },
+    setActive: function (shortID) {
+      if (!shortID) return;
+      var row = document.querySelector(
+        '.c-plan-row[data-plan-task="' + shortID + '"]'
+      );
+      if (row) focusRow(row);
+    },
+    ensurePrimed: primeFirstRow,
+  };
 })();

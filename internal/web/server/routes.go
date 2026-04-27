@@ -52,6 +52,7 @@ func NewMux(ctx context.Context, cfg Config) http.Handler {
 	mux.Handle("GET /log", handlers.Log(deps))
 	mux.Handle("GET /events", handlers.Events(deps))
 	mux.Handle("GET /labels/{name}", handlers.Plan(deps))
+	mux.Handle("GET /search", handlers.Search(deps))
 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", manifest.Handler()))
 

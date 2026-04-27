@@ -147,11 +147,13 @@ a.c-id-pill:hover {
   text-decoration: none;
 }
 
-/* Re-asserts the label-color border on hover. Without this, the
-   global a:hover rule (border-bottom-color: outline-strong) wins
-   specificity-wise on the label-pill anchors and only the bottom
-   border darkens, which reads as a stray underline. */
+/* Hover doubles the background fill (15% → 30% of --label-color) so
+   the pill reads as solidly highlighted instead of bottom-shadowed.
+   border-color is re-asserted to defeat the global a:hover rule
+   (border-bottom-color: outline-strong), which would otherwise
+   darken just the bottom edge and look like a stray underline. */
 .c-label-pill:hover {
+  background: color-mix(in srgb, var(--label-color, var(--color-outline)) 30%, transparent);
   border-color: var(--label-color, var(--color-outline));
 }
 

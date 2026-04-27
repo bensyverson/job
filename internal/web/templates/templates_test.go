@@ -331,6 +331,28 @@ func TestEngine_Render_LayoutLoadsShortcutsModule(t *testing.T) {
 	}
 }
 
+func TestEngine_Render_LayoutLoadsFaviconModule(t *testing.T) {
+	m, err := assets.BuildManifest()
+	if err != nil {
+		t.Fatalf("BuildManifest: %v", err)
+	}
+	faviconURL := m.URL("js/favicon.mjs")
+	if faviconURL == "" {
+		t.Fatal("manifest missing js/favicon.mjs entry")
+	}
+	out := renderHome(t, newEngine(t))
+	if !strings.Contains(out, faviconURL) {
+		t.Errorf("layout missing fingerprinted favicon.mjs (%s)\n---\n%s", faviconURL, out)
+	}
+}
+
+func TestEngine_Render_LayoutShipsIdleFaviconLink(t *testing.T) {
+	out := renderHome(t, newEngine(t))
+	mustContain(t, out, `<link rel="icon" type="image/svg+xml"`)
+	// idle disc carries the muted token color, percent-encoded.
+	mustContain(t, out, `%235a6967`)
+}
+
 func TestEngine_Render_HeaderTabsAdvertiseShortcuts(t *testing.T) {
 	out := renderHome(t, newEngine(t))
 	mustContain(t, out, `title="Home (press 1)"`)

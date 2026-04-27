@@ -170,7 +170,7 @@ export function renderActiveClaims(panel) {
   if (panel.Rows && panel.Rows.length > 0) {
     body = panel.Rows.map(
       (r) =>
-        '<div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto" ' +
+        '<div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) auto 1fr auto" ' +
         `data-claimed-at="${r.ClaimedAtUnix}">` +
         `<a href="${escapeHTML(r.ActorURL)}" class="c-avatar c-avatar-sm" data-actor="${escapeHTML(r.Actor)}" aria-label="Actor ${escapeHTML(r.Actor)}"></a>` +
         `<span class="c-id-pill">${escapeHTML(r.TaskShortID)}</span>` +
@@ -198,7 +198,7 @@ export function renderRecentCompletions(panel) {
   if (panel.Rows && panel.Rows.length > 0) {
     body = panel.Rows.map(
       (r) =>
-        '<div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">' +
+        '<div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) auto 1fr auto">' +
         `<a href="${escapeHTML(r.ActorURL)}" class="c-avatar c-avatar-sm" data-actor="${escapeHTML(r.Actor)}" aria-label="Actor ${escapeHTML(r.Actor)}"></a>` +
         `<span class="c-id-pill">${escapeHTML(r.TaskShortID)}</span>` +
         `<span class="c-panel-row__title">${escapeHTML(r.TaskTitle)}</span>` +
@@ -225,7 +225,7 @@ export function renderUpcoming(panel) {
   if (panel.Rows && panel.Rows.length > 0) {
     body = panel.Rows.map(
       (r) =>
-        `<div class="c-panel-row" style="--row-cols: 80px 1fr auto" data-created-at="${r.CreatedAtUnix}">` +
+        `<div class="c-panel-row" style="--row-cols: auto 1fr auto" data-created-at="${r.CreatedAtUnix}">` +
         `<span class="c-id-pill">${escapeHTML(r.TaskShortID)}</span>` +
         `<span class="c-panel-row__title">${escapeHTML(r.TaskTitle)}</span>` +
         `<span class="c-panel-row__meta">${escapeHTML(r.AgeText)}</span>` +
@@ -256,7 +256,7 @@ export function renderBlocked(panel) {
           `<a href="${escapeHTML(b.URL)}" class="c-id-pill">${escapeHTML(b.ShortID)}</a>`,
       ).join("");
       return (
-        '<div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">' +
+        '<div class="c-panel-row c-panel-row--stacked" style="--row-cols: auto 1fr">' +
         `<span class="c-id-pill">${escapeHTML(r.TaskShortID)}</span>` +
         '<div class="stack stack-gap-xs">' +
         `<span class="c-panel-row__title">${escapeHTML(r.TaskTitle)}</span>` +

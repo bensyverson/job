@@ -479,7 +479,10 @@ a.c-id-pill:hover {
 .c-log-row {
   position: relative;
   display: grid;
-  grid-template-columns: 56px minmax(90px, 120px) 78px 80px minmax(0, 1fr);
+  /* time | actor | verb | id-pill | detail. id-pill column is auto so
+     it hugs the pill's content (≈45px for a 5-char short_id in the mono
+     font) instead of leaving ~35px of dead space before the title. */
+  grid-template-columns: 56px minmax(90px, 120px) 78px auto minmax(0, 1fr);
   align-items: center;
   gap: var(--space-md);
   padding: 8px var(--space-lg);

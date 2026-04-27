@@ -459,6 +459,41 @@ func TestHome_RecentCompletions_RendersDoneAndCanceled(t *testing.T) {
 	}
 }
 
+// Regression guard for uLott: the four panel-row layouts on Home
+// previously hard-coded the ID-pill column at 80px, leaving a wide
+// dead-space gap between the pill and the title. They now use `auto`
+// so the column hugs the pill's content width.
+func TestHome_PanelRows_IDPillColumnIsAutoSized(t *testing.T) {
+	db := setupLogTestDB(t)
+	deps := newLogDeps(t, db)
+	now := time.Now()
+
+	// Seed one row per panel so each --row-cols string actually renders.
+	rcID := homeSeedTask(t, db, "rc", "shipped", "done", now.Add(-1*time.Hour))
+	homeSeedEventActor(t, db, rcID, "done", "a", now.Add(-1*time.Minute))
+	acID := homeSeedTask(t, db, "ac", "in flight", "claimed", now.Add(-1*time.Hour))
+	homeSeedClaim(t, db, acID, "a", now.Add(-1*time.Minute))
+	upID := homeSeedTask(t, db, "up", "next up", "available", now.Add(-1*time.Hour))
+	_ = upID
+	bkID := homeSeedTask(t, db, "bk", "stuck", "available", now.Add(-1*time.Hour))
+	blkID := homeSeedTask(t, db, "blk", "blocker", "available", now.Add(-1*time.Hour))
+	homeSeedBlock(t, db, bkID, blkID, now.Add(-5*time.Minute))
+
+	body := fetchHome(t, deps)
+
+	// Recent completions / Active claims share the avatar + id-pill layout.
+	mustContain(t, body, `--row-cols: var(--avatar-sm-size) auto 1fr auto`)
+	// Available has no avatar — id-pill is the leading column.
+	mustContain(t, body, `--row-cols: auto 1fr auto`)
+	// Blocked is stacked (two-line meta) — id-pill + stack.
+	mustContain(t, body, `--row-cols: auto 1fr"`)
+
+	if strings.Contains(body, "--row-cols: var(--avatar-sm-size) 80px") ||
+		strings.Contains(body, "--row-cols: 80px ") {
+		t.Errorf("panel rows still hardcode 80px id-pill column; expected auto")
+	}
+}
+
 func TestHome_RecentCompletions_OrdersNewestFirst(t *testing.T) {
 	db := setupLogTestDB(t)
 	deps := newLogDeps(t, db)

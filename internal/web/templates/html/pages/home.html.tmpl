@@ -134,7 +134,7 @@
     <div class="c-panel__list">
       {{- if .RecentCompletions.Rows -}}
         {{- range .RecentCompletions.Rows -}}
-          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto">
+          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) auto 1fr auto">
             <a href="{{.ActorURL}}" class="c-avatar c-avatar-sm" data-actor="{{.Actor}}" aria-label="Actor {{.Actor}}"></a>
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <span class="c-panel-row__title">{{.TaskTitle}}</span>
@@ -158,7 +158,7 @@
     <div class="c-panel__list">
       {{- if .ActiveClaims.Rows -}}
         {{- range .ActiveClaims.Rows -}}
-          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) 80px 1fr auto" data-claimed-at="{{.ClaimedAtUnix}}">
+          <div class="c-panel-row" style="--row-cols: var(--avatar-sm-size) auto 1fr auto" data-claimed-at="{{.ClaimedAtUnix}}">
             <a href="{{.ActorURL}}" class="c-avatar c-avatar-sm" data-actor="{{.Actor}}" aria-label="Actor {{.Actor}}"></a>
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <span class="c-panel-row__title">{{.TaskTitle}}</span>
@@ -182,7 +182,7 @@
     <div class="c-panel__list">
       {{- if .Upcoming.Rows -}}
         {{- range .Upcoming.Rows -}}
-          <div class="c-panel-row" style="--row-cols: 80px 1fr auto" data-created-at="{{.CreatedAtUnix}}">
+          <div class="c-panel-row" style="--row-cols: auto 1fr auto" data-created-at="{{.CreatedAtUnix}}">
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <span class="c-panel-row__title">{{.TaskTitle}}</span>
             <span class="c-panel-row__meta">{{.AgeText}}</span>
@@ -205,7 +205,7 @@
     <div class="c-panel__list">
       {{- if .Blocked.Rows -}}
         {{- range .Blocked.Rows -}}
-          <div class="c-panel-row c-panel-row--stacked" style="--row-cols: 80px 1fr">
+          <div class="c-panel-row c-panel-row--stacked" style="--row-cols: auto 1fr">
             <span class="c-id-pill">{{.TaskShortID}}</span>
             <div class="stack stack-gap-xs">
               <span class="c-panel-row__title">{{.TaskTitle}}</span>

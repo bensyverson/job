@@ -65,14 +65,58 @@ func TestSearch_MatchesByNote(t *testing.T) {
 	}
 }
 
+// Updated under the new design: label-name matches return a label hit (the
+// label itself), which routes the user to /labels/<name>.
 func TestSearch_MatchesByLabel(t *testing.T) {
 	db := setupLogTestDB(t)
-	mustAdd(t, db, "alice", "Labeled task", nil, []string{"searchable"})
+	mustAdd(t, db, "alice", "Unrelated", nil, []string{"searchable"})
 	deps := newLogDeps(t, db)
 
 	body := fetchSearch(t, deps, "q=searchable")
-	if !strings.Contains(body, "Labeled task") {
-		t.Errorf("expected search result by label")
+	if !strings.Contains(body, `"kind":"label"`) {
+		t.Errorf("expected a label-kind result: %s", body)
+	}
+	if !strings.Contains(body, `"name":"searchable"`) {
+		t.Errorf("expected label name 'searchable': %s", body)
+	}
+	if !strings.Contains(body, `"url":"/labels/searchable"`) {
+		t.Errorf("expected label url '/labels/searchable': %s", body)
+	}
+}
+
+func TestSearch_TaskResultShape(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAdd(t, db, "alice", "Polish UI", nil, nil)
+	deps := newLogDeps(t, db)
+
+	body := fetchSearch(t, deps, "q=Polish")
+	for _, want := range []string{
+		`"kind":"task"`,
+		`"title":"Polish UI"`,
+		`"match_source":"title"`,
+		`"url":"/tasks/`,
+		`"display_status":`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in body: %s", want, body)
+		}
+	}
+}
+
+func TestSearch_DescriptionMatchHasExcerpt(t *testing.T) {
+	db := setupLogTestDB(t)
+	mustAddWithDesc(t, db, "alice", "T", "the quick brown fox jumps over", nil, nil)
+	deps := newLogDeps(t, db)
+
+	body := fetchSearch(t, deps, "q=quick")
+	if !strings.Contains(body, `"match_source":"description"`) {
+		t.Errorf("expected match_source description: %s", body)
+	}
+	if !strings.Contains(body, `"excerpt":`) {
+		t.Errorf("expected excerpt field: %s", body)
+	}
+	if !strings.Contains(body, `quick`) {
+		t.Errorf("expected excerpt to contain match: %s", body)
 	}
 }
 

@@ -3,6 +3,7 @@ package job
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -52,6 +53,18 @@ func searchMustDone(t *testing.T, db *sql.DB, shortID, actor string) {
 	}
 }
 
+// pickTask returns the first hit with Kind == "task". Fails the test if none.
+func pickTask(t *testing.T, hits []SearchHit) SearchHit {
+	t.Helper()
+	for _, h := range hits {
+		if h.Kind == "task" {
+			return h
+		}
+	}
+	t.Fatalf("no task hit in %+v", hits)
+	return SearchHit{}
+}
+
 func TestRunSearch_MatchesByShortID(t *testing.T) {
 	db := setupSearchTestDB(t)
 	id := searchMustAdd(t, db, "alice", "Some task", "", nil, nil)
@@ -63,8 +76,15 @@ func TestRunSearch_MatchesByShortID(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(hits))
 	}
-	if hits[0].ShortID != id {
-		t.Errorf("expected short_id %q, got %q", id, hits[0].ShortID)
+	h := hits[0]
+	if h.Kind != "task" {
+		t.Errorf("Kind = %q, want %q", h.Kind, "task")
+	}
+	if h.ShortID != id {
+		t.Errorf("ShortID = %q, want %q", h.ShortID, id)
+	}
+	if h.MatchSource != "short_id" {
+		t.Errorf("MatchSource = %q, want %q", h.MatchSource, "short_id")
 	}
 }
 
@@ -79,14 +99,18 @@ func TestRunSearch_MatchesByTitle(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(hits))
 	}
-	if hits[0].Title != "Dashboard polish" {
-		t.Errorf("expected title %q, got %q", "Dashboard polish", hits[0].Title)
+	h := hits[0]
+	if h.Kind != "task" || h.MatchSource != "title" {
+		t.Errorf("got Kind=%q MatchSource=%q, want task/title", h.Kind, h.MatchSource)
+	}
+	if h.Excerpt != "" {
+		t.Errorf("Excerpt should be empty for title match, got %q", h.Excerpt)
 	}
 }
 
 func TestRunSearch_MatchesByDescription(t *testing.T) {
 	db := setupSearchTestDB(t)
-	searchMustAdd(t, db, "alice", "Task", "Build the search index", nil, nil)
+	searchMustAdd(t, db, "alice", "Task", "Build the search index now", nil, nil)
 
 	hits, err := RunSearch(db, "index", 10)
 	if err != nil {
@@ -95,12 +119,22 @@ func TestRunSearch_MatchesByDescription(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(hits))
 	}
+	h := hits[0]
+	if h.Kind != "task" || h.MatchSource != "description" {
+		t.Errorf("got Kind=%q MatchSource=%q, want task/description", h.Kind, h.MatchSource)
+	}
+	if !strings.Contains(strings.ToLower(h.Excerpt), "index") {
+		t.Errorf("Excerpt = %q, want it to contain 'index'", h.Excerpt)
+	}
 }
 
+// RunNote appends note text to tasks.description (see RunNote in tasks.go),
+// so a note-only match surfaces as a description match — that's the field the
+// text actually lives in.
 func TestRunSearch_MatchesByNote(t *testing.T) {
 	db := setupSearchTestDB(t)
 	id := searchMustAdd(t, db, "alice", "Task", "", nil, nil)
-	searchMustNote(t, db, id, "Remember to update docs", "alice")
+	searchMustNote(t, db, id, "Remember to update docs soon", "alice")
 
 	hits, err := RunSearch(db, "docs", 10)
 	if err != nil {
@@ -109,32 +143,180 @@ func TestRunSearch_MatchesByNote(t *testing.T) {
 	if len(hits) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(hits))
 	}
+	h := hits[0]
+	if h.Kind != "task" || h.MatchSource != "description" {
+		t.Errorf("got Kind=%q MatchSource=%q, want task/description", h.Kind, h.MatchSource)
+	}
+	if !strings.Contains(strings.ToLower(h.Excerpt), "docs") {
+		t.Errorf("Excerpt = %q, want it to contain 'docs'", h.Excerpt)
+	}
 }
 
+// Updated under the new design: a label-name match returns a label hit (the
+// label itself), not a task. Selecting the label routes to /labels/<name>.
 func TestRunSearch_MatchesByLabel(t *testing.T) {
 	db := setupSearchTestDB(t)
-	searchMustAdd(t, db, "alice", "Task", "", nil, []string{"search"})
+	searchMustAdd(t, db, "alice", "Some unrelated title", "", nil, []string{"search"})
 
 	hits, err := RunSearch(db, "search", 10)
 	if err != nil {
 		t.Fatalf("RunSearch: %v", err)
 	}
-	if len(hits) != 1 {
-		t.Fatalf("expected 1 hit, got %d", len(hits))
+	// Expect at least one label hit; the task title doesn't match "search".
+	var foundLabel bool
+	for _, h := range hits {
+		if h.Kind == "label" && h.Name == "search" {
+			foundLabel = true
+		}
+		if h.Kind == "task" {
+			t.Errorf("did not expect a task hit; got %+v", h)
+		}
+	}
+	if !foundLabel {
+		t.Fatalf("expected a label hit for 'search', got %+v", hits)
 	}
 }
 
+func TestRunSearch_LabelDedup(t *testing.T) {
+	db := setupSearchTestDB(t)
+	searchMustAdd(t, db, "alice", "T1", "", nil, []string{"search"})
+	searchMustAdd(t, db, "alice", "T2", "", nil, []string{"search"})
+	searchMustAdd(t, db, "alice", "T3", "", nil, []string{"search"})
+
+	hits, err := RunSearch(db, "search", 20)
+	if err != nil {
+		t.Fatalf("RunSearch: %v", err)
+	}
+	var labelCount int
+	for _, h := range hits {
+		if h.Kind == "label" && h.Name == "search" {
+			labelCount++
+		}
+	}
+	if labelCount != 1 {
+		t.Errorf("expected 1 deduped label hit, got %d", labelCount)
+	}
+}
+
+func TestRunSearch_LabelCap(t *testing.T) {
+	db := setupSearchTestDB(t)
+	for i := range 7 {
+		searchMustAdd(t, db, "alice", "T"+string(rune('A'+i)), "",
+			nil, []string{"foo" + string(rune('A'+i))})
+	}
+
+	hits, err := RunSearch(db, "foo", 50)
+	if err != nil {
+		t.Fatalf("RunSearch: %v", err)
+	}
+	var labelCount int
+	for _, h := range hits {
+		if h.Kind == "label" {
+			labelCount++
+		}
+	}
+	if labelCount > 5 {
+		t.Errorf("expected at most 5 label hits, got %d", labelCount)
+	}
+	if labelCount < 5 {
+		t.Errorf("expected exactly 5 label hits when 7 distinct labels match, got %d", labelCount)
+	}
+}
+
+func TestRunSearch_RankOrder(t *testing.T) {
+	db := setupSearchTestDB(t)
+	titleHit := searchMustAdd(t, db, "alice", "wombat title", "", nil, nil)
+	descHit := searchMustAdd(t, db, "alice", "Other", "wombat in description", nil, nil)
+
+	hits, err := RunSearch(db, "wombat", 20)
+	if err != nil {
+		t.Fatalf("RunSearch: %v", err)
+	}
+	var taskShortIDs []string
+	for _, h := range hits {
+		if h.Kind == "task" {
+			taskShortIDs = append(taskShortIDs, h.ShortID)
+		}
+	}
+	if len(taskShortIDs) != 2 {
+		t.Fatalf("expected 2 task hits, got %d (%v)", len(taskShortIDs), taskShortIDs)
+	}
+	if taskShortIDs[0] != titleHit {
+		t.Errorf("rank[0] = %q, want title hit %q", taskShortIDs[0], titleHit)
+	}
+	if taskShortIDs[1] != descHit {
+		t.Errorf("rank[1] = %q, want description hit %q", taskShortIDs[1], descHit)
+	}
+}
+
+func TestRunSearch_ExactShortIDRanksFirst(t *testing.T) {
+	db := setupSearchTestDB(t)
+	exactID := searchMustAdd(t, db, "alice", "Plain title", "", nil, nil)
+	// Another task whose title contains the first task's short_id.
+	searchMustAdd(t, db, "alice", "References "+exactID+" inline", "", nil, nil)
+
+	hits, err := RunSearch(db, exactID, 20)
+	if err != nil {
+		t.Fatalf("RunSearch: %v", err)
+	}
+	if len(hits) < 2 {
+		t.Fatalf("expected at least 2 hits, got %d (%+v)", len(hits), hits)
+	}
+	if hits[0].Kind != "task" || hits[0].ShortID != exactID {
+		t.Errorf("first hit = %+v, want exact short_id %q", hits[0], exactID)
+	}
+	if hits[0].MatchSource != "short_id" {
+		t.Errorf("MatchSource = %q, want short_id", hits[0].MatchSource)
+	}
+}
+
+func TestRunSearch_ExcerptElision(t *testing.T) {
+	db := setupSearchTestDB(t)
+	long := strings.Repeat("alpha ", 30) + "needle " + strings.Repeat("omega ", 30)
+	searchMustAdd(t, db, "alice", "T", long, nil, nil)
+
+	hits, err := RunSearch(db, "needle", 10)
+	if err != nil {
+		t.Fatalf("RunSearch: %v", err)
+	}
+	h := pickTask(t, hits)
+	if !strings.HasPrefix(h.Excerpt, "…") {
+		t.Errorf("Excerpt should start with '…' when text elided on left: %q", h.Excerpt)
+	}
+	if !strings.HasSuffix(h.Excerpt, "…") {
+		t.Errorf("Excerpt should end with '…' when text elided on right: %q", h.Excerpt)
+	}
+	if !strings.Contains(h.Excerpt, "needle") {
+		t.Errorf("Excerpt missing 'needle': %q", h.Excerpt)
+	}
+}
+
+// Updated under the new design: searching "search" against a task that
+// matches via title AND desc AND note AND label produces 1 task hit (deduped)
+// plus 1 label hit (the label "search" itself).
 func TestRunSearch_Deduplicates(t *testing.T) {
 	db := setupSearchTestDB(t)
 	id := searchMustAdd(t, db, "alice", "Search task", "search desc", nil, []string{"search"})
 	searchMustNote(t, db, id, "search note", "alice")
 
-	hits, err := RunSearch(db, "search", 10)
+	hits, err := RunSearch(db, "search", 20)
 	if err != nil {
 		t.Fatalf("RunSearch: %v", err)
 	}
-	if len(hits) != 1 {
-		t.Fatalf("expected 1 deduplicated hit, got %d", len(hits))
+	var taskHits, labelHits int
+	for _, h := range hits {
+		switch h.Kind {
+		case "task":
+			taskHits++
+		case "label":
+			labelHits++
+		}
+	}
+	if taskHits != 1 {
+		t.Errorf("expected 1 deduped task hit, got %d", taskHits)
+	}
+	if labelHits != 1 {
+		t.Errorf("expected 1 label hit, got %d", labelHits)
 	}
 }
 
@@ -147,8 +329,7 @@ func TestRunSearch_PrioritySort(t *testing.T) {
 
 	searchMustClaim(t, db, claimed, "alice")
 	searchMustDone(t, db, done, "alice")
-	_, _, _, err := RunCancel(db, []string{canceled}, "test", false, false, false, "alice")
-	if err != nil {
+	if _, _, _, err := RunCancel(db, []string{canceled}, "test", false, false, false, "alice"); err != nil {
 		t.Fatalf("RunCancel: %v", err)
 	}
 
@@ -156,13 +337,19 @@ func TestRunSearch_PrioritySort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunSearch: %v", err)
 	}
-	if len(hits) != 4 {
-		t.Fatalf("expected 4 hits, got %d", len(hits))
+	var statuses []string
+	for _, h := range hits {
+		if h.Kind == "task" {
+			statuses = append(statuses, h.Status)
+		}
 	}
 	want := []string{"claimed", "available", "done", "canceled"}
-	for i, h := range hits {
-		if h.Status != want[i] {
-			t.Errorf("hit[%d].status = %q, want %q", i, h.Status, want[i])
+	if len(statuses) != len(want) {
+		t.Fatalf("expected %d task hits, got %d (%v)", len(want), len(statuses), statuses)
+	}
+	for i, s := range want {
+		if statuses[i] != s {
+			t.Errorf("status[%d] = %q, want %q", i, statuses[i], s)
 		}
 	}
 }

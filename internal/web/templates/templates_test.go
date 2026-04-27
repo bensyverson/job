@@ -294,6 +294,28 @@ func TestEngine_Render_MountsLiveRegionAndScript(t *testing.T) {
 	}
 }
 
+func TestEngine_Render_HeaderShipsSearchInputAndDropdown(t *testing.T) {
+	out := renderHome(t, newEngine(t))
+	mustContain(t, out, `data-search-root`)
+	mustContain(t, out, `data-search-input`)
+	mustContain(t, out, `data-search-results`)
+}
+
+func TestEngine_Render_LayoutLoadsSearchModule(t *testing.T) {
+	m, err := assets.BuildManifest()
+	if err != nil {
+		t.Fatalf("BuildManifest: %v", err)
+	}
+	searchURL := m.URL("js/search.mjs")
+	if searchURL == "" {
+		t.Fatal("manifest missing js/search.mjs entry")
+	}
+	out := renderHome(t, newEngine(t))
+	if !strings.Contains(out, searchURL) {
+		t.Errorf("layout missing fingerprinted search.mjs (%s)\n---\n%s", searchURL, out)
+	}
+}
+
 func TestEngine_Render_UnknownPageErrors(t *testing.T) {
 	e := newEngine(t)
 	err := e.Render(&bytes.Buffer{}, "no-such-page", templates.Chrome{})

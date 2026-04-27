@@ -11,13 +11,16 @@
     <a href="/log" class="c-tab{{if eq .ActiveTab "log"}} c-tab--active{{end}}">Log</a>
   </nav>
   <div class="grow"></div>
-  <label class="c-header__search row row-gap-sm">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.5" />
-      <path d="M10.5 10.5l3 3" stroke-linecap="round" />
-    </svg>
-    <input type="search" class="c-input" placeholder="Search tasks, actors, labels…  /" aria-label="Search" data-search-input />
-  </label>
+  <div class="c-header__search-wrap" data-search-root>
+    <label class="c-header__search row row-gap-sm">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" />
+        <path d="M10.5 10.5l3 3" stroke-linecap="round" />
+      </svg>
+      <input type="search" class="c-input" placeholder="Search tasks &amp; labels…  /" aria-label="Search" data-search-input autocomplete="off" />
+    </label>
+    <ul class="c-search-dropdown" role="listbox" aria-label="Search results" data-search-results hidden></ul>
+  </div>
   <button class="c-bell" aria-label="Notifications">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
       <path d="M3.5 11.5h9l-1-1.5V7a3.5 3.5 0 0 0-7 0v3l-1 1.5z" stroke-linejoin="round" />

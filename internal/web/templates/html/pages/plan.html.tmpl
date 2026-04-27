@@ -15,7 +15,7 @@
   <div class="c-filter-bar__group" role="group" aria-label="Labels">
     <span class="c-filter-bar__label">Labels</span>
     <a href="{{.AllURL}}" class="c-label-pill c-label-pill--all{{if .AllActive}} c-label-pill--active{{end}}">any</a>
-    {{range .Labels}}<a href="{{.URL}}" class="c-label-pill{{if .Active}} c-label-pill--active{{end}}" data-label="{{.Name}}">{{.Name}}</a>{{end}}
+    {{range .Labels}}<a href="{{.URL}}" class="c-label-pill{{if .Active}} c-label-pill--active{{end}}" data-label="{{.Name}}" style="--label-color: {{.Color}}">{{.Name}}</a>{{end}}
   </div>
 </section>
 
@@ -50,7 +50,7 @@
     <div class="c-plan-row__title-line">
       <span class="c-plan-row__title-text{{if eq .Depth 0}} t-heading-lg{{else if eq .Depth 1}} t-heading-md{{end}}">{{.Title}}</span>
       <a href="{{.URL}}" data-peek class="c-id-pill">{{.ShortID}}</a>
-      {{range .Labels}}<a href="{{.URL}}" class="c-label-pill" data-label="{{.Name}}">{{.Name}}</a>{{end}}
+      {{range .Labels}}<a href="{{.URL}}" class="c-label-pill" data-label="{{.Name}}" style="--label-color: {{.Color}}">{{.Name}}</a>{{end}}
     </div>
     {{if .Description}}<div class="c-plan-row__desc">{{.Description}}</div>{{end}}
   </div>

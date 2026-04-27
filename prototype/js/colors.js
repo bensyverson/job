@@ -25,11 +25,11 @@
   }
 
   function hueFor(name) {
-    return hash(name) % 360;
+    return hash(name + "u") % 360;
   }
 
   function satFor(name) {
-    return (hash(name + " sat") % 50) + 50;
+    return (hash(name + "zzzzzzzz") % 50) + 50;
   }
 
   // Actor: S 65%, L 48% — saturated enough to read, dark enough for
@@ -61,7 +61,12 @@
     root.querySelectorAll("[data-actor]").forEach(function (el) {
       const name = el.getAttribute("data-actor");
       if (!name) return;
-      el.style.setProperty("--actor-color", actorColor(name));
+      // Skip elements where the server (render.ActorColor) already
+      // emitted an inline --actor-color, so SSR-painted avatars don't
+      // visibly repaint to a different value on DOMContentLoaded.
+      if (!el.style.getPropertyValue("--actor-color")) {
+        el.style.setProperty("--actor-color", actorColor(name));
+      }
       // Filled lettered avatars — fill the initial unless the element
       // already has its own content. Excludes the tiny dot form (too
       // small for a letter).
@@ -76,7 +81,12 @@
     root.querySelectorAll("[data-label]").forEach(function (el) {
       const name = el.getAttribute("data-label");
       if (!name) return;
-      el.style.setProperty("--label-color", labelColor(name));
+      // Same SSR-precedence rule as actors: respect the server's
+      // pre-painted --label-color. Eliminates the flash that used to
+      // happen on /plan when colors.js fired on DOMContentLoaded.
+      if (!el.style.getPropertyValue("--label-color")) {
+        el.style.setProperty("--label-color", labelColor(name));
+      }
     });
   }
 

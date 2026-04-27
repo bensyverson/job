@@ -26,18 +26,34 @@ func TestActorColor_HSLShape(t *testing.T) {
 }
 
 func TestActorColor_MatchesJSReference(t *testing.T) {
-	// FNV-1a 32-bit is canonical; we lock the output for two seed strings
-	// so drift between JS and Go is caught. Reference values are produced
-	// by running the prototype's hueFor/satFor in a browser console.
-	// If you change the hash or the S/L constants, update these.
+	// FNV-1a 32-bit is canonical; we lock the output for three seed
+	// strings so drift between JS and Go is caught. Reference values
+	// are produced by running internal/web/assets/js/colors.js's
+	// hueFor/satFor in a browser console (or `node -e` against the
+	// same hash + seed strings).
+	// If you change the hash or the seed strings, update these.
 	cases := map[string]string{
-		"alice":  "hsl(239 67% 48%)",
-		"bob":    "hsl(284 70% 48%)",
-		"claude": "hsl(303 85% 48%)",
+		"alice":  "hsl(30 93% 48%)",
+		"bob":    "hsl(323 68% 48%)",
+		"claude": "hsl(6 55% 48%)",
 	}
 	for name, want := range cases {
 		if got := render.ActorColor(name); got != want {
 			t.Errorf("ActorColor(%q) = %q, want %q (JS-reference lock)", name, got, want)
+		}
+	}
+}
+
+func TestLabelColor_MatchesJSReference(t *testing.T) {
+	// Same hash + seed for hue as ActorColor, fixed S 40 / L 50.
+	cases := map[string]string{
+		"alice":  "hsl(30 40% 50%)",
+		"bob":    "hsl(323 40% 50%)",
+		"claude": "hsl(6 40% 50%)",
+	}
+	for name, want := range cases {
+		if got := render.LabelColor(name); got != want {
+			t.Errorf("LabelColor(%q) = %q, want %q (JS-reference lock)", name, got, want)
 		}
 	}
 }

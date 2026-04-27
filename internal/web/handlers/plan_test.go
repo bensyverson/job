@@ -87,6 +87,10 @@ func TestPlan_RendersTreeWithRootAndChildren(t *testing.T) {
 	// Labels render as label pills on the row.
 	mustContain(t, body, `data-label="web"`)
 	mustContain(t, body, `data-label="tests"`)
+	// Each label pill carries an inline --label-color so colors.js
+	// doesn't have to repaint on DOMContentLoaded (no flash on /plan).
+	mustContain(t, body, `style="--label-color: hsl(212 40% 50%)"`)
+	mustContain(t, body, `style="--label-color: hsl(141 40% 50%)"`)
 	// The short id renders as a link to the task detail page.
 	mustContain(t, body, `href="/tasks/`+root+`"`)
 }
@@ -366,7 +370,7 @@ func TestPlan_LabelStrip_AllPillNotActiveWhenFiltering(t *testing.T) {
 
 	mustContain(t, body, `<a href="/plan" class="c-label-pill c-label-pill--all">any</a>`)
 	// Toggling the active "web" pill removes web → href="/plan".
-	mustContain(t, body, `<a href="/plan" class="c-label-pill c-label-pill--active" data-label="web">web</a>`)
+	mustContain(t, body, `<a href="/plan" class="c-label-pill c-label-pill--active" data-label="web" style="--label-color: hsl(212 40% 50%)">web</a>`)
 }
 
 func TestPlan_LabelStrip_TopFiveByOpenTaskFrequency(t *testing.T) {
@@ -429,12 +433,12 @@ func TestPlan_LabelStrip_StripPillTogglesSelection(t *testing.T) {
 
 	// With ?label=web,dashboard, the web strip pill removes web.
 	body := fetchPlan(t, deps, "label=web,dashboard")
-	mustContain(t, body, `<a href="/plan?label=dashboard" class="c-label-pill c-label-pill--active" data-label="web">web</a>`)
-	mustContain(t, body, `<a href="/plan?label=web" class="c-label-pill c-label-pill--active" data-label="dashboard">dashboard</a>`)
+	mustContain(t, body, `<a href="/plan?label=dashboard" class="c-label-pill c-label-pill--active" data-label="web" style="--label-color: hsl(212 40% 50%)">web</a>`)
+	mustContain(t, body, `<a href="/plan?label=web" class="c-label-pill c-label-pill--active" data-label="dashboard" style="--label-color: hsl(162 40% 50%)">dashboard</a>`)
 
 	// With ?label=web alone, the dashboard strip pill adds dashboard.
 	body = fetchPlan(t, deps, "label=web")
-	mustContain(t, body, `<a href="/plan?label=dashboard,web" class="c-label-pill" data-label="dashboard">dashboard</a>`)
+	mustContain(t, body, `<a href="/plan?label=dashboard,web" class="c-label-pill" data-label="dashboard" style="--label-color: hsl(162 40% 50%)">dashboard</a>`)
 }
 
 func TestPlan_LabelFilter_MultiSelectIsORSemantic(t *testing.T) {
@@ -464,12 +468,12 @@ func TestPlan_InlineLabelPillIsClickableAndAddsLabel(t *testing.T) {
 
 	// With no filter: inline pill on row A points at /plan?label=web.
 	body := fetchPlan(t, deps, "")
-	mustContain(t, body, `<a href="/plan?label=web" class="c-label-pill" data-label="web">web</a>`)
+	mustContain(t, body, `<a href="/plan?label=web" class="c-label-pill" data-label="web" style="--label-color: hsl(212 40% 50%)">web</a>`)
 
 	// With ?label=web: inline pill on row B (label=css) adds css to
 	// the existing selection.
 	body = fetchPlan(t, deps, "label=web")
-	mustContain(t, body, `<a href="/plan?label=css,web" class="c-label-pill" data-label="css">css</a>`)
+	mustContain(t, body, `<a href="/plan?label=css,web" class="c-label-pill" data-label="css" style="--label-color: hsl(319 40% 50%)">css</a>`)
 }
 
 func TestPlan_LabelFilter_UnknownLabelShowsEmptyState(t *testing.T) {

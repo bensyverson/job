@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"html/template"
 	"net/http"
 	"net/url"
 	"slices"
@@ -46,19 +47,26 @@ const (
 // PlanLabelChip is one label pill in the plan filter bar. URL is the
 // toggle URL — clicking adds the label if absent, removes if present.
 // Active reflects whether the label is in the current selection.
+// Color is the deterministic per-label HSL string (render.LabelColor)
+// emitted as inline --label-color so the pill paints correctly on
+// first frame, before colors.js runs. Typed as template.CSS so
+// html/template doesn't substitute it with the ZgotmplZ stub when
+// interpolated into a style attribute.
 type PlanLabelChip struct {
 	Name   string
 	URL    string
 	Active bool
+	Color  template.CSS
 }
 
 // PlanRowLabel is one label pill rendered inline on a task row. URL
 // is an enable-URL: clicking adds the label to the current selection
 // (no-op if already selected). Inline pills don't deselect — that's
-// the strip's job.
+// the strip's job. Color follows PlanLabelChip.Color.
 type PlanRowLabel struct {
-	Name string
-	URL  string
+	Name  string
+	URL   string
+	Color template.CSS
 }
 
 // PlanNode is one node in the rendered plan tree. All fields are
@@ -404,6 +412,7 @@ func buildPlanLabelChips(stripNames []string, selected []string, show string) []
 			Name:   name,
 			URL:    planURL(toggleLabel(selected, name), show),
 			Active: isSel,
+			Color:  template.CSS(render.LabelColor(name)),
 		})
 	}
 	return out
@@ -628,7 +637,7 @@ func buildRowLabels(names []string, addLabelURLs map[string]string) []PlanRowLab
 	}
 	out := make([]PlanRowLabel, len(names))
 	for i, n := range names {
-		out[i] = PlanRowLabel{Name: n, URL: addLabelURLs[n]}
+		out[i] = PlanRowLabel{Name: n, URL: addLabelURLs[n], Color: template.CSS(render.LabelColor(n))}
 	}
 	return out
 }

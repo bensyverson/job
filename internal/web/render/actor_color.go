@@ -8,25 +8,26 @@ import (
 )
 
 // ActorColor returns a deterministic HSL color string for an actor
-// name. Mirrors prototype/js/colors.js so server-rendered avatars
-// match client-painted ones byte-for-byte: FNV-1a 32-bit hash, hue =
-// hash(name) % 360, saturation = hash(name+" sat") % 50 + 50, and a
-// fixed lightness of 48%.
+// name. Mirrors internal/web/assets/js/colors.js so server-rendered
+// avatars match client-painted ones byte-for-byte: FNV-1a 32-bit
+// hash, hue = hash(name+"u") % 360, saturation = hash(name+"zzzzzzzz")
+// % 50 + 50, and a fixed lightness of 48%. The seed strings are
+// arbitrary salts chosen for hue/sat distribution, not semantic.
 //
 // Output shape: hsl(<h> <s>% 48%) — suitable for a CSS custom
 // property on the avatar element.
 func ActorColor(name string) string {
-	hue := fnv32a(name) % 360
-	sat := fnv32a(name+" sat")%50 + 50
+	hue := fnv32a(name+"u") % 360
+	sat := fnv32a(name+"zzzzzzzz")%50 + 50
 	return fmt.Sprintf("hsl(%d %d%% 48%%)", hue, sat)
 }
 
 // LabelColor returns a deterministic HSL color string for a label
-// name. Mirrors prototype/js/colors.js: same hue axis as actors but
-// desaturated (S 40%, L 50%) so labels read as supporting metadata
-// rather than identity.
+// name. Mirrors internal/web/assets/js/colors.js: same hue axis as
+// actors but desaturated (S 40%, L 50%) so labels read as supporting
+// metadata rather than identity.
 func LabelColor(name string) string {
-	return fmt.Sprintf("hsl(%d 40%% 50%%)", fnv32a(name)%360)
+	return fmt.Sprintf("hsl(%d 40%% 50%%)", fnv32a(name+"u")%360)
 }
 
 // InitialOf returns the uppercase first character of name, ignoring

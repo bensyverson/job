@@ -19,6 +19,18 @@
 export { escapeHTML } from "./scrub-util.mjs";
 import { escapeHTML } from "./scrub-util.mjs";
 
+// labelColorFor reads window.JobsColors.labelColor when available so
+// scrub-rendered chips ship with a pre-painted --label-color. Without
+// this, replacing the section on cursor change would re-introduce the
+// flash that this commit fixed for SSR. Falls back to currentColor in
+// non-browser test environments where window isn't present.
+function labelColorFor(name) {
+  if (typeof window !== "undefined" && window.JobsColors && window.JobsColors.labelColor) {
+    return window.JobsColors.labelColor(name);
+  }
+  return "currentColor";
+}
+
 // --- status pill ---
 
 const STATUS_LABELS = {
@@ -64,7 +76,7 @@ export function renderFilterBar({ showTabs, labels, allURL, allActive }) {
   const labelPills = (labels ?? [])
     .map(
       (l) =>
-        `<a href="${escapeHTML(l.url)}" class="c-label-pill${l.active ? " c-label-pill--active" : ""}" data-label="${escapeHTML(l.name)}">${escapeHTML(l.name)}</a>`,
+        `<a href="${escapeHTML(l.url)}" class="c-label-pill${l.active ? " c-label-pill--active" : ""}" data-label="${escapeHTML(l.name)}" style="--label-color: ${labelColorFor(l.name)}">${escapeHTML(l.name)}</a>`,
     )
     .join("");
   return [
@@ -88,7 +100,7 @@ function renderTitleLine(node) {
   const labels = (node.labels ?? [])
     .map(
       (l) =>
-        `<a href="${escapeHTML(l.url)}" class="c-label-pill" data-label="${escapeHTML(l.name)}">${escapeHTML(l.name)}</a>`,
+        `<a href="${escapeHTML(l.url)}" class="c-label-pill" data-label="${escapeHTML(l.name)}" style="--label-color: ${labelColorFor(l.name)}">${escapeHTML(l.name)}</a>`,
     )
     .join("");
   const headingClass =

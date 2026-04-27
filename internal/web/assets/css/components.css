@@ -1247,6 +1247,30 @@ a.c-log-row__actor {
   height: 6px;
   border-radius: var(--radius-full);
   background: var(--color-status-active);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
+  animation: heartbeat-pulse var(--motion-duration-slow) var(--motion-ease-out) infinite;
+}
+
+.c-scrubber-pill__icon {
+  display: inline-flex;
+  color: var(--color-on-surface-muted);
+}
+
+/* Two-state pill: live mode shows the back-arrow ("Time travel");
+   scrubbing mode shows the pulsing green dot ("Return to live").
+   The CSS gates which icon is visible; JS only owns the label text
+   and aria-label. */
+.page:not(.page--scrubbing) .c-scrubber-pill__dot {
+  display: none;
+}
+
+.page--scrubbing .c-scrubber-pill__icon {
+  display: none;
+}
+
+.page--scrubbing .c-scrubber-pill {
+  color: var(--color-status-active);
+  border-color: color-mix(in srgb, var(--color-status-active) 35%, var(--color-outline));
 }
 
 /* ---------- Expanded time-travel scrubber ----------
@@ -1255,13 +1279,32 @@ a.c-log-row__actor {
    tooltip, zoom-range handles, and a primary-tinted "Return to live"
    button that collapses back to the pill form. */
 
+/* The strip is always rendered (so AT can announce the state change
+   on toggle), but visually collapses to zero height in live mode. The
+   slide-up animation interpolates max-height + opacity + the inner
+   wrapper's padding/border on the .page--scrubbing branch below. */
 .c-scrubber-strip {
   background: var(--color-surface);
-  border-top: 1px solid var(--color-outline);
-  padding: var(--space-sm) var(--space-container-padding) var(--space-xs);
+  border-top: 1px solid transparent;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height var(--motion-duration-base) var(--motion-ease-out),
+    opacity var(--motion-duration-base) var(--motion-ease-out),
+    border-color var(--motion-duration-base) var(--motion-ease-out);
+}
+
+.c-scrubber-strip__inner {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-container-padding) var(--space-xs);
+}
+
+.page--scrubbing .c-scrubber-strip {
+  max-height: 240px;
+  opacity: 1;
+  border-color: var(--color-outline);
 }
 
 .c-scrubber-strip__meta {
@@ -1284,44 +1327,6 @@ a.c-log-row__actor {
   text-transform: none;
 }
 
-/* Return-to-live inside the strip — same pill form as the banner version. */
-.c-scrubber-strip__return {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  background: transparent;
-  border: 1px solid var(--color-status-active);
-  color: var(--color-status-active);
-  font-size: var(--font-label-caps-size);
-  font-weight: var(--font-label-caps-weight);
-  letter-spacing: var(--font-label-caps-letter-spacing);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-out),
-    color var(--motion-duration-fast) var(--motion-ease-out);
-  flex: none;
-}
-
-.c-scrubber-strip__return:hover {
-  background: var(--color-status-active);
-  color: var(--color-background);
-}
-
-.c-scrubber-strip__return-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--color-status-active);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-status-active) 60%, transparent);
-  animation: heartbeat-pulse var(--motion-duration-slow) var(--motion-ease-out) infinite;
-}
-
-.c-scrubber-strip__return:hover .c-scrubber-strip__return-dot {
-  background: var(--color-background);
-}
-
 /* Track — holds density bars, zoom handles, cursor, and tooltip. */
 .c-scrubber-strip__track {
   position: relative;
@@ -1329,6 +1334,19 @@ a.c-log-row__actor {
   background: var(--color-background);
   border-radius: var(--radius-sm);
   overflow: visible;
+}
+
+/* Pan affordance: holding Space (or Alt) over the track during
+   scrubbing turns the cursor to the grab/grabbing hand so the
+   modifier-as-pan mode is discoverable. */
+.page--scrubber-panning .c-scrubber-strip__track,
+.page--scrubber-panning .c-scrubber-strip__track * {
+  cursor: grab;
+}
+
+.page--scrubber-panning .c-scrubber-strip__track:active,
+.page--scrubber-panning .c-scrubber-strip__track:active * {
+  cursor: grabbing;
 }
 
 .c-scrubber-strip__bars {
@@ -1367,7 +1385,7 @@ a.c-log-row__actor {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -4px;
+  top: -4px;
   transform: translateX(-50%);
   width: 12px;
   height: 12px;
@@ -1514,10 +1532,10 @@ a.c-log-row__actor {
   background: var(--color-background);
 }
 
-/* Page modifier: add an extra auto row for the scrubber strip. */
-.page--scrubbing {
-  grid-template-rows: auto auto 1fr auto auto;
-}
+/* The strip lives in the page grid at all times; CSS animates its
+   collapsed/expanded states via max-height. No explicit grid-template
+   override needed when entering scrubbing mode — the implicit auto
+   row handles both states. */
 
 /* ---------- Peek sheet ---------- */
 

@@ -14,16 +14,26 @@
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-// xToEventId maps a cursor x-fraction (0 = 24h ago, 1 = now) to the
-// largest event id whose created_at falls at or before that moment.
-// Empty events arrays return 0; x past the most recent event clamps
-// to head; x before the window's oldest event clamps to its id.
+// xToEventId maps a cursor x-fraction (0 = window start, 1 = window
+// end) to the largest event id whose created_at falls at or before
+// that moment. Empty events arrays return 0; x past the most recent
+// event clamps to head; x before the window's oldest event clamps
+// to its id.
+//
+// `windowStartMs` defaults to `nowMs - windowMs` — the original
+// "trailing 24h ending now" mode. Pan and zoom override it.
 //
 // Events are expected to be sorted ascending by created_at — the
 // /events endpoint returns them in that order.
-export function xToEventId(xFrac, events, nowMs, windowMs = ONE_DAY_MS) {
+export function xToEventId(
+  xFrac,
+  events,
+  nowMs,
+  windowMs = ONE_DAY_MS,
+  windowStartMs = nowMs - windowMs,
+) {
   if (events.length === 0) return 0;
-  const targetMs = nowMs - (1 - xFrac) * windowMs;
+  const targetMs = windowStartMs + xFrac * windowMs;
   // Binary search for the rightmost event with created_at*1000 <= targetMs.
   let lo = 0;
   let hi = events.length;
@@ -38,15 +48,23 @@ export function xToEventId(xFrac, events, nowMs, windowMs = ONE_DAY_MS) {
 
 // eventIdToX is the inverse: returns the x-fraction of the cursor
 // that corresponds to the given event id, by looking up the event's
-// created_at and projecting it into the [24h ago, now] window. Events
-// outside the window clamp to 0 or 1; unknown ids return 1.
-export function eventIdToX(eventId, events, nowMs, windowMs = ONE_DAY_MS) {
+// created_at and projecting it into the [windowStartMs,
+// windowStartMs + windowMs] window. Events outside the window clamp
+// to 0 or 1; unknown ids return 1.
+export function eventIdToX(
+  eventId,
+  events,
+  nowMs,
+  windowMs = ONE_DAY_MS,
+  windowStartMs = nowMs - windowMs,
+) {
   const event = events.find((e) => e.id === eventId);
   if (!event) return 1;
-  const ageMs = nowMs - event.created_at * 1000;
-  if (ageMs <= 0) return 1;
-  if (ageMs >= windowMs) return 0;
-  return 1 - ageMs / windowMs;
+  const eventMs = event.created_at * 1000;
+  const offset = eventMs - windowStartMs;
+  if (offset <= 0) return 0;
+  if (offset >= windowMs) return 1;
+  return offset / windowMs;
 }
 
 // computeDensityBars buckets events into N bars across the window
@@ -59,14 +77,15 @@ export function computeDensityBars(
   nowMs,
   bucketCount = 60,
   windowMs = ONE_DAY_MS,
+  windowStartMs = nowMs - windowMs,
 ) {
   const buckets = new Array(bucketCount).fill(0);
   const bucketSizeMs = windowMs / bucketCount;
   for (const e of events) {
-    const ageMs = nowMs - e.created_at * 1000;
-    if (ageMs < 0 || ageMs >= windowMs) continue;
-    // Bucket 0 = oldest (24h ago); bucket N-1 = newest (now).
-    let idx = Math.floor((windowMs - ageMs) / bucketSizeMs);
+    const offset = e.created_at * 1000 - windowStartMs;
+    if (offset < 0 || offset >= windowMs) continue;
+    // Bucket 0 = window start; bucket N-1 = window end.
+    let idx = Math.floor(offset / bucketSizeMs);
     if (idx < 0) idx = 0;
     if (idx >= bucketCount) idx = bucketCount - 1;
     buckets[idx]++;
@@ -75,6 +94,135 @@ export function computeDensityBars(
   for (const c of buckets) if (c > max) max = c;
   if (max === 0) return buckets.map(() => 0);
   return buckets.map((c) => Math.round((c / max) * 100));
+}
+
+// Zoom limits: 1 minute on the tight end (the smallest scale where
+// the density histogram still reads as more than a single bin) and
+// 10 years on the wide end. The wide end is just a sanity guard
+// against NaN / infinity — the real "you've zoomed out enough" stop
+// comes from clampWindowStartToFloor in the UI layer, which pins the
+// left edge to the first recorded event.
+const MIN_WINDOW_MS = 60 * 1000;
+const MAX_WINDOW_MS = 10 * 365 * ONE_DAY_MS;
+
+// zoomWindow returns the new {windowStartMs, windowMs} after
+// multiplying the visible length by `factor`, anchored at
+// `anchorXFrac`. Anchor-centered means: the time at the anchor's
+// x-fraction is the same before and after the zoom — so scrollwheel
+// over a particular event keeps that event under the pointer.
+//
+// Pure: clamps windowMs to [MIN_WINDOW_MS, MAX_WINDOW_MS]; never
+// returns NaN.
+export function zoomWindow(currentStartMs, currentWindowMs, anchorXFrac, factor) {
+  const safeAnchor = Number.isFinite(anchorXFrac) ? anchorXFrac : 0.5;
+  const anchorTimeMs = currentStartMs + safeAnchor * currentWindowMs;
+  let nextWindowMs = currentWindowMs * factor;
+  if (!Number.isFinite(nextWindowMs) || nextWindowMs <= 0) nextWindowMs = currentWindowMs;
+  if (nextWindowMs < MIN_WINDOW_MS) nextWindowMs = MIN_WINDOW_MS;
+  if (nextWindowMs > MAX_WINDOW_MS) nextWindowMs = MAX_WINDOW_MS;
+  const nextStartMs = anchorTimeMs - safeAnchor * nextWindowMs;
+  return { windowStartMs: nextStartMs, windowMs: nextWindowMs };
+}
+
+// clampWindowEndToNow guarantees the visible window's right edge
+// never extends past `nowMs`. If the proposed window already ends at
+// or before now, it's returned unchanged; otherwise we translate the
+// start back so the right edge pins to now (windowMs is preserved —
+// clamping is a translation, not a resize).
+//
+// Pure: pan and zoom math stays unconstrained; the UI calls this at
+// the boundary so "no future scrubbing" is one rule applied in one
+// place.
+export function clampWindowEndToNow(windowStartMs, windowMs, nowMs) {
+  const end = windowStartMs + windowMs;
+  if (end <= nowMs) return { windowStartMs, windowMs };
+  return { windowStartMs: nowMs - windowMs, windowMs };
+}
+
+// clampWindowStartToFloor guarantees the visible window's left edge
+// never extends earlier than `floorMs` (typically the first event's
+// timestamp). If `floorMs` is null — e.g. before events have loaded —
+// this is a no-op so we don't pin to a synthetic boundary.
+//
+// Symmetric counterpart to clampWindowEndToNow. Pure: translates the
+// start, never resizes.
+export function clampWindowStartToFloor(windowStartMs, windowMs, floorMs) {
+  if (floorMs == null) return { windowStartMs, windowMs };
+  if (windowStartMs >= floorMs) return { windowStartMs, windowMs };
+  return { windowStartMs: floorMs, windowMs };
+}
+
+// classifyWheelAxis decides whether a wheel event should drive zoom
+// (vertical) or pan (horizontal), with axis-lock + idle-reset so a
+// single trackpad gesture commits to one mode start-to-finish.
+//
+// Inputs:
+//   deltaX, deltaY  — current wheel event deltas
+//   ctrlKey         — macOS reports trackpad pinch as wheel + ctrlKey
+//   timeStamp       — current event's timeStamp
+//   lastTimeStamp   — last classified event's timeStamp (or null)
+//   lastAxis        — last classified axis ("x" | "y" | null)
+//
+// Returns { axis, locked }:
+//   axis    — "x" (pan), "y" (zoom), or null (no movement)
+//   locked  — true when the result should update the caller's state
+//             (pinch returns locked=false so it doesn't poison the
+//             real per-gesture lock)
+//
+// Idle threshold: 120ms. macOS trackpad wheels arrive ~16ms apart;
+// 120ms comfortably distinguishes "still in gesture" from "new gesture."
+export function classifyWheelAxis({
+  deltaX,
+  deltaY,
+  ctrlKey,
+  timeStamp,
+  lastTimeStamp,
+  lastAxis,
+}) {
+  if (ctrlKey) return { axis: "y", locked: false };
+  const ax = Math.abs(deltaX);
+  const ay = Math.abs(deltaY);
+  if (ax === 0 && ay === 0) return { axis: null, locked: false };
+  const idle = lastTimeStamp == null || timeStamp - lastTimeStamp > 120;
+  if (!idle && lastAxis) return { axis: lastAxis, locked: true };
+  return { axis: ax > ay ? "x" : "y", locked: true };
+}
+
+// formatAxisLabels returns 5 labels for the time axis at x = 0, 25,
+// 50, 75, 100%. Each label is the relative age at that x position
+// (e.g. "24h", "18h", ...), with "now" used when the gridline is at
+// or after `nowMs`. Useful for rebuilding the strip's axis under
+// pan/zoom without re-templating the markup.
+export function formatAxisLabels(windowStartMs, windowMs, nowMs) {
+  const out = new Array(5);
+  for (let i = 0; i < 5; i++) {
+    const xFrac = i / 4;
+    const tMs = windowStartMs + xFrac * windowMs;
+    const ageMs = nowMs - tMs;
+    if (ageMs <= 0) {
+      out[i] = "now";
+    } else {
+      out[i] = formatAge(ageMs).replace(/\s+ago$/, "");
+    }
+  }
+  return out;
+}
+
+// panWindowStartMs returns the new windowStartMs after a pan gesture
+// of `deltaPx` over a track of `trackWidthPx` showing `windowMs` of
+// time. Convention matches map-style panning: dragging right pulls
+// older content into view (windowStart shifts earlier).
+//
+// Pure: no clamping, no DOM. Callers decide whether to clamp against
+// any boundary; unbounded pan is a feature for sparse-event windows.
+export function panWindowStartMs(
+  currentStartMs,
+  deltaPx,
+  trackWidthPx,
+  windowMs,
+) {
+  if (trackWidthPx <= 0) return currentStartMs;
+  return currentStartMs - (deltaPx / trackWidthPx) * windowMs;
 }
 
 // formatAge formats a millisecond duration as a compact relative

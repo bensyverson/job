@@ -195,17 +195,21 @@ func TestEngine_Render_FooterHasMetricsAndScrubberPill(t *testing.T) {
 	mustContain(t, out, `class="c-footer__heartbeat"`)
 }
 
-// The scrubber chrome (strip + history banner) ships rendered in the
-// page but hidden by default. JS reveals them when the user enters
-// scrubbing mode. Asserting the markup here keeps the layout in sync
-// with what scrubber-pill.mjs expects.
+// The scrubber chrome ships rendered in the page but visually hidden
+// by default. The strip stays in the DOM so the slide-up CSS
+// transition has something to animate; aria-hidden + inert keep AT
+// users from seeing it until the user enters scrubbing mode. The
+// history banner uses the plain `hidden` attribute (no transition).
 func TestEngine_Render_ScrubberStripAndHistoryBannerPresentHidden(t *testing.T) {
 	out := renderHome(t, newEngine(t))
 	if !strings.Contains(out, `data-scrubber-strip`) {
 		t.Errorf("missing data-scrubber-strip section\n---\n%s", out)
 	}
-	if !strings.Contains(out, `data-scrubber-strip aria-label="Scrubber" hidden`) {
-		t.Errorf("scrubber strip should be hidden by default")
+	if !strings.Contains(out, `data-scrubber-strip aria-label="Scrubber" aria-hidden="true" inert`) {
+		t.Errorf("scrubber strip should be aria-hidden + inert by default (not the `hidden` attribute, which would block the transition)\n---\n%s", out)
+	}
+	if strings.Contains(out, `data-scrubber-strip aria-label="Scrubber" hidden`) {
+		t.Errorf("scrubber strip should NOT use the `hidden` attribute — that disables the slide-up transition")
 	}
 	if !strings.Contains(out, `data-history-banner`) {
 		t.Errorf("missing data-history-banner")
@@ -216,9 +220,26 @@ func TestEngine_Render_ScrubberStripAndHistoryBannerPresentHidden(t *testing.T) 
 	// The cursor placeholder is in DOM so JS can position it without
 	// creating elements.
 	mustContain(t, out, `class="c-scrubber-strip__cursor"`)
-	// Return-to-live buttons live in both strip and banner.
-	if strings.Count(out, `data-scrubber-return`) < 2 {
-		t.Errorf("expected two data-scrubber-return buttons (strip + banner)")
+	// The strip's in-strip "Return to live" button is removed — the
+	// pill itself carries that state. Only the banner's return remains.
+	if got := strings.Count(out, `data-scrubber-return`); got != 1 {
+		t.Errorf("expected exactly 1 data-scrubber-return button (banner only); got %d", got)
+	}
+}
+
+// The footer pill is the toggle — it reads "Time travel" with a
+// back-arrow when live, swaps to "Return to live" with a pulsing
+// green dot when scrubbing. Default render is the live state.
+func TestEngine_Render_ScrubberPillStartsAsTimeTravel(t *testing.T) {
+	out := renderHome(t, newEngine(t))
+	if !strings.Contains(out, `data-scrubber-pill-label>Time travel<`) {
+		t.Errorf("pill should default to label 'Time travel'\n---\n%s", out)
+	}
+	if !strings.Contains(out, `data-scrubber-pill-icon-back`) {
+		t.Errorf("pill should ship a back-arrow icon (data-scrubber-pill-icon-back) for the live state")
+	}
+	if !strings.Contains(out, `data-scrubber-pill-icon-live`) {
+		t.Errorf("pill should ship a live-state dot (data-scrubber-pill-icon-live) for the scrubbing state")
 	}
 }
 

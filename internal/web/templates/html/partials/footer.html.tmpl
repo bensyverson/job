@@ -1,27 +1,24 @@
 {{- /* Global footer. Ports prototype/*.html footer markup verbatim.
      Live values ship in a later task; numbers below are placeholders. */ -}}
 {{define "footer"}}
-<section class="c-scrubber-strip" data-scrubber-strip aria-label="Scrubber" hidden>
-  <div class="c-scrubber-strip__meta">
-    <span>Scrubbing</span>
-    <span class="c-scrubber-strip__meta-at" data-scrubber-at>—</span>
-    <span class="t-dim" style="text-transform: none; letter-spacing: 0; font-weight: 400">Drag the cursor or &larr;/&rarr; to step.</span>
-    <span class="grow"></span>
-    <button type="button" class="c-scrubber-strip__return" data-scrubber-return>
-      <span class="c-scrubber-strip__return-dot"></span>
-      Return to live
-    </button>
-  </div>
-  <div class="c-scrubber-strip__track" data-scrubber-track>
-    <div class="c-scrubber-strip__bars" data-scrubber-bars></div>
-    <div class="c-scrubber-strip__cursor" aria-label="Cursor"></div>
-  </div>
-  <div class="c-scrubber-strip__axis" aria-hidden="true">
-    <span style="left: 0%">24h</span>
-    <span style="left: 25%">18h</span>
-    <span style="left: 50%">12h</span>
-    <span style="left: 75%">6h</span>
-    <span style="left: 100%">now</span>
+<section class="c-scrubber-strip" data-scrubber-strip aria-label="Scrubber" aria-hidden="true" inert>
+  <div class="c-scrubber-strip__inner">
+    <div class="c-scrubber-strip__meta">
+      <span>Scrubbing</span>
+      <span class="c-scrubber-strip__meta-at" data-scrubber-at>—</span>
+      <span class="t-dim" style="text-transform: none; letter-spacing: 0; font-weight: 400">Drag the cursor or &larr;/&rarr; to step.</span>
+    </div>
+    <div class="c-scrubber-strip__track" data-scrubber-track>
+      <div class="c-scrubber-strip__bars" data-scrubber-bars></div>
+      <div class="c-scrubber-strip__cursor" aria-label="Cursor"></div>
+    </div>
+    <div class="c-scrubber-strip__axis" aria-hidden="true">
+      <span style="left: 0%">24h</span>
+      <span style="left: 25%">18h</span>
+      <span style="left: 50%">12h</span>
+      <span style="left: 75%">6h</span>
+      <span style="left: 100%">now</span>
+    </div>
   </div>
 </section>
 <footer class="c-footer" role="contentinfo">
@@ -30,9 +27,12 @@
   <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="epm">—</span><span class="c-footer__metric-label">events / min</span></span>
   <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="throughput">—</span><span class="c-footer__metric-label">tasks / hr</span></span>
   <div class="grow"></div>
-  <button class="c-scrubber-pill" aria-label="Scrub through history" data-scrubber-toggle>
-    <span class="c-scrubber-pill__dot"></span>
-    <span data-scrubber-pill-label>Live</span>
+  <button class="c-scrubber-pill" aria-label="Time travel" data-scrubber-toggle>
+    <svg class="c-scrubber-pill__icon" data-scrubber-pill-icon-back width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M5 2L2 6l3 4M2.5 6h7.5" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+    <span class="c-scrubber-pill__dot" data-scrubber-pill-icon-live></span>
+    <span data-scrubber-pill-label>Time travel</span>
   </button>
   <div class="grow"></div>
   <span class="c-footer__heartbeat" data-heartbeat>

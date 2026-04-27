@@ -9,6 +9,14 @@
   box-sizing: border-box;
 }
 
+/* Make the HTML `hidden` attribute uniformly authoritative. Without
+   `!important`, any class-level `display:` (e.g. `.c-history-banner
+   { display: flex }`) wins on specificity and `hidden` becomes a
+   no-op. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -224,7 +232,11 @@ a.t-muted:hover {
 
 .page {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* Five rows: header, banner, main, scrubber-strip, footer. The
+     banner and strip both collapse via the [hidden] / aria-hidden
+     paths, so giving them their own auto rows lets `main` keep the
+     1fr without being squeezed when the chrome appears. */
+  grid-template-rows: auto auto 1fr auto auto;
   height: 100vh;
   min-height: 0;
 }

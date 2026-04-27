@@ -18,6 +18,12 @@ import {
   parseAtFromQuery,
   composeURLWithAt,
   composeURLWithoutAt,
+  panWindowStartMs,
+  zoomWindow,
+  formatAxisLabels,
+  clampWindowEndToNow,
+  clampWindowStartToFloor,
+  classifyWheelAxis,
 } from "../assets/js/scrubber-cursor.mjs";
 
 // Helper: build an events array with a fixed offset back from `now`.
@@ -175,4 +181,268 @@ test("composeURLWithoutAt: returns clean path when ?at was the only param", () =
 test("composeURL helpers preserve hash fragments", () => {
   assert.equal(composeURLWithAt("/log#bottom", 42), "/log?at=42#bottom");
   assert.equal(composeURLWithoutAt("/log?at=42#bottom"), "/log#bottom");
+});
+
+// --- windowStartMs override (pan support) ---
+
+test("xToEventId: explicit windowStartMs frames the visible range independently of nowMs", () => {
+  // Window starts 48h ago and lasts 1h: only events in that hour are
+  // navigable. Events outside the window clamp to its closest edge.
+  const events = eventsAt(NOW, [49 * 3600, 47.5 * 3600, 1 * 3600]);
+  const windowMs = 60 * 60 * 1000;
+  const windowStartMs = NOW - 48 * 60 * 60 * 1000;
+  // Mid-window points to the only event inside (at 47.5h ago).
+  assert.equal(xToEventId(0.5, events, NOW, windowMs, windowStartMs), 2);
+});
+
+test("eventIdToX: explicit windowStartMs projects relative to the panned window", () => {
+  const events = eventsAt(NOW, [12 * 3600]);
+  // Window starts 13h ago and lasts 2h: the event sits at the +1h
+  // mark, i.e. midpoint of the visible window.
+  const windowMs = 2 * 60 * 60 * 1000;
+  const windowStartMs = NOW - 13 * 60 * 60 * 1000;
+  assert.equal(eventIdToX(1, events, NOW, windowMs, windowStartMs), 0.5);
+});
+
+test("computeDensityBars: explicit windowStartMs only counts events inside the panned window", () => {
+  const events = eventsAt(NOW, [25 * 3600, 26 * 3600, 1 * 3600]);
+  // Window: [27h ago, 24h ago] — should pick up the two older events
+  // and exclude the recent one.
+  const windowMs = 3 * 60 * 60 * 1000;
+  const windowStartMs = NOW - 27 * 60 * 60 * 1000;
+  const bars = computeDensityBars(events, NOW, 4, windowMs, windowStartMs);
+  const total = bars.reduce((a, b) => a + (b > 0 ? 1 : 0), 0);
+  assert.ok(total >= 1, "at least one bucket should be non-zero with two events in the panned window");
+});
+
+// --- panWindowStartMs ---
+
+test("panWindowStartMs: dragging right shifts windowStart earlier (older content into view)", () => {
+  // 100px drag right on a 1000px track viewing a 24h window =
+  // 0.1 * 24h = 2.4h shift earlier.
+  const windowMs = 24 * 3600 * 1000;
+  const before = 1000;
+  const after = panWindowStartMs(before, 100, 1000, windowMs);
+  assert.ok(before > after, "drag right should shift start earlier");
+  assert.ok(Math.abs((before - after) - 0.1 * windowMs) < 1, "magnitude is 10% of windowMs");
+});
+
+test("panWindowStartMs: dragging left shifts windowStart later (newer content into view)", () => {
+  const windowMs = 60 * 60 * 1000;
+  const before = 1000;
+  const after = panWindowStartMs(before, -50, 1000, windowMs);
+  assert.ok(after > before, "drag left should shift start later");
+  assert.ok(Math.abs((after - before) - 0.05 * windowMs) < 1, "magnitude is 5% of windowMs");
+});
+
+test("panWindowStartMs: trackWidthPx <= 0 returns the input unchanged", () => {
+  // Detaching the track or before-layout reads return width 0; pan
+  // should be a no-op rather than NaN.
+  assert.equal(panWindowStartMs(1000, 50, 0, 1000), 1000);
+  assert.equal(panWindowStartMs(1000, 50, -1, 1000), 1000);
+});
+
+// --- zoomWindow ---
+
+test("zoomWindow: anchored at 0.5 keeps the midpoint time fixed", () => {
+  const start = 0;
+  const win = 60 * 60 * 1000; // 1h
+  // The midpoint time before zoom is start + 0.5 * win.
+  const midpointBefore = start + 0.5 * win;
+  const { windowStartMs, windowMs } = zoomWindow(start, win, 0.5, 0.5);
+  assert.equal(windowMs, win * 0.5);
+  // Midpoint of the new window: windowStart + 0.5 * windowMs.
+  assert.equal(windowStartMs + 0.5 * windowMs, midpointBefore);
+});
+
+test("zoomWindow: anchored at 1.0 keeps the right edge time fixed", () => {
+  // Scrolling on the rightmost edge ("now") should keep "now" pinned.
+  const start = 0;
+  const win = 60 * 60 * 1000; // 1h — well inside the clamp range
+  const rightEdgeBefore = start + win;
+  const { windowStartMs, windowMs } = zoomWindow(start, win, 1, 0.5);
+  assert.equal(windowStartMs + windowMs, rightEdgeBefore);
+});
+
+test("zoomWindow: clamps below MIN_WINDOW_MS (1 minute)", () => {
+  // 1ms × 0.1 = 0.1ms — way under floor; should clamp to 60_000.
+  const { windowMs } = zoomWindow(0, 1, 0.5, 0.1);
+  assert.equal(windowMs, 60 * 1000);
+});
+
+test("zoomWindow: clamps above MAX_WINDOW_MS (10 years)", () => {
+  // The hard cap is just a NaN/infinity guard — the real "you can't
+  // zoom further" stop is the history-floor clamp in the UI. This test
+  // pins the cap value so a regression to a tighter ceiling (30d, 1y)
+  // gets caught.
+  const TEN_YEARS = 10 * 365 * 24 * 60 * 60 * 1000;
+  const TWENTY_YEARS = 2 * TEN_YEARS;
+  const { windowMs } = zoomWindow(0, TWENTY_YEARS, 0.5, 1.1);
+  assert.equal(windowMs, TEN_YEARS);
+});
+
+test("zoomWindow: degenerate factor falls back to current window", () => {
+  // factor = 0 or NaN would otherwise zero / NaN the window.
+  const win = 60 * 60 * 1000; // 1 hour — comfortably inside the clamp range
+  assert.equal(zoomWindow(0, win, 0.5, 0).windowMs, win);
+  assert.equal(zoomWindow(0, win, 0.5, NaN).windowMs, win);
+});
+
+// --- formatAxisLabels ---
+
+test("formatAxisLabels: trailing 24h window emits day/hour markers ending at 'now'", () => {
+  // formatAge promotes 24h to "1d" (and 12h..6h stay in hours), so
+  // the trailing 24h labels read "1d / 18h / 12h / 6h / now".
+  // The exact labels are a function of formatAge's thresholds; this
+  // test pins the contract that the rightmost label is "now".
+  const win = 24 * 60 * 60 * 1000;
+  const labels = formatAxisLabels(NOW - win, win, NOW);
+  assert.deepStrictEqual(labels, ["1d", "18h", "12h", "6h", "now"]);
+});
+
+test("formatAxisLabels: gridlines past `now` clamp to 'now'", () => {
+  // Window extends 1h into the future (future-dated panning) — every
+  // gridline beyond nowMs should read 'now', not negative ages.
+  const win = 2 * 60 * 60 * 1000;
+  const labels = formatAxisLabels(NOW - 60 * 60 * 1000, win, NOW);
+  // x=0.5 corresponds to nowMs; x>0.5 are 'now'.
+  assert.equal(labels[2], "now");
+  assert.equal(labels[3], "now");
+  assert.equal(labels[4], "now");
+});
+
+// --- clampWindowEndToNow ---
+
+test("clampWindowEndToNow: leaves a fully-past window untouched", () => {
+  const start = NOW - 24 * 3600 * 1000;
+  const win = 12 * 3600 * 1000;
+  const out = clampWindowEndToNow(start, win, NOW);
+  assert.equal(out.windowStartMs, start);
+  assert.equal(out.windowMs, win);
+});
+
+test("clampWindowEndToNow: shifts a future-overhanging window so the right edge hits now", () => {
+  // Window extends 1h past now; clamp should pull the start back by 1h
+  // (windowMs unchanged — clamping is a translation, not a resize).
+  const win = 2 * 3600 * 1000;
+  const start = NOW - 1 * 3600 * 1000; // ends NOW + 1h
+  const out = clampWindowEndToNow(start, win, NOW);
+  assert.equal(out.windowMs, win);
+  assert.equal(out.windowStartMs + out.windowMs, NOW);
+});
+
+test("clampWindowEndToNow: a window wholly in the future snaps to end-at-now", () => {
+  // Pan/zoom can drag a window completely past now; the contract is
+  // that the right edge always pins to now, never beyond.
+  const win = 60 * 60 * 1000;
+  const start = NOW + 5 * 3600 * 1000;
+  const out = clampWindowEndToNow(start, win, NOW);
+  assert.equal(out.windowStartMs, NOW - win);
+  assert.equal(out.windowMs, win);
+});
+
+// --- clampWindowStartToFloor ---
+
+test("clampWindowStartToFloor: leaves a window inside [floor, ∞) untouched", () => {
+  const floor = NOW - 30 * 24 * 3600 * 1000;
+  const start = NOW - 24 * 3600 * 1000;
+  const win = 12 * 3600 * 1000;
+  const out = clampWindowStartToFloor(start, win, floor);
+  assert.equal(out.windowStartMs, start);
+  assert.equal(out.windowMs, win);
+});
+
+test("clampWindowStartToFloor: shifts a window starting before floor forward to the floor", () => {
+  // Pan or zoom can drag windowStart earlier than the oldest event;
+  // we snap windowStart to the floor without resizing.
+  const floor = 1_000_000;
+  const win = 60 * 60 * 1000;
+  const start = floor - 5 * 60 * 60 * 1000;
+  const out = clampWindowStartToFloor(start, win, floor);
+  assert.equal(out.windowStartMs, floor);
+  assert.equal(out.windowMs, win);
+});
+
+test("clampWindowStartToFloor: null floor (no events yet) is a no-op", () => {
+  // Before events load, there's no meaningful floor — don't synthesize
+  // one or panning gets pinned to whatever happens to be in `start`.
+  const out = clampWindowStartToFloor(123, 456, null);
+  assert.equal(out.windowStartMs, 123);
+  assert.equal(out.windowMs, 456);
+});
+
+// --- classifyWheelAxis ---
+
+test("classifyWheelAxis: pinch (ctrlKey) is always zoom regardless of axis", () => {
+  // macOS reports trackpad pinch as a wheel event with ctrlKey set.
+  // We treat that as zoom even when deltaX dominates, so pinch on a
+  // strongly-horizontal trackpad still works.
+  const r = classifyWheelAxis({
+    deltaX: 50,
+    deltaY: 1,
+    ctrlKey: true,
+    timeStamp: 1000,
+    lastTimeStamp: null,
+    lastAxis: null,
+  });
+  assert.equal(r.axis, "y");
+  assert.equal(r.locked, false, "pinch doesn't lock subsequent gestures");
+});
+
+test("classifyWheelAxis: first event picks dominant axis and locks it", () => {
+  const r = classifyWheelAxis({
+    deltaX: 30,
+    deltaY: 4,
+    ctrlKey: false,
+    timeStamp: 1000,
+    lastTimeStamp: null,
+    lastAxis: null,
+  });
+  assert.equal(r.axis, "x");
+  assert.equal(r.locked, true);
+});
+
+test("classifyWheelAxis: subsequent events within the idle window keep the locked axis", () => {
+  // Even if deltaY momentarily dominates mid-gesture, we stay on the
+  // axis we picked at the start. Otherwise a slightly noisy trackpad
+  // gesture flips between zoom and pan partway through.
+  const r = classifyWheelAxis({
+    deltaX: 1,
+    deltaY: 30,
+    ctrlKey: false,
+    timeStamp: 1050,
+    lastTimeStamp: 1000,
+    lastAxis: "x",
+  });
+  assert.equal(r.axis, "x");
+  assert.equal(r.locked, true);
+});
+
+test("classifyWheelAxis: idle gap longer than the threshold restarts the lock", () => {
+  // 200ms of quiet ends the gesture; the next wheel event picks fresh.
+  const r = classifyWheelAxis({
+    deltaX: 1,
+    deltaY: 30,
+    ctrlKey: false,
+    timeStamp: 5000,
+    lastTimeStamp: 4000,
+    lastAxis: "x",
+  });
+  assert.equal(r.axis, "y");
+  assert.equal(r.locked, true);
+});
+
+test("classifyWheelAxis: zero delta passes through with no axis change", () => {
+  // Some browsers fire a deltaX=deltaY=0 wheel at the very start of a
+  // gesture; classifying that would lock to a meaningless axis.
+  const r = classifyWheelAxis({
+    deltaX: 0,
+    deltaY: 0,
+    ctrlKey: false,
+    timeStamp: 1000,
+    lastTimeStamp: null,
+    lastAxis: null,
+  });
+  assert.equal(r.axis, null);
+  assert.equal(r.locked, false);
 });

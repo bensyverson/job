@@ -316,6 +316,29 @@ func TestEngine_Render_LayoutLoadsSearchModule(t *testing.T) {
 	}
 }
 
+func TestEngine_Render_LayoutLoadsShortcutsModule(t *testing.T) {
+	m, err := assets.BuildManifest()
+	if err != nil {
+		t.Fatalf("BuildManifest: %v", err)
+	}
+	shortcutsURL := m.URL("js/shortcuts.mjs")
+	if shortcutsURL == "" {
+		t.Fatal("manifest missing js/shortcuts.mjs entry")
+	}
+	out := renderHome(t, newEngine(t))
+	if !strings.Contains(out, shortcutsURL) {
+		t.Errorf("layout missing fingerprinted shortcuts.mjs (%s)\n---\n%s", shortcutsURL, out)
+	}
+}
+
+func TestEngine_Render_HeaderTabsAdvertiseShortcuts(t *testing.T) {
+	out := renderHome(t, newEngine(t))
+	mustContain(t, out, `title="Home (press 1)"`)
+	mustContain(t, out, `title="Plan (press 2)"`)
+	mustContain(t, out, `title="Actors (press 3)"`)
+	mustContain(t, out, `title="Log (press 4)"`)
+}
+
 func TestEngine_Render_UnknownPageErrors(t *testing.T) {
 	e := newEngine(t)
 	err := e.Render(&bytes.Buffer{}, "no-such-page", templates.Chrome{})

@@ -1165,6 +1165,10 @@ a.c-log-row__actor {
   width: 100%;
 }
 
+.c-header__search > .c-input:not(:focus-visible) {
+  border-bottom-color: transparent;
+}
+
 .c-search-dropdown {
   position: absolute;
   top: calc(100% + var(--space-xs));

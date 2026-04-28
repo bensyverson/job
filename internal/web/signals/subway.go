@@ -47,10 +47,19 @@ func buildSubway(w *graphWorld) Subway {
 // Mode dispatch is per-cluster (focals grouped by project root):
 // single-focal clusters render via buildSingleFocalLine (project/
 // 2026-04-27-graph-row-merging.md, single-focal preorder window
-// mode); multi-focal clusters fall through to the legacy parent-
-// rooted line machinery (collectLines + applyWindow + computeForks)
-// until S2 lands the multi-focal tree-map mode.
-func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
+// mode); multi-focal clusters render via buildMultiFocalRows (same
+// doc, multi-focal tree-map mode), with rows grouped by parent
+// short ID into Fork entries so the existing layout/branch-curve
+// loop in render/subway_layout.go keeps working unchanged. The
+// layout pivot to depth-aligned columns and retiring AncestorChain
+// in favor of per-row ParentShortID lands in S3.
+//
+// The lookahead parameter is unused under the new modes; it stays
+// on the signature so tests authored against L=2 still parameterize
+// the call. The legacy collectLines/applyWindow/computeForks
+// helpers remain in this file with their own unit tests until a
+// follow-up retires them.
+func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 	focals := pickFocals(w)
 	if len(focals) == 0 {
 		return Subway{}
@@ -80,27 +89,54 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 
 	var lines []Line
 	var forks []*Fork
-	var oldFocals []*graphTask
 	for _, root := range rootOrder {
 		clusterFocals := clusters[root.id]
 		if len(clusterFocals) == 1 {
 			lines = append(lines, buildSingleFocalLine(w, clusterFocals[0], window))
 			continue
 		}
-		oldFocals = append(oldFocals, clusterFocals...)
-	}
-	if len(oldFocals) > 0 {
-		seeds := collectLines(w, oldFocals, lookahead)
-		oldForks := computeForks(seeds)
+		// Multi-focal cluster: render via the tree-map mode
+		// (project/2026-04-27-graph-row-merging.md). Each row in
+		// rows carries a ParentShortID identifying its branch
+		// parent in the focal-path subgraph (empty for the
+		// topmost row, whose leftmost is the cluster LCA). For
+		// the S2 Fork shim we group sub-rows by ParentShortID
+		// and emit one Fork per group with the parent as a
+		// single-element AncestorChain — that keeps the
+		// existing layout/branch-curve loop in
+		// render/subway_layout.go drawing each row's curve from
+		// its parent to its leftmost. The layout pivot to
+		// depth-aligned columns + retiring AncestorChain in
+		// favor of per-row ParentShortID lands in S3 (Ai3De).
 		baseIdx := len(lines)
-		for _, seed := range seeds {
-			lines = append(lines, applyWindow(seed, window))
+		rows := buildMultiFocalRows(w, clusterFocals, window)
+		if len(rows) == 0 {
+			continue
 		}
-		for _, fork := range oldForks {
-			for i := range fork.LineIndices {
-				fork.LineIndices[i] += baseIdx
+		lines = append(lines, rows...)
+		type forkGroup struct {
+			parent  string
+			indices []int
+		}
+		var groups []*forkGroup
+		groupByParent := map[string]*forkGroup{}
+		for i, row := range rows {
+			if row.ParentShortID == "" {
+				continue
 			}
-			forks = append(forks, fork)
+			g, ok := groupByParent[row.ParentShortID]
+			if !ok {
+				g = &forkGroup{parent: row.ParentShortID}
+				groupByParent[row.ParentShortID] = g
+				groups = append(groups, g)
+			}
+			g.indices = append(g.indices, baseIdx+i)
+		}
+		for _, g := range groups {
+			forks = append(forks, &Fork{
+				AncestorChain: []string{g.parent},
+				LineIndices:   g.indices,
+			})
 		}
 	}
 	if len(lines) == 0 {

@@ -964,6 +964,13 @@ func TestBuildSubway_Scenario1_OneLine_NoFork(t *testing.T) {
 // to G's line. Two lines, fork at A. Requires L=2 for E's lookahead to
 // reach into G's subtree; the production default is L=1 (which would
 // leave only B's line). buildSubwayWith pins the design-doc scenario.
+// Under the multi-focal tree-map mode (project/2026-04-27-graph-row-
+// merging.md, S2), G no longer renders. The legacy parent-rooted
+// model used +L lookahead from a focal to reach unrelated subtrees;
+// the new mode only renders the focal-path subgraph (LCA→focals).
+// Focals D and E share parent B, so the LCA is B, the subgraph is
+// {B, D, E}, and the row is a single B-line. Closure on G's branch
+// is no longer expressible because G isn't on the focal path.
 func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
 	w := newTestWorld(
 		referenceTree(map[string]string{
@@ -976,51 +983,36 @@ func TestBuildSubway_Scenario2_BranchClosedToBlockedLine(t *testing.T) {
 
 	got := buildSubwayWith(w, 2, 2)
 
-	if len(got.Lines) != 2 {
-		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
 	}
-	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
-		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
+	if got.Lines[0].AnchorShortID != "B" {
+		t.Errorf("anchor: got %q, want B", got.Lines[0].AnchorShortID)
 	}
-
-	// Fork ancestor A must be a rendered node.
-	if _, ok := findSubwayNode(got.Nodes, "A"); !ok {
-		t.Errorf("fork ancestor A missing from Nodes %v", subwayNodeShortIDs(got.Nodes))
+	// Single-row cluster: no Fork (the LCA is the row's leftmost).
+	if len(got.Forks) != 0 {
+		t.Errorf("Forks: got %d, want 0 (single row, LCA is anchor)", len(got.Forks))
 	}
-
-	// Branch edges: A → B (open), A → G (BranchClosed because G has
-	// open blocker B).
-	if !hasSubwayEdge(got.Edges, "A", "B", SubwayEdgeBranch) {
-		t.Errorf("missing Branch edge A→B in %s", edgeSummary(got.Edges))
+	// G is excluded from the subgraph.
+	if _, ok := findSubwayNode(got.Nodes, "G"); ok {
+		t.Errorf("G should not appear (off the focal path); got %v", subwayNodeShortIDs(got.Nodes))
 	}
-	if !hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranchClosed) {
-		t.Errorf("missing BranchClosed edge A→G in %s", edgeSummary(got.Edges))
-	}
-	// Negatives: A→G should not also be Branch.
-	if hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranch) {
-		t.Errorf("A→G should be BranchClosed, not Branch: %s", edgeSummary(got.Edges))
-	}
-
-	// Flow within G's line.
-	if !hasSubwayEdge(got.Edges, "G", "H", SubwayEdgeFlow) {
-		t.Errorf("missing Flow edge G→H in %s", edgeSummary(got.Edges))
-	}
-
 	// E is active.
 	if n, _ := findSubwayNode(got.Nodes, "E"); n.State != SubwayNodeActive {
 		t.Errorf("E state: got %d, want Active", n.State)
 	}
-	// G renders as Todo (Blocked is no longer a node state under the
-	// subway model — closure is on the ingress edge).
-	if n, _ := findSubwayNode(got.Nodes, "G"); n.State != SubwayNodeTodo {
-		t.Errorf("G state: got %d, want Todo (not Blocked)", n.State)
+	// D is active.
+	if n, _ := findSubwayNode(got.Nodes, "D"); n.State != SubwayNodeActive {
+		t.Errorf("D state: got %d, want Active", n.State)
 	}
 }
 
-// Scenario 3 — D and F claimed, E done between. E renders inline as
-// Done (sits between two visible focals on B's line). Uses L=2 so F's
-// lookahead reaches into G's subtree, matching the design doc's
-// rendered shape.
+// Scenario 3 — D and F claimed, E done between. Under the multi-
+// focal tree-map mode (project/2026-04-27-graph-row-merging.md, S2),
+// focals D and F share parent B → LCA is B, subgraph is {B, D, E, F}
+// (E is in the row's preorder window between focals D and F). G is
+// off the focal path and no longer renders; the legacy "lookahead
+// reaches G via L=2" path is gone.
 func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 	w := newTestWorld(
 		referenceTree(map[string]string{
@@ -1034,8 +1026,11 @@ func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 
 	got := buildSubwayWith(w, 2, 2)
 
-	if len(got.Lines) != 2 {
-		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "B" {
+		t.Errorf("anchor: got %q, want B", got.Lines[0].AnchorShortID)
 	}
 	if n, ok := findSubwayNode(got.Nodes, "E"); !ok {
 		t.Errorf("E missing from Nodes")
@@ -1046,16 +1041,18 @@ func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 	if n, _ := findSubwayNode(got.Nodes, "F"); n.State != SubwayNodeActive {
 		t.Errorf("F state: got %d, want Active", n.State)
 	}
-	// G remains BranchClosed.
-	if !hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranchClosed) {
-		t.Errorf("missing BranchClosed A→G in %s", edgeSummary(got.Edges))
+	// G no longer renders — off the focal path subgraph.
+	if _, ok := findSubwayNode(got.Nodes, "G"); ok {
+		t.Errorf("G should not appear (off the focal path); got %v", subwayNodeShortIDs(got.Nodes))
 	}
 }
 
-// Scenario 4 — D, H claimed (G unblocked). Three lines, fork at A,
-// all three branches open. Requires L=2 for H's lookahead to reach K
-// and trigger J's peek line; production L=1 would render only two
-// lines (B and G).
+// Scenario 4 — D, H claimed (G unblocked). Under the multi-focal
+// tree-map mode (project/2026-04-27-graph-row-merging.md, S2), the
+// focals D and H have LCA=A; the focal-path subgraph is
+// {A, B, D, G, H}. Rows: A topmost (leftmost-only), B sub-row, G
+// sub-row. The legacy "L=2 lookahead to K → J peek line" path is
+// gone — J/K/L are off the focal path.
 func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"C": "done",
@@ -1068,25 +1065,35 @@ func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 	if len(got.Lines) != 3 {
 		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
 	}
+	// Topmost row anchored on A (leftmost-only); B and G sub-rows
+	// branch off A under the Fork shim.
+	if got.Lines[0].AnchorShortID != "A" {
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+			got.Lines[0].AnchorShortID)
+	}
 	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
 		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
 	}
-	for _, anchor := range []string{"B", "G", "J"} {
+	for _, anchor := range []string{"B", "G"} {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
 			t.Errorf("missing open Branch edge A→%s in %s", anchor, edgeSummary(got.Edges))
 		}
 	}
-	// Flow edges: J's line has J→K, K→L.
-	if !hasSubwayEdge(got.Edges, "J", "K", SubwayEdgeFlow) {
-		t.Errorf("missing Flow J→K in %s", edgeSummary(got.Edges))
-	}
-	if !hasSubwayEdge(got.Edges, "K", "L", SubwayEdgeFlow) {
-		t.Errorf("missing Flow K→L in %s", edgeSummary(got.Edges))
+	// J/K/L are off the focal path under tree-map mode.
+	for _, sid := range []string{"J", "K", "L"} {
+		if _, ok := findSubwayNode(got.Nodes, sid); ok {
+			t.Errorf("%s should not appear (off focal path); got %v",
+				sid, subwayNodeShortIDs(got.Nodes))
+		}
 	}
 }
 
-// Scenario 5 — D and K claimed; G has no claim and lookahead doesn't
-// reach it. Two lines (B and J), no G-line.
+// Scenario 5 — D and K claimed; G has no claim. Under the multi-
+// focal tree-map mode (project/2026-04-27-graph-row-merging.md, S2),
+// the focal-path subgraph is {A, B, D, J, K}; rows are A topmost
+// (leftmost-only), B sub-row, J sub-row. G is off the path and
+// stays absent — same outcome as before, but expressed via the
+// new three-row shape.
 func TestBuildSubway_Scenario5_GAbsent(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"C": "done",
@@ -1096,8 +1103,12 @@ func TestBuildSubway_Scenario5_GAbsent(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 2 {
-		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	if len(got.Lines) != 3 {
+		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "A" {
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+			got.Lines[0].AnchorShortID)
 	}
 	for _, s := range []string{"B", "J"} {
 		if _, ok := findSubwayNode(got.Nodes, s); !ok {
@@ -1112,8 +1123,11 @@ func TestBuildSubway_Scenario5_GAbsent(t *testing.T) {
 	}
 }
 
-// Scenario 6 — H, K claimed, B's subtree fully done. B's line drops
-// out. Fork at A connects G and J.
+// Scenario 6 — H, K claimed, B's subtree fully done. Under the
+// multi-focal tree-map mode (project/2026-04-27-graph-row-
+// merging.md, S2), the focal-path subgraph is {A, G, H, J, K}; rows
+// are A topmost (leftmost-only), G sub-row, J sub-row. B/C/D/E/F
+// are off the path and stay absent.
 func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"B": "done", "C": "done", "D": "done",
@@ -1124,8 +1138,12 @@ func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 2 {
-		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	if len(got.Lines) != 3 {
+		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "A" {
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+			got.Lines[0].AnchorShortID)
 	}
 	if _, ok := findSubwayNode(got.Nodes, "B"); ok {
 		t.Errorf("did not expect B in Nodes (subtree done), got %v", subwayNodeShortIDs(got.Nodes))
@@ -1410,8 +1428,10 @@ func fourPhaseTree(statuses map[string]string) []tt {
 	return base
 }
 
-// 3+ active phases — four claims, one per phase. Four lines, fork at
-// A, all branches open.
+// 3+ active phases — four claims, one per phase. Under the multi-
+// focal tree-map mode (project/2026-04-27-graph-row-merging.md, S2),
+// the LCA of {C, F, I, L} is A; rows are A topmost (leftmost-only)
+// + four sub-rows (B, E, H, K), each branching off A.
 func TestBuildSubway_FourActivePhases(t *testing.T) {
 	w := newTestWorld(fourPhaseTree(map[string]string{
 		"C": "claimed",
@@ -1422,8 +1442,13 @@ func TestBuildSubway_FourActivePhases(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 4 {
-		t.Fatalf("Lines: got %d, want 4", len(got.Lines))
+	if len(got.Lines) != 5 {
+		t.Fatalf("Lines: got %d, want 5 (A topmost + 4 sub-rows)",
+			len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "A" {
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+			got.Lines[0].AnchorShortID)
 	}
 	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
 		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
@@ -1589,7 +1614,10 @@ func TestBuildSubway_CrossProjectClaims_PerClusterRows(t *testing.T) {
 
 // Same-agent multiple claims — two focals owned by the same actor on
 // different lines. The graph is about work, not workers; output
-// should be identical to the multi-agent case.
+// should be identical to the multi-agent case. Under the multi-focal
+// tree-map mode (project/2026-04-27-graph-row-merging.md, S2), the
+// LCA of D and K is A; rows are A topmost (leftmost-only) + B sub-
+// row + J sub-row.
 func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"D": "claimed",
@@ -1600,8 +1628,12 @@ func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 2 {
-		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	if len(got.Lines) != 3 {
+		t.Fatalf("Lines: got %d, want 3 (A topmost + B + J)", len(got.Lines))
+	}
+	if got.Lines[0].AnchorShortID != "A" {
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+			got.Lines[0].AnchorShortID)
 	}
 	// Both active stops carry the actor.
 	for _, s := range []string{"D", "K"} {

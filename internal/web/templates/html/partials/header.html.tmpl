@@ -5,10 +5,10 @@
 <header class="c-header" role="banner">
   <span class="c-header__brand">Jobs</span>
   <nav class="c-tabs" aria-label="Primary">
-    <a href="/" class="c-tab{{if eq .ActiveTab "home"}} c-tab--active{{end}}" title="Home (press 1)">Home</a>
-    <a href="/plan" class="c-tab{{if eq .ActiveTab "plan"}} c-tab--active{{end}}" title="Plan (press 2)">Plan</a>
-    <a href="/actors" class="c-tab{{if eq .ActiveTab "actors"}} c-tab--active{{end}}" title="Actors (press 3)">Actors</a>
-    <a href="/log" class="c-tab{{if eq .ActiveTab "log"}} c-tab--active{{end}}" title="Log (press 4)">Log</a>
+    <a href="/" class="c-tab{{if eq .ActiveTab "home"}} c-tab--active{{end}}"{{if eq .ActiveTab "home"}} aria-current="page"{{end}} title="Home (press 1)">Home</a>
+    <a href="/plan" class="c-tab{{if eq .ActiveTab "plan"}} c-tab--active{{end}}"{{if eq .ActiveTab "plan"}} aria-current="page"{{end}} title="Plan (press 2)">Plan</a>
+    <a href="/actors" class="c-tab{{if eq .ActiveTab "actors"}} c-tab--active{{end}}"{{if eq .ActiveTab "actors"}} aria-current="page"{{end}} title="Actors (press 3)">Actors</a>
+    <a href="/log" class="c-tab{{if eq .ActiveTab "log"}} c-tab--active{{end}}"{{if eq .ActiveTab "log"}} aria-current="page"{{end}} title="Log (press 4)">Log</a>
   </nav>
   <div class="grow"></div>
   <div class="c-header__search-wrap" data-search-root>

@@ -142,9 +142,7 @@
           </div>
         {{- end -}}
       {{- else -}}
-        <div class="c-panel-row" style="--row-cols: 1fr">
-          <span class="c-panel-row__title t-muted">No recent completions</span>
-        </div>
+        <p class="c-empty">Nothing completed in the last 10 minutes.</p>
       {{- end -}}
     </div>
   </section>
@@ -166,9 +164,7 @@
           </div>
         {{- end -}}
       {{- else -}}
-        <div class="c-panel-row" style="--row-cols: 1fr">
-          <span class="c-panel-row__title t-muted">No active claims</span>
-        </div>
+        <p class="c-empty">No claims in flight.</p>
       {{- end -}}
     </div>
   </section>
@@ -189,9 +185,7 @@
           </div>
         {{- end -}}
       {{- else -}}
-        <div class="c-panel-row" style="--row-cols: 1fr">
-          <span class="c-panel-row__title t-muted">No available tasks</span>
-        </div>
+        <p class="c-empty">Nothing ready to claim.</p>
       {{- end -}}
     </div>
   </section>
@@ -214,9 +208,7 @@
           </div>
         {{- end -}}
       {{- else -}}
-        <div class="c-panel-row" style="--row-cols: 1fr">
-          <span class="c-panel-row__title t-muted">No blocked tasks</span>
-        </div>
+        <p class="c-empty">Nothing blocked.</p>
       {{- end -}}
     </div>
   </section>
@@ -226,7 +218,7 @@
 
 {{define "home_graph"}}<div class="c-mini-graph">
   {{- if .Empty -}}
-    <div class="c-empty">No active claims or upcoming work</div>
+    <p class="c-empty">No active or upcoming work.</p>
   {{- else -}}
     <div class="c-graph-frame" style="--canvas-w: {{.CanvasW}}; --canvas-h: {{.CanvasH}}">
     <div class="c-graph-canvas" style="width: {{.CanvasW}}px; height: {{.CanvasH}}px">

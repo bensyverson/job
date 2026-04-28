@@ -8,6 +8,7 @@
 {{define "title"}}Actors · Jobs{{end}}
 {{define "content"}}
 <div class="c-actors-board" aria-label="Actors" data-actors-board>
+  {{- if .Columns -}}
   {{- range .Columns -}}
     <section class="c-actor-col{{if .Idle}} c-actor-col--idle{{end}}" aria-labelledby="a-{{.Name}}" data-actor="{{.Name}}">
       <header class="c-actor-col__header">
@@ -39,9 +40,14 @@
             {{- end -}}
             <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.TaskShortID}}"></a>
           </article>
+        {{- else -}}
+          <p class="c-empty">No recent activity.</p>
         {{- end -}}
       </div>
     </section>
+  {{- end -}}
+  {{- else -}}
+    <p class="c-actors-board__empty">No actors have touched this store yet.</p>
   {{- end -}}
 </div>
 {{end}}

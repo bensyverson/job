@@ -52,6 +52,9 @@
       </div>
     {{- end -}}
   </div>
+  {{- if eq .Timeline.TotalEvents 0 -}}
+    <p class="c-actor-timeline__empty">No activity in the last 24 hours.</p>
+  {{- end -}}
   <div class="c-actor-timeline__axis">
     <span></span>
     <div class="c-actor-timeline__axis-labels">

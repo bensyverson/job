@@ -32,7 +32,7 @@ func TestHomeGraph_EmptyInputRendersEmptyState(t *testing.T) {
 	if !strings.Contains(body, "c-mini-graph") {
 		t.Errorf("missing c-mini-graph wrapper; body=%s", body)
 	}
-	if !strings.Contains(body, "No active claims or upcoming work") {
+	if !strings.Contains(body, "No active or upcoming work.") {
 		t.Errorf("missing empty state; body=%s", body)
 	}
 	if strings.Contains(body, "c-graph-canvas") {

@@ -164,11 +164,7 @@ export function renderSignals(bag) {
 // --- Panels (four data-home-* sections in c-grid-cols-4) ---
 
 function emptyPanelRow(text) {
-  return (
-    '<div class="c-panel-row" style="--row-cols: 1fr">' +
-    `<span class="c-panel-row__title t-muted">${escapeHTML(text)}</span>` +
-    "</div>"
-  );
+  return `<p class="c-empty">${escapeHTML(text)}</p>`;
 }
 
 export function renderActiveClaims(panel) {
@@ -186,7 +182,7 @@ export function renderActiveClaims(panel) {
         "</div>",
     ).join("");
   } else {
-    body = emptyPanelRow("No active claims");
+    body = emptyPanelRow("No claims in flight.");
   }
   return (
     '<section class="c-panel" aria-labelledby="p-claims" data-home-claims>' +
@@ -213,7 +209,7 @@ export function renderRecentCompletions(panel) {
         "</div>",
     ).join("");
   } else {
-    body = emptyPanelRow("No recent completions");
+    body = emptyPanelRow("Nothing completed in the last 10 minutes.");
   }
   return (
     '<section class="c-panel" aria-labelledby="p-recent" data-home-recent>' +
@@ -239,7 +235,7 @@ export function renderUpcoming(panel) {
         "</div>",
     ).join("");
   } else {
-    body = emptyPanelRow("No available tasks");
+    body = emptyPanelRow("Nothing ready to claim.");
   }
   return (
     '<section class="c-panel" aria-labelledby="p-upcoming" data-home-upcoming>' +
@@ -273,7 +269,7 @@ export function renderBlocked(panel) {
       );
     }).join("");
   } else {
-    body = emptyPanelRow("No blocked tasks");
+    body = emptyPanelRow("Nothing blocked.");
   }
   return (
     '<section class="c-panel" aria-labelledby="p-blocked" data-home-blocked>' +

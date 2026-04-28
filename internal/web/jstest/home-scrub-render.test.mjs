@@ -248,9 +248,9 @@ test("renderActiveClaims: section carries data-home-claims and meta count", () =
   assert.match(html, /Some task/);
 });
 
-test("renderActiveClaims: empty state renders 'No active claims'", () => {
+test("renderActiveClaims: empty state renders prototype copy in c-empty", () => {
   const html = renderActiveClaims({ Count: 0, Rows: [] });
-  assert.match(html, /No active claims/);
+  assert.match(html, /<p class="c-empty">No claims in flight\.<\/p>/);
 });
 
 // --- Recent completions panel ---
@@ -286,9 +286,9 @@ test("renderRecentCompletions: section carries data-home-recent + 'last N' meta"
   assert.match(html, /data-actor="bob"/);
 });
 
-test("renderRecentCompletions: empty state renders 'No recent completions'", () => {
+test("renderRecentCompletions: empty state renders prototype copy in c-empty", () => {
   const html = renderRecentCompletions({ Count: 0, Rows: [] });
-  assert.match(html, /No recent completions/);
+  assert.match(html, /<p class="c-empty">Nothing completed in the last 10 minutes\.<\/p>/);
 });
 
 // --- Upcoming panel ---
@@ -310,6 +310,11 @@ test("renderUpcoming: section carries data-home-upcoming + 'N ready' meta", () =
   assert.match(html, /1 ready/);
   assert.match(html, /data-created-at="1700000000"/);
   assert.match(html, /Build it/);
+});
+
+test("renderUpcoming: empty state renders prototype copy in c-empty", () => {
+  const html = renderUpcoming({ Count: 0, Rows: [] });
+  assert.match(html, /<p class="c-empty">Nothing ready to claim\.<\/p>/);
 });
 
 // --- Blocked panel ---
@@ -337,9 +342,9 @@ test("renderBlocked: section carries data-home-blocked + 'N waiting' meta + bloc
   assert.match(html, /waiting on/);
 });
 
-test("renderBlocked: empty state renders 'No blocked tasks'", () => {
+test("renderBlocked: empty state renders prototype copy in c-empty", () => {
   const html = renderBlocked({ Count: 0, Rows: [] });
-  assert.match(html, /No blocked tasks/);
+  assert.match(html, /<p class="c-empty">Nothing blocked\.<\/p>/);
 });
 
 // --- Escaping ---

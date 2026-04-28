@@ -42,6 +42,49 @@ func TestLayoutMountsPeekSheetAndScript(t *testing.T) {
 	}
 }
 
+func TestLayout_HasSkipLinkAndMainTarget(t *testing.T) {
+	e := newEngine(t)
+	var buf bytes.Buffer
+	if err := e.Render(&buf, "home", &homeTemplateData{Chrome: templates.Chrome{ActiveTab: "home"}}); err != nil {
+		t.Fatalf("Render home: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `<a href="#main" class="c-skip-link">Skip to main content</a>`) {
+		t.Errorf("layout missing skip link\n---\n%s", body)
+	}
+	if !strings.Contains(body, `id="main"`) || !strings.Contains(body, `tabindex="-1"`) {
+		t.Errorf("main is missing id/tabindex for skip-link target")
+	}
+}
+
+func TestHeader_ActiveTabCarriesAriaCurrent(t *testing.T) {
+	e := newEngine(t)
+	for _, tab := range []string{"home", "plan", "actors", "log"} {
+		var buf bytes.Buffer
+		if err := e.Render(&buf, "home", &homeTemplateData{Chrome: templates.Chrome{ActiveTab: tab}}); err != nil {
+			t.Fatalf("Render home (%s): %v", tab, err)
+		}
+		body := buf.String()
+		// Each render must contain exactly one aria-current="page".
+		got := strings.Count(body, `aria-current="page"`)
+		if got != 1 {
+			t.Errorf("ActiveTab=%q: aria-current=\"page\" count = %d, want 1\n---\n%s", tab, got, body)
+		}
+	}
+}
+
+func TestFooter_ConnectionStatusIsAriaLivePolite(t *testing.T) {
+	e := newEngine(t)
+	var buf bytes.Buffer
+	if err := e.Render(&buf, "home", &homeTemplateData{Chrome: templates.Chrome{ActiveTab: "home"}}); err != nil {
+		t.Fatalf("Render home: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `data-connection role="status" aria-live="polite"`) {
+		t.Errorf("connection indicator missing role=status / aria-live=polite\n---\n%s", body)
+	}
+}
+
 // homeTemplateData mirrors the shape of handlers.HomePageData just
 // closely enough for the home template to render without missing-field
 // errors. Duplicated here rather than imported from handlers because

@@ -279,6 +279,8 @@ func TestActorSingle_TimelineExcludesEventsOlderThan24h(t *testing.T) {
 		t.Errorf("event 30h ago should not produce a timeline mark")
 	}
 	mustContain(t, body, `0 events`)
+	mustContain(t, body, `class="c-actor-timeline__empty"`)
+	mustContain(t, body, `No activity in the last 24 hours.`)
 }
 
 func TestActorSingle_TimelineCountsTotalEventsInWindow(t *testing.T) {

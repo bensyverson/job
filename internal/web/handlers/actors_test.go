@@ -441,6 +441,8 @@ func TestActors_EmptyDatabaseRendersEmptyBoard(t *testing.T) {
 		t.Errorf("empty db should render no actor columns")
 	}
 	mustContain(t, body, `c-actors-board`)
+	mustContain(t, body, `class="c-actors-board__empty"`)
+	mustContain(t, body, `No actors have touched this store yet.`)
 }
 
 // --- ?at time-travel tests (R0Ro4) ---

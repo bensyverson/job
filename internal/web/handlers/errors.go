@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/bensyverson/jobs/internal/web/templates"
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // ErrorPageData drives the shared error template. Status is numeric
@@ -50,12 +54,44 @@ func NotFound(deps Deps) http.Handler {
 
 // InternalError renders a 500 page using the shared error template.
 // Logs the underlying error server-side; the user sees a calm message
-// without implementation detail.
+// without implementation detail. SQLite busy/locked errors are
+// distinguished as a 503 with a "store is busy" message — typical when
+// another `job` command holds the writer.
 func InternalError(deps Deps, w http.ResponseWriter, context string, err error) {
+	if IsDBLocked(err) {
+		log.Printf("db locked (%s): %v", context, err)
+		RenderError(deps, w,
+			http.StatusServiceUnavailable,
+			"Store is busy",
+			"Another job command is writing to the database. Reload in a moment.",
+		)
+		return
+	}
 	log.Printf("internal error (%s): %v", context, err)
 	RenderError(deps, w,
 		http.StatusInternalServerError,
 		"Something went wrong",
 		"We couldn't complete that request. Reload the page; if this persists, check the server logs.",
 	)
+}
+
+// IsDBLocked reports whether err is a SQLite busy/locked error. Checks
+// the typed *sqlite.Error first; falls back to substring match on the
+// canonical messages so wrapping/log lines still classify correctly.
+func IsDBLocked(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		c := se.Code()
+		if c == sqlite3.SQLITE_BUSY || c == sqlite3.SQLITE_LOCKED {
+			return true
+		}
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "SQLITE_BUSY") ||
+		strings.Contains(msg, "SQLITE_LOCKED")
 }

@@ -2657,6 +2657,28 @@ a.c-graph-node__bug:focus-visible {
   padding: var(--space-md);
 }
 
+.c-panel__list .c-empty {
+  padding: var(--space-md) var(--space-lg);
+}
+
+.c-actor-col__stream .c-empty {
+  padding: var(--space-md) var(--space-md) var(--space-lg);
+  text-align: left;
+}
+
+.c-actors-board__empty {
+  grid-column: 1 / -1;
+  padding: var(--space-lg);
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-dim);
+}
+
+.c-actor-timeline__empty {
+  padding: var(--space-sm) 0 0;
+  font-size: var(--font-body-sm-size);
+  color: var(--color-on-surface-dim);
+}
+
 /* ---------- Bell ---------- */
 
 .c-bell {
@@ -2681,4 +2703,68 @@ a.c-graph-node__bug:focus-visible {
 
 .c-bell--active {
   color: var(--color-primary);
+}
+
+/* ---------- Narrow-viewport fallback ----------
+   Mobile is not a primary target — the dashboard is desktop-first. The
+   goal here is "is my agent stuck?" from a phone, not a full-fidelity
+   port. We collapse Home's two grids to single columns, hide the
+   mini-graph (won't read at this width), and let the header wrap so
+   the tabs and search stack instead of overflowing horizontally. */
+@media (max-width: 720px) {
+  .c-grid-signals,
+  .c-grid-cols-2,
+  .c-grid-cols-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .c-grid-cols-4 {
+    min-height: 0;
+  }
+
+  .c-grid-cols-4 .c-panel__list {
+    max-height: 280px;
+  }
+
+  /* Mini-graph wrapper sits inside its own .c-section. Hide that
+     section entirely — at this width the dependency layout would be
+     unreadable and would push the panels off-screen. */
+  [data-home-graph] {
+    display: none;
+  }
+
+  .c-header {
+    height: auto;
+    flex-wrap: wrap;
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .c-header__search-wrap {
+    flex: 1 1 100%;
+    max-width: none;
+    order: 10;
+  }
+
+  .c-tabs {
+    flex: 1 1 auto;
+  }
+
+  /* Footer metrics wrap rather than push the heartbeat off-screen.
+     The scrubber pill is hidden — desktop-only feature. */
+  .c-footer {
+    flex-wrap: wrap;
+    height: auto;
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .c-scrubber-pill,
+  .c-scrubber-strip {
+    display: none;
+  }
+
+  /* Actors board is a horizontal scroll on narrow screens — leave it.
+     Plan and Log inherit the stacked layout from the cascade and
+     remain functional at narrow widths. */
 }

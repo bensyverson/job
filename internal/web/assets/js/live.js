@@ -21,10 +21,15 @@
       CustomEvent and update their own rows/columns. The module is
       intentionally ignorant of Log / Home / Actors structure.
 
-  EventSource already handles reconnect with exponential backoff and
-  resends Last-Event-ID automatically, so we get most of the reconnect
-  behavior for free. Our localStorage persistence handles the separate
-  page-reload case.
+  Reconnect strategy: EventSource's built-in reconnect retries on a
+  fixed ~3s rhythm with no ceiling, which means an outage of an hour
+  produces ~1200 retries per open tab. We close the stream on error
+  and reopen it ourselves on a doubling delay (1s, 2s, 4s, …, capped
+  at 30s) with jitter so a fleet of dashboards doesn't all reconnect
+  on the same tick. The math lives in live-backoff.mjs and is
+  duplicated here as computeBackoff because this script loads as a
+  classic <script> rather than a module — the duplication is one short
+  formula and the .mjs version is the unit-tested authority.
 */
 
 (function () {
@@ -32,6 +37,19 @@
 
   const STORAGE_KEY = "jobs.live.lastEventId";
   const HEARTBEAT_REFRESH_MS = 1000;
+  const BACKOFF_BASE_MS = 1000;
+  const BACKOFF_CAP_MS = 30000;
+  const BACKOFF_JITTER = 0.2;
+
+  // Mirror of live-backoff.mjs#computeBackoff. Keep them in sync.
+  function computeBackoff(attempts) {
+    const n = Math.max(0, attempts | 0);
+    const raw = BACKOFF_BASE_MS * Math.pow(2, n);
+    const capped = Math.min(BACKOFF_CAP_MS, raw);
+    const j = BACKOFF_JITTER * (2 * Math.random() - 1);
+    const ms = Math.round(capped * (1 + j));
+    return Math.max(Math.floor(BACKOFF_BASE_MS / 2), ms);
+  }
 
   // Event types we know about. Listening for 'message' is not enough
   // because SSE frames with `event: <name>` dispatch only to the
@@ -81,27 +99,40 @@
       this.es = null;
       this.lastEventAt = 0; // wall-clock ms of most recent event
       this.connectionState = "connecting";
+      this.retryAttempts = 0;
+      this.retryHandle = null;
+      this.baseSrc = null;
     }
 
     connectedCallback() {
-      const raw = this.getAttribute("src") || "/events";
-      const url = new URL(raw, window.location.origin);
-      // Resume from the last id we saw in any prior session. The
-      // server's backfill will replay everything since — modulo limit.
-      const resume = loadLastID();
-      if (resume && !url.searchParams.has("since")) {
-        url.searchParams.set("since", String(resume));
-      }
-      this.openStream(url.toString());
+      this.baseSrc = this.getAttribute("src") || "/events";
+      this.connect();
       this.startHeartbeatTick();
 
       // navigator.onLine distinguishes "your laptop's wifi dropped"
       // from "server is briefly unreachable but network is fine" —
       // both surface as EventSource errors otherwise.
       this.onOnline = () => {
-        if (this.connectionState === "offline") this.setConnection("reconnecting");
+        if (this.connectionState === "offline" || this.connectionState === "reconnecting") {
+          this.setConnection("reconnecting");
+          // Network just came back — retry now instead of waiting out
+          // whatever delay the backoff timer was sitting on.
+          if (this.retryHandle) {
+            clearTimeout(this.retryHandle);
+            this.retryHandle = null;
+          }
+          this.connect();
+        }
       };
-      this.onOffline = () => this.setConnection("offline");
+      this.onOffline = () => {
+        this.setConnection("offline");
+        // Stop retrying while the OS knows we're offline; the online
+        // listener will kick a fresh connect attempt when we're back.
+        if (this.retryHandle) {
+          clearTimeout(this.retryHandle);
+          this.retryHandle = null;
+        }
+      };
       window.addEventListener("online", this.onOnline);
       window.addEventListener("offline", this.onOffline);
       if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -113,20 +144,41 @@
       if (this.es) this.es.close();
       this.es = null;
       if (this.tickHandle) clearInterval(this.tickHandle);
+      if (this.retryHandle) clearTimeout(this.retryHandle);
       if (this.onOnline) window.removeEventListener("online", this.onOnline);
       if (this.onOffline) window.removeEventListener("offline", this.onOffline);
+    }
+
+    // connect builds a fresh URL (including the latest persisted
+    // last-event-id) and opens the stream. Used both at mount time and
+    // on every reconnect attempt so we always resume from the right id.
+    connect() {
+      const url = new URL(this.baseSrc, window.location.origin);
+      const resume = loadLastID();
+      if (resume) {
+        url.searchParams.set("since", String(resume));
+      }
+      this.openStream(url.toString());
     }
 
     openStream(url) {
       this.es = new EventSource(url);
 
       this.es.addEventListener("open", () => {
+        this.retryAttempts = 0;
         this.setConnection("connected");
       });
       this.es.addEventListener("error", () => {
-        // EventSource will retry automatically; we surface the state
-        // so the UI can reflect it without killing the stream.
+        // Tear down the failed stream and schedule our own backoff
+        // retry. EventSource's built-in retry runs every ~3s with no
+        // ceiling — fine for a blip, painful during a real outage. By
+        // closing here we own the cadence: 1s, 2s, 4s, … capped at 30s.
+        if (this.es) {
+          this.es.close();
+          this.es = null;
+        }
         this.setConnection("reconnecting");
+        this.scheduleRetry();
       });
 
       for (const type of KNOWN_EVENT_TYPES) {
@@ -136,6 +188,21 @@
       // dispatch to 'message' only fires when no event: field is
       // present, so this picks up server frames that omit it.
       this.es.addEventListener("message", (ev) => this.handleFrame(ev));
+    }
+
+    scheduleRetry() {
+      if (this.retryHandle) clearTimeout(this.retryHandle);
+      const delay = computeBackoff(this.retryAttempts);
+      this.retryAttempts++;
+      this.retryHandle = setTimeout(() => {
+        this.retryHandle = null;
+        // Skip while the OS reports offline — onOnline will trigger
+        // a reconnect when connectivity returns.
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+          return;
+        }
+        this.connect();
+      }, delay);
     }
 
     handleFrame(ev) {

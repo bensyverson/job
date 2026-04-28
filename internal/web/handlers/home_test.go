@@ -275,7 +275,7 @@ func TestHome_ActiveClaims_EmptyStateRendersMessage(t *testing.T) {
 	mustContain(t, body, `Active claims`)
 	// Empty-state copy and "0 in flight" meta.
 	mustContain(t, body, `0 in flight`)
-	mustContain(t, body, `No active claims`)
+	mustContain(t, body, `<p class="c-empty">No claims in flight.</p>`)
 }
 
 func TestHome_ActiveClaims_RendersOneRowPerActiveClaim(t *testing.T) {
@@ -420,7 +420,7 @@ func TestHome_RecentCompletions_EmptyState(t *testing.T) {
 
 	mustContain(t, body, `id="p-recent"`)
 	mustContain(t, body, `Recent completions`)
-	mustContain(t, body, `No recent completions`)
+	mustContain(t, body, `<p class="c-empty">Nothing completed in the last 10 minutes.</p>`)
 }
 
 func TestHome_RecentCompletions_RendersDoneAndCanceled(t *testing.T) {
@@ -576,7 +576,7 @@ func TestHome_Blocked_EmptyState(t *testing.T) {
 
 	mustContain(t, body, `id="p-blocked"`)
 	mustContain(t, body, `Blocked`)
-	mustContain(t, body, `No blocked tasks`)
+	mustContain(t, body, `<p class="c-empty">Nothing blocked.</p>`)
 	mustContain(t, body, `0 waiting`)
 }
 
@@ -698,7 +698,7 @@ func TestHome_Graph_EmptyWhenNoTasks(t *testing.T) {
 
 	mustContain(t, body, `data-home-graph`)
 	mustContain(t, body, `Dependency flow`)
-	mustContain(t, body, `No active claims or upcoming work`)
+	mustContain(t, body, `No active or upcoming work.`)
 }
 
 // TestHome_Graph_RendersSpineForActiveClaim seeds a simple tree
@@ -782,7 +782,7 @@ func TestHome_Upcoming_EmptyState(t *testing.T) {
 	section := upcomingSection(t, body)
 	mustContain(t, section, `Available`)
 	mustContain(t, section, `0 ready`)
-	mustContain(t, section, `No available tasks`)
+	mustContain(t, section, `<p class="c-empty">Nothing ready to claim.</p>`)
 }
 
 func TestHome_Upcoming_ListsAvailableLeavesWithAge(t *testing.T) {

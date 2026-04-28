@@ -99,21 +99,21 @@ func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 		// (project/2026-04-27-graph-row-merging.md). Each row in
 		// rows carries a ParentShortID identifying its branch
 		// parent in the focal-path subgraph (empty for the
-		// topmost row, whose leftmost is the cluster LCA). For
-		// the S2 Fork shim we group sub-rows by ParentShortID
-		// and emit one Fork per group with the parent as a
-		// single-element AncestorChain — that keeps the
-		// existing layout/branch-curve loop in
-		// render/subway_layout.go drawing each row's curve from
-		// its parent to its leftmost. The layout pivot to
-		// depth-aligned columns + retiring AncestorChain in
-		// favor of per-row ParentShortID lands in S3 (Ai3De).
+		// topmost row, whose leftmost is the cluster LCA). The
+		// branch-curve loop in render/subway_layout.go reads
+		// ParentShortID directly to position each row's leftmost
+		// at col(parent) + 1; the per-row parent edge has
+		// retired the legacy Fork.AncestorChain shim.
 		baseIdx := len(lines)
 		rows := buildMultiFocalRows(w, clusterFocals, window)
 		if len(rows) == 0 {
 			continue
 		}
 		lines = append(lines, rows...)
+		// Group sub-rows by parent for the Fork bookkeeping that
+		// drives branch-edge generation below. A Fork now carries
+		// just LineIndices — the parent identity lives on each
+		// line's ParentShortID.
 		type forkGroup struct {
 			parent  string
 			indices []int
@@ -133,10 +133,7 @@ func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 			g.indices = append(g.indices, baseIdx+i)
 		}
 		for _, g := range groups {
-			forks = append(forks, &Fork{
-				AncestorChain: []string{g.parent},
-				LineIndices:   g.indices,
-			})
+			forks = append(forks, &Fork{LineIndices: g.indices})
 		}
 	}
 	if len(lines) == 0 {
@@ -159,12 +156,10 @@ func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 			URL:     "/tasks/" + t.shortID,
 		})
 	}
-	for _, fork := range forks {
-		for _, sid := range fork.AncestorChain {
-			pushNode(byShort[sid])
-		}
-	}
 	for _, line := range lines {
+		if line.ParentShortID != "" {
+			pushNode(byShort[line.ParentShortID])
+		}
 		pushNode(byShort[line.AnchorShortID])
 		for _, item := range line.Items {
 			if item.Kind == LineItemStop {
@@ -175,9 +170,12 @@ func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 
 	var edges []SubwayEdge
 	for _, fork := range forks {
-		divergence := fork.AncestorChain[len(fork.AncestorChain)-1]
 		for _, idx := range fork.LineIndices {
-			anchor := byShort[lines[idx].AnchorShortID]
+			line := lines[idx]
+			if line.ParentShortID == "" {
+				continue
+			}
+			anchor := byShort[line.AnchorShortID]
 			if anchor == nil {
 				continue
 			}
@@ -186,7 +184,7 @@ func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 				kind = SubwayEdgeBranchClosed
 			}
 			edges = append(edges, SubwayEdge{
-				FromShortID: divergence,
+				FromShortID: line.ParentShortID,
 				ToShortID:   anchor.shortID,
 				Kind:        kind,
 			})
@@ -285,12 +283,6 @@ func buildSubwayWith(w *graphWorld, _ /* lookahead */, window int) Subway {
 					Kind:        kind,
 				})
 				prev = item.ShortID
-			case LineItemMore:
-				edges = append(edges, SubwayEdge{
-					FromShortID: prev,
-					ToShortID:   MoreShortID(line.AnchorShortID),
-					Kind:        SubwayEdgeFlow,
-				})
 			}
 		}
 	}
@@ -378,53 +370,31 @@ type Line struct {
 	Items         []LineItem
 }
 
-// LineItem is one element in a Line's sequence — a stop, an in-gap
-// elision marker, or a terminal More pill.
+// LineItem is one element in a Line's sequence — a stop or one of
+// the elision markers.
 //
 // Stop: ShortID is set; renders as a node disc on the line.
 //
 // Elision: drawn as small dots in the gap between two surrounding
 // items on the line (anchor↔stop, stop↔stop). It does not consume a
 // column slot and only carries presentational meaning.
-//
-// More: a terminal `(+N)` pill that stands in for trailing siblings
-// hidden after the last visible stop. MoreCount is the number of
-// elided trailing siblings; it consumes a column slot like a stop
-// and renders as a small pill at the end of the line.
 type LineItem struct {
-	Kind      LineItemKind
-	ShortID   string
-	MoreCount int
-}
-
-// MoreShortID returns the synthetic short ID assigned to the
-// terminal More pill on the line whose anchor is anchorShortID.
-// The `~` prefix never collides with real short IDs (which are
-// alphanumeric). Edges originating from the last visible stop and
-// terminating at the More pill are addressed via this synthetic ID;
-// the layout step resolves it to the pill's pixel position.
-func MoreShortID(anchorShortID string) string {
-	return "~more~" + anchorShortID
+	Kind    LineItemKind
+	ShortID string
 }
 
 // LineItemKind tags a LineItem as a stop, an in-gap elision, a
-// broken-line elision (single-focal preorder mode), a terminating
-// ellipsis (single-focal preorder mode), or a terminal More pill.
+// broken-line elision (single-focal preorder mode), or a
+// terminating ellipsis (single-focal preorder mode).
 type LineItemKind int
 
 const (
 	// LineItemStop is a rendered stop on the line; ShortID is set.
 	LineItemStop LineItemKind = iota
-	// LineItemElision is an in-gap dots marker; ShortID is empty,
-	// MoreCount is zero. Sits between two surrounding items, takes
-	// no slot. Used by the legacy parent-rooted line model.
+	// LineItemElision is an in-gap dots marker; ShortID is empty.
+	// Sits between two surrounding items, takes no slot. Used by
+	// the legacy parent-rooted line model.
 	LineItemElision
-	// LineItemMore is a terminal `(+N)` pill summarizing the count
-	// of hidden trailing siblings. MoreCount > 0; ShortID is empty.
-	// Takes a column slot like a stop. Used by the legacy
-	// parent-rooted line model; the single-focal preorder mode
-	// renders trailing elision as LineItemElisionTerminating instead.
-	LineItemMore
 	// LineItemElisionBroken is a broken-line elision used by the
 	// single-focal preorder window mode: a short stub from the
 	// preceding item, three small SVG circles in negative space, a
@@ -435,24 +405,21 @@ const (
 	LineItemElisionBroken
 	// LineItemElisionTerminating is a trailing terminating ellipsis
 	// at the right edge of a single-focal preorder row: disc →
-	// segment → three dots, no trailing arrow stub. Replaces the
-	// legacy LineItemMore pill in the new mode. Takes no slot.
+	// segment → three dots, no trailing arrow stub. Takes no slot.
 	LineItemElisionTerminating
 )
 
-// Fork is the transfer station where two or more lines diverge from a
-// common ancestor. AncestorChain[0] is the topmost LCA; for shallow
-// LCAs the chain has length 1. For a deep-LCA path
-// (e.g. A → M → B vs A → M → G), the chain renders the full path
-// from the LCA down to the actual divergence point so intermediate
-// ancestors aren't silently collapsed.
+// Fork groups sub-rows that share a common branch parent. The
+// parent identity now lives on each Line's ParentShortID
+// (project/2026-04-27-graph-row-merging.md, S3); Fork retains
+// LineIndices as a coarse grouping so the edge-generation pass can
+// emit one branch edge per row without rescanning the lines slice.
 //
 // LineIndices references Subway.Lines in display order (top to
-// bottom). A Subway with a single Line has Fork == nil — the LCA
-// would be chrome.
+// bottom). A Subway with a single line or no branching produces no
+// Forks — there is nothing to group.
 type Fork struct {
-	AncestorChain []string
-	LineIndices   []int
+	LineIndices []int
 }
 
 // SubwayNode is a single task's presentation metadata, unique per
@@ -775,109 +742,20 @@ func applyWindow(seed *lineSeed, N int) Line {
 	}
 	if last := visible[len(visible)-1]; last < len(children)-1 {
 		// Trailing siblings beyond the visible window collapse to a
-		// terminating ellipsis; the legacy `(+N)` pill (LineItemMore)
-		// is gone from the data path (project/2026-04-27-graph-row-
-		// merging.md, S1). The template/CSS for the pill linger until
-		// S4 cleanup.
+		// terminating ellipsis (project/2026-04-27-graph-row-
+		// merging.md).
 		line.Items = append(line.Items, LineItem{Kind: LineItemElisionTerminating})
 	}
 	return line
 }
 
-// computeFork returns the Fork that connects two or more lines, or
-// nil when there is fewer than two lines (the LCA would be chrome
-// with only one line) or when the line parents have no common
-// ancestor (disjoint trees).
-//
-// AncestorChain currently has length 1: the lowest common ancestor
-// of all line parents. Extending the chain upward to render an
-// only-child cascade above the divergence point ("deep-LCA path"
-// in the spec) is a documented refinement and isn't applied here.
-//
-// LineIndices preserves the display order of seeds — collectLines
-// emits them in preorder, so the fork keeps that ordering.
-func computeFork(seeds []*lineSeed) *Fork {
-	if len(seeds) < 2 {
-		return nil
-	}
-	lca := seeds[0].parent
-	for i := 1; i < len(seeds); i++ {
-		lca = lcaPair(lca, seeds[i].parent)
-		if lca == nil {
-			return nil
-		}
-	}
-	indices := make([]int, len(seeds))
-	for i := range indices {
-		indices[i] = i
-	}
-	return &Fork{
-		AncestorChain: []string{lca.shortID},
-		LineIndices:   indices,
-	}
-}
-
-// computeForks groups seeds by project root and emits one Fork per
-// cluster. Cross-project claims (lines under different roots) each
-// get their own transfer station; a single isolated line yields no
-// fork (the LCA would be chrome). Within a multi-line cluster the
-// fork sits at the LCA of the cluster's seed parents (often the
-// cluster root, sometimes deeper); a single-line cluster in a
-// multi-cluster Subway anchors its fork on the cluster root so the
-// project root still renders as the line's transfer station.
-//
-// LineIndices in each Fork are indices into the original seeds slice
-// (preorder-stable from collectLines).
-func computeForks(seeds []*lineSeed) []*Fork {
-	if len(seeds) < 2 {
-		return nil
-	}
-	type cluster struct {
-		root    *graphTask
-		seedIdx []int
-	}
-	var clusters []cluster
-	clusterByRoot := map[int64]int{}
-	for i, seed := range seeds {
-		root := seed.parent
-		for root.parent != nil {
-			root = root.parent
-		}
-		if idx, ok := clusterByRoot[root.id]; ok {
-			clusters[idx].seedIdx = append(clusters[idx].seedIdx, i)
-			continue
-		}
-		clusterByRoot[root.id] = len(clusters)
-		clusters = append(clusters, cluster{root: root, seedIdx: []int{i}})
-	}
-	if len(clusters) == 1 && len(clusters[0].seedIdx) < 2 {
-		return nil
-	}
-	var forks []*Fork
-	for _, c := range clusters {
-		if len(c.seedIdx) >= 2 {
-			subSeeds := make([]*lineSeed, len(c.seedIdx))
-			for j, i := range c.seedIdx {
-				subSeeds[j] = seeds[i]
-			}
-			f := computeFork(subSeeds)
-			if f == nil {
-				// Cluster shares a root, so an LCA must exist; fall
-				// back defensively to the cluster root.
-				f = &Fork{AncestorChain: []string{c.root.shortID}}
-			}
-			f.LineIndices = append([]int(nil), c.seedIdx...)
-			forks = append(forks, f)
-			continue
-		}
-		// Singleton in a multi-cluster Subway — anchor on the root.
-		forks = append(forks, &Fork{
-			AncestorChain: []string{c.root.shortID},
-			LineIndices:   append([]int(nil), c.seedIdx...),
-		})
-	}
-	return forks
-}
+// Legacy LCA fork helpers (computeFork / computeForks) lived here
+// until S3d. They produced a Fork.AncestorChain that the layout used
+// to position the LCA chain inline with one of the cluster's rows;
+// the depth-aligned-leftmost rule plus per-row Line.ParentShortID
+// (project/2026-04-27-graph-row-merging.md, S3) replaces both of
+// those concerns, and BuildSubway hasn't called these helpers since
+// S2.
 
 // lcaPair returns the lowest common ancestor of two tasks, or nil
 // when they share no ancestor (disjoint trees). When one is an
@@ -912,10 +790,9 @@ func lcaPair(a, b *graphTask) *graphTask {
 // terminating elision (LineItemElisionTerminating) sits at the right
 // edge when the +N walk continues past the row's last visible stop.
 //
-// The function never emits LineItemMore — trailing siblings collapse
-// to LineItemElisionTerminating. It also never emits LineItemElision
-// (the old in-gap dots marker), which belongs to the legacy
-// parent-rooted line model.
+// The function never emits LineItemElision (the in-gap dots marker
+// from the legacy parent-rooted line model); trailing siblings
+// collapse to LineItemElisionTerminating.
 func buildSingleFocalLine(_ *graphWorld, focal *graphTask, N int) Line {
 	if focal == nil {
 		return Line{}

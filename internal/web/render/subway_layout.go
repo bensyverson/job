@@ -10,11 +10,10 @@ import (
 // SubwayView is the pre-laid-out, ready-to-render form of a
 // signals.Subway. All positions are in CSS pixels; edge PathD
 // strings are complete SVG path "d" attributes. The template
-// iterates Nodes, Edges, Elisions, and Mores to emit the multi-line
+// iterates Nodes, Edges, and Elisions to emit the multi-line
 // subway-system mini-graph (lines as horizontal tracks, an optional
 // fork branching upward and downward, closure markers on blocked
-// ingress edges, in-gap dots at elided spans, and `(+N)` terminal
-// pills for trailing siblings).
+// ingress edges, and in-gap dots at elided spans).
 type SubwayView struct {
 	CanvasW, CanvasH int
 	Empty            bool
@@ -26,7 +25,6 @@ type SubwayView struct {
 	Nodes    []SubwayNodeView
 	Edges    []SubwayEdgeView
 	Elisions []SubwayElisionView
-	Mores    []SubwayMoreView
 }
 
 // SubwayLineView is the geometric record for one line: the row it
@@ -39,17 +37,16 @@ type SubwayLineView struct {
 	StopShortIDs  []string
 }
 
-// SubwayForkView captures one cluster's transfer station — the LCA
-// (or project root) shared by a group of lines. With cross-project
-// claims a SubwayView holds multiple SubwayForkViews; each cluster's
-// fork sits at col 0..k-1 (k = chain length) on the row of its
-// inline line. AncestorShortIDs is the rendered chain (currently
-// length 1 for shallow LCAs); BranchTargets lists the line anchor
-// short IDs in render order so the template can draw fork-to-anchor
-// connectors above and below the inline anchor.
+// SubwayForkView captures one cluster's transfer station — the
+// group of lines that share a branch parent. BranchTargets lists
+// the line anchor short IDs in render order so the template can
+// draw fork-to-anchor connectors above and below the parent's
+// rendered position; the parent identity itself lives on each
+// Line's ParentShortID (project/2026-04-27-graph-row-merging.md,
+// S3). With cross-project claims a SubwayView holds multiple
+// SubwayForkViews stacked vertically.
 type SubwayForkView struct {
-	AncestorShortIDs []string
-	BranchTargets    []string
+	BranchTargets []string
 }
 
 // SubwayNodeView is a positioned subway stop or anchor. The template
@@ -95,22 +92,9 @@ type SubwayEdgeView struct {
 // SubwayElisionView is an in-gap dots marker positioned at the
 // midpoint between two surrounding items on a line — anchor↔first
 // visible stop, or stop↔stop across a gap. It does not consume a
-// column slot. Trailing elisions are not rendered as elisions —
-// they become a SubwayMoreView pill instead.
+// column slot.
 type SubwayElisionView struct {
 	Left, Top int
-}
-
-// SubwayMoreView is a terminal `(+N)` pill summarizing the count of
-// trailing siblings hidden after the last visible stop on a line.
-// It consumes a column slot like a regular stop. ShortID is the
-// synthetic ID returned by signals.MoreShortID(line.AnchorShortID)
-// — edges originating from the last stop reach the pill via this
-// ID rather than a real task ID.
-type SubwayMoreView struct {
-	ShortID   string
-	Left, Top int
-	Count     int
 }
 
 // Subway layout geometry. 32px node disc, 160px between column
@@ -135,42 +119,58 @@ const (
 
 // LayoutSubway turns a topological signals.Subway into a positioned
 // SubwayView ready for the home-view template. Each line occupies a
-// distinct row; a fork (when present) renders one line's anchor
-// inline with the LCA and connects the others via /  \ branches with
-// closure markers on sequence-blocked ingress edges.
+// distinct row; a fork (when present) connects each row's leftmost
+// to its branch parent's rendered position.
 //
-// Inline-line rule (design doc): "typically the middle line for
-// three lines, the top for two." Generalized as (n-1)/2 — top for 2,
-// middle for 3, low-middle for 4+.
-//
-// Column layout: with a fork, the LCA chain occupies cols 0..k-1,
-// each line's anchor sits at col k, and stops follow at cols k+1,
-// k+2, .... Without a fork, the single anchor sits at col 0 and its
-// stops at cols 1, 2, ....
+// Column layout (project/2026-04-27-graph-row-merging.md, S3):
+// depth-aligned leftmost. The topmost row's leftmost sits at col 0;
+// each non-top row's leftmost sits at col(parent) + 1, where parent
+// is the row's branch parent (Line.ParentShortID under the new
+// model, or Fork.AncestorChain's last entry for legacy fixtures
+// that haven't migrated yet). Stops on a row advance one col each
+// from the row's leftmost. The cluster LCA renders as the topmost
+// row's leftmost; fork-ancestor chains carved off the chain (legacy
+// only) sit at cols 0..k-1 inline with the cluster's middle row,
+// preserving the old "transfer station" rendering until the
+// AncestorChain field is retired in S3d.
 func LayoutSubway(s signals.Subway) SubwayView {
 	if len(s.Lines) == 0 {
 		return SubwayView{Empty: true}
 	}
 
 	rows := map[string]int{}
-	for i, line := range s.Lines {
-		rows[line.AnchorShortID] = i
-	}
-
 	cols := map[string]int{}
-	maxChain := 0
-	for _, f := range s.Forks {
-		if len(f.AncestorChain) > maxChain {
-			maxChain = len(f.AncestorChain)
+
+	anchorSet := map[string]bool{}
+	stopSet := map[string]bool{}
+	for _, line := range s.Lines {
+		anchorSet[line.AnchorShortID] = true
+		for _, item := range line.Items {
+			if item.Kind == signals.LineItemStop {
+				stopSet[item.ShortID] = true
+			}
 		}
 	}
-	anchorCol := maxChain
-	// Each fork's ancestor chain sits at cols 0..k-1 on the row of
-	// the cluster's inline line. The inline line within a cluster
-	// follows the same (n-1)/2 rule as the global single-fork case —
-	// top for 2, middle for 3, low-middle for 4+.
+
+	// Pre-seed any branch parent that isn't otherwise rendered as a
+	// line anchor or stop. This covers legacy fixtures where the
+	// cluster LCA exists only as fork chrome (no leftmost-only top
+	// row); the parent gets placed at col 0 inline with the
+	// cluster's middle row so the lines loop below can resolve
+	// `cols[parent] + 1` to col 1 for each branching row.
 	for _, f := range s.Forks {
 		if len(f.LineIndices) == 0 {
+			continue
+		}
+		firstIdx := f.LineIndices[0]
+		if firstIdx < 0 || firstIdx >= len(s.Lines) {
+			continue
+		}
+		parent := s.Lines[firstIdx].ParentShortID
+		if parent == "" || anchorSet[parent] || stopSet[parent] {
+			continue
+		}
+		if _, alreadyPositioned := cols[parent]; alreadyPositioned {
 			continue
 		}
 		minRow := f.LineIndices[0]
@@ -180,34 +180,43 @@ func LayoutSubway(s signals.Subway) SubwayView {
 			}
 		}
 		inlineRow := minRow + (len(f.LineIndices)-1)/2
-		for i, sid := range f.AncestorChain {
-			cols[sid] = i
-			rows[sid] = inlineRow
-		}
+		cols[parent] = 0
+		rows[parent] = inlineRow
 	}
 
 	view := SubwayView{
 		Lines: make([]SubwayLineView, len(s.Lines)),
 	}
-	morePositions := map[string]struct{ Left, Top int }{}
-	maxCol := anchorCol
+	maxCol := 0
+	for _, c := range cols {
+		if c > maxCol {
+			maxCol = c
+		}
+	}
 	for i, line := range s.Lines {
 		lineRow := i
+		// Each row's leftmost sits at col(parent) + 1, or col 0 for
+		// the topmost row. When the parent is a stop on an earlier
+		// row, its col was set during that row's items walk; when
+		// the parent is an earlier line's anchor, its col was set
+		// when that line's leftmost was placed.
+		anchorCol := 0
+		if parent := line.ParentShortID; parent != "" {
+			if pc, ok := cols[parent]; ok {
+				anchorCol = pc + 1
+			}
+		}
 		cols[line.AnchorShortID] = anchorCol
-		// rows[anchor] must be set explicitly: when the anchor is
-		// also a stop on a prior line (line 1's parent is a child of
-		// the LCA, which IS line 0's anchor) or a fork ancestor that
-		// happens to share a short ID, an earlier loop pass writes
-		// rows[anchor] to a different row. Without this assignment
-		// the second line's anchor inherits that row and overlaps
-		// the prior anchor.
 		rows[line.AnchorShortID] = lineRow
+		if anchorCol > maxCol {
+			maxCol = anchorCol
+		}
 		lv := SubwayLineView{AnchorShortID: line.AnchorShortID, Row: lineRow}
 		// prevCol tracks the column of the most recent item that
 		// occupied a slot — the line anchor by default, then each
-		// stop or More pill as we walk Items. It exists so an
-		// in-gap elision (which doesn't take a slot) can be
-		// positioned at the midpoint of the surrounding pair.
+		// stop as we walk Items. It exists so an in-gap elision
+		// (which doesn't take a slot) can be positioned at the
+		// midpoint of the surrounding pair.
 		prevCol := anchorCol
 		pendingElision := false
 		c := anchorCol + 1
@@ -236,56 +245,32 @@ func LayoutSubway(s signals.Subway) SubwayView {
 				c++
 			case signals.LineItemElision:
 				pendingElision = true
-			case signals.LineItemMore:
-				moreID := signals.MoreShortID(line.AnchorShortID)
-				left := subwayMarginLeft + c*subwayColStep
-				top := subwayMarginTop + lineRow*subwayRowStep
-				view.Mores = append(view.Mores, SubwayMoreView{
-					ShortID: moreID,
-					Left:    left,
-					Top:     top,
-					Count:   item.MoreCount,
-				})
-				morePositions[moreID] = struct{ Left, Top int }{Left: left, Top: top}
-				if pendingElision {
-					// applyWindow never emits an elision immediately
-					// before a More (trailing elision is replaced by
-					// More), but tolerate it defensively by placing
-					// the dots at the midpoint anyway.
-					emplaceElision(c)
-					pendingElision = false
-				}
-				prevCol = c
-				if c > maxCol {
-					maxCol = c
-				}
-				c++
 			}
 		}
 		view.Lines[i] = lv
 	}
 
 	for _, f := range s.Forks {
-		fv := &SubwayForkView{AncestorShortIDs: f.AncestorChain}
+		fv := &SubwayForkView{}
 		for _, idx := range f.LineIndices {
 			fv.BranchTargets = append(fv.BranchTargets, s.Lines[idx].AnchorShortID)
 		}
 		view.Forks = append(view.Forks, fv)
 	}
 
-	contentW := maxCol*subwayColStep + subwayNodeSize
 	contentH := (len(s.Lines)-1)*subwayRowStep + subwayNodeSize
-	view.CanvasW = subwayMarginLeft + contentW + subwayMarginRight
 	view.CanvasH = subwayMarginTop + contentH + subwayMarginBottom
 
-	anchorSet := map[string]bool{}
-	for _, line := range s.Lines {
-		anchorSet[line.AnchorShortID] = true
-	}
+	// IsForkAncestor used to mark the legacy LCA chain for templates.
+	// Under the per-row parent-edge model (project/2026-04-27-graph-
+	// row-merging.md, S3) every parent is on a line and there is no
+	// distinct "fork chrome" set; flag the row's ParentShortID so
+	// templates that still consume IsForkAncestor see the same nodes
+	// they did before, but pulled from the lines themselves.
 	forkAncestorSet := map[string]bool{}
-	for _, f := range s.Forks {
-		for _, sid := range f.AncestorChain {
-			forkAncestorSet[sid] = true
+	for _, line := range s.Lines {
+		if line.ParentShortID != "" {
+			forkAncestorSet[line.ParentShortID] = true
 		}
 	}
 
@@ -324,20 +309,54 @@ func LayoutSubway(s signals.Subway) SubwayView {
 		view.Nodes = append(view.Nodes, nv)
 	}
 
+	// Centering pass (project/2026-04-27-graph-row-merging.md, S3c):
+	// compute the rendered bounding box from disc positions and shift
+	// the whole rendering horizontally so the extent sits centered in
+	// the canvas with symmetric left/right margins. Under the current
+	// layout (top row leftmost at col 0, content extending right) the
+	// pre-shift extent already starts at subwayMarginLeft and the
+	// shift is zero; the pass exists so absolute-depth interpretations
+	// or multi-cluster renderings can rely on a single source of
+	// truth for centering. CanvasW is sized from the actual extent
+	// rather than maxCol so an unoccupied col 0 (future absolute-
+	// depth case) doesn't pad the canvas asymmetrically.
+	minLeft, maxRight := 0, 0
+	if len(view.Nodes) > 0 {
+		minLeft = view.Nodes[0].Left
+		maxRight = view.Nodes[0].Left + subwayNodeSize
+		for _, n := range view.Nodes {
+			if n.Left < minLeft {
+				minLeft = n.Left
+			}
+			if n.Left+subwayNodeSize > maxRight {
+				maxRight = n.Left + subwayNodeSize
+			}
+		}
+	} else {
+		// No discs to render — fall back to the col-derived extent
+		// so the canvas still has a non-zero width.
+		minLeft = subwayMarginLeft
+		maxRight = subwayMarginLeft + maxCol*subwayColStep + subwayNodeSize
+	}
+	extentW := maxRight - minLeft
+	view.CanvasW = subwayMarginLeft + extentW + subwayMarginRight
+	shift := subwayMarginLeft - minLeft
+	if shift != 0 {
+		for i := range view.Nodes {
+			view.Nodes[i].Left += shift
+			view.Nodes[i].LabelLeft += shift
+			if view.Nodes[i].Bug != nil {
+				view.Nodes[i].Bug.Left += shift
+			}
+		}
+		for i := range view.Elisions {
+			view.Elisions[i].Left += shift
+		}
+	}
+
 	nodeViewByShort := map[string]SubwayNodeView{}
 	for _, nv := range view.Nodes {
 		nodeViewByShort[nv.ShortID] = nv
-	}
-	// More pills aren't real nodes, but edges originating from the
-	// last visible stop terminate at the synthetic More short ID.
-	// Stand them in here so buildSubwayEdgeView can compute geometry
-	// uniformly.
-	for moreID, pos := range morePositions {
-		nodeViewByShort[moreID] = SubwayNodeView{
-			ShortID: moreID,
-			Left:    pos.Left,
-			Top:     pos.Top,
-		}
 	}
 	for _, e := range s.Edges {
 		from, fromOK := nodeViewByShort[e.FromShortID]
@@ -359,17 +378,6 @@ func buildSubwayEdgeView(e signals.SubwayEdge, from, to SubwayNodeView) SubwayEd
 
 	var d string
 	switch {
-	case fromCX == toCX && fromCY != toCY:
-		// Same column, different row — exit the bottom (or top) of
-		// "from" and enter the top (or bottom) of "to". A vertical
-		// straight line; the previous L/R-anchored Bezier branch
-		// would have produced an S-curve whose arrow ended pointing
-		// backward into the receiving node.
-		y1, y2 := fromCY+subwayNodeRadius, toCY-subwayNodeRadius
-		if fromCY > toCY {
-			y1, y2 = fromCY-subwayNodeRadius, toCY+subwayNodeRadius
-		}
-		d = fmt.Sprintf("M%d %d L%d %d", fromCX, y1, toCX, y2)
 	case fromCY == toCY:
 		x1, x2 := fromCX+subwayNodeRadius, toCX-subwayNodeRadius
 		if fromCX > toCX {

@@ -2623,28 +2623,6 @@ a.c-graph-node__bug:focus-visible {
   pointer-events: none;
 }
 
-/* Terminal `(+N)` pill summarizing the count of trailing siblings
-   hidden after the last visible stop on a line. Sized down from a
-   regular stop disc so the eye registers it as a summary rather
-   than another node. */
-.c-subway-more {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-outline-strong);
-  color: var(--color-on-surface-dim);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  pointer-events: none;
-  user-select: none;
-}
-
 /* Fork node — the LCA "transfer station" where two or more lines
    diverge. Slightly larger inner glyph and a subtle outline highlight
    so the eye registers it as a junction rather than another stop. */

@@ -1,7 +1,6 @@
 package render
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -71,17 +70,16 @@ func scenario2Subway() signals.Subway {
 		Lines: []signals.Line{
 			{
 				AnchorShortID: "B",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("C"), stopItem("D"), stopItem("E"), stopItem("F")},
 			},
 			{
 				AnchorShortID: "G",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
 			},
 		},
-		Forks: []*signals.Fork{{
-			AncestorChain: []string{"A"},
-			LineIndices:   []int{0, 1},
-		}},
+		Forks: []*signals.Fork{{LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -117,14 +115,16 @@ func scenario3Subway() signals.Subway {
 		Lines: []signals.Line{
 			{
 				AnchorShortID: "B",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("C"), stopItem("D"), stopItem("E"), stopItem("F")},
 			},
 			{
 				AnchorShortID: "G",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
 			},
 		},
-		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}}},
+		Forks: []*signals.Fork{{LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -162,18 +162,21 @@ func scenario4Subway() signals.Subway {
 		Lines: []signals.Line{
 			{
 				AnchorShortID: "B",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("C"), stopItem("D"), stopItem("E"), stopItem("F")},
 			},
 			{
 				AnchorShortID: "G",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
 			},
 			{
 				AnchorShortID: "J",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("K"), stopItem("L")},
 			},
 		},
-		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1, 2}}},
+		Forks: []*signals.Fork{{LineIndices: []int{0, 1, 2}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -217,14 +220,16 @@ func scenario5Subway() signals.Subway {
 		Lines: []signals.Line{
 			{
 				AnchorShortID: "B",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("C"), stopItem("D"), stopItem("E"), stopItem("F")},
 			},
 			{
 				AnchorShortID: "J",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("K"), stopItem("L")},
 			},
 		},
-		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}}},
+		Forks: []*signals.Fork{{LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -260,14 +265,16 @@ func scenario6Subway() signals.Subway {
 		Lines: []signals.Line{
 			{
 				AnchorShortID: "G",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
 			},
 			{
 				AnchorShortID: "J",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("K"), stopItem("L")},
 			},
 		},
-		Forks: []*signals.Fork{{AncestorChain: []string{"A"}, LineIndices: []int{0, 1}}},
+		Forks: []*signals.Fork{{LineIndices: []int{0, 1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("G", signals.SubwayNodeTodo),
@@ -434,8 +441,17 @@ func TestLayoutSubway_Scenario2_BranchClosedToG(t *testing.T) {
 	if len(v.Forks) == 0 {
 		t.Fatalf("Forks: got 0, want non-empty")
 	}
-	if len(v.Forks[0].AncestorShortIDs) == 0 || v.Forks[0].AncestorShortIDs[0] != "A" {
-		t.Errorf("Fork ancestors: got %v, want [A...]", v.Forks[0].AncestorShortIDs)
+	// The fork's parent (legacy AncestorChain) is now on each
+	// branching line's ParentShortID. Both B's and G's lines
+	// should branch off A.
+	for i := 0; i < len(v.Lines); i++ {
+		if v.Lines[i].AnchorShortID == "B" || v.Lines[i].AnchorShortID == "G" {
+			// The signals.Line was given ParentShortID "A" in the
+			// fixture; verify A actually renders.
+			if _, ok := findSubwayViewNode(v, "A"); !ok {
+				t.Errorf("A missing from view nodes %v", viewNodeIDs(v))
+			}
+		}
 	}
 
 	a := assertNodePositioned(t, v, "A")
@@ -703,22 +719,19 @@ func TestLayoutSubway_Scenario3_ClosureMarkerStillOnIngress(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
-// Elision & More-pill positioning
+// Elision positioning
 //
 // In-gap elision sits in the gap between two surrounding items
-// (anchor↔stop, stop↔stop) without consuming a column slot. The
-// trailing (+N) "More" pill consumes a slot at the end of the line
-// and carries the count of hidden trailing siblings. The connector
-// from the last stop terminates at the More pill — addressed via
-// the synthetic short ID returned by signals.MoreShortID.
+// (anchor↔stop, stop↔stop) without consuming a column slot.
+// (LineItemMore and the (+N) trailing pill were retired in S4b —
+// trailing siblings collapse to LineItemElisionTerminating instead.)
 // ------------------------------------------------------------------
 
 // elisionScenarioSubway builds a single-line scenario with a leading
-// elision, a mid-line elision, and a trailing (+N) pill, reflecting
-// the structure applyWindow emits when two distant focals leave a
-// gap and trailing siblings remain hidden.
+// elision and a mid-line elision, reflecting the structure
+// applyWindow emits when two distant focals leave a gap.
 //
-//	B  ·  c02 c03  ·  c07 c08 c09  (+5)
+//	B  ·  c02 c03  ·  c07 c08 c09
 //
 // (`·` denotes the in-gap elision dots.)
 func elisionScenarioSubway() signals.Subway {
@@ -730,7 +743,6 @@ func elisionScenarioSubway() signals.Subway {
 				stopItem("c02"), stopItem("c03"),
 				{Kind: signals.LineItemElision},
 				stopItem("c07"), stopItem("c08"), stopItem("c09"),
-				{Kind: signals.LineItemMore, MoreCount: 5},
 			},
 		}},
 		Nodes: []signals.SubwayNode{
@@ -747,7 +759,6 @@ func elisionScenarioSubway() signals.Subway {
 			{FromShortID: "c03", ToShortID: "c07", Kind: signals.SubwayEdgeFlow},
 			{FromShortID: "c07", ToShortID: "c08", Kind: signals.SubwayEdgeFlow},
 			{FromShortID: "c08", ToShortID: "c09", Kind: signals.SubwayEdgeFlow},
-			{FromShortID: "c09", ToShortID: signals.MoreShortID("B"), Kind: signals.SubwayEdgeFlow},
 		},
 	}
 }
@@ -815,42 +826,6 @@ func TestLayoutSubway_MidLineElision_PositionedBetweenStops(t *testing.T) {
 	}
 }
 
-// The trailing (+N) pill consumes one column slot past the last
-// visible stop and carries the hidden-sibling count.
-func TestLayoutSubway_TrailingMore_TakesSlotAndCarriesCount(t *testing.T) {
-	v := LayoutSubway(elisionScenarioSubway())
-
-	if len(v.Mores) != 1 {
-		t.Fatalf("Mores: got %d, want 1", len(v.Mores))
-	}
-	more := v.Mores[0]
-	if more.Count != 5 {
-		t.Errorf("More count: got %d, want 5", more.Count)
-	}
-	c09 := assertNodePositioned(t, v, "c09")
-	if more.Left-c09.Left != subwayColStep {
-		t.Errorf("More pill should sit one column past c09; got Left diff %d, want %d",
-			more.Left-c09.Left, subwayColStep)
-	}
-	if more.Top != c09.Top {
-		t.Errorf("More pill should share the line's row; got Top %d, want %d",
-			more.Top, c09.Top)
-	}
-}
-
-// The Flow edge from the last visible stop to the trailing More
-// pill is positioned and routed (non-empty PathD).
-func TestLayoutSubway_TrailingMore_EdgeFromLastStopArrives(t *testing.T) {
-	v := LayoutSubway(elisionScenarioSubway())
-
-	moreID := signals.MoreShortID("B")
-	e := assertEdgePresent(t, v, "c09", moreID)
-	if !e.IsFlow {
-		t.Errorf("c09 → %q should be Flow; got IsBranch=%v IsBlocker=%v",
-			moreID, e.IsBranch, e.IsBlocker)
-	}
-}
-
 // Regression for ?at=1288: when line 1's anchor is also a stop on
 // line 0 (line 1's parent is a child of the LCA, which IS line 0's
 // anchor), the layout must place line 1's anchor on line 1's row.
@@ -867,13 +842,11 @@ func scenarioLineAnchorIsStopOnPriorLineSubway() signals.Subway {
 			},
 			{
 				AnchorShortID: "B",
+				ParentShortID: "A",
 				Items:         []signals.LineItem{stopItem("Y")},
 			},
 		},
-		Forks: []*signals.Fork{{
-			AncestorChain: []string{"A"},
-			LineIndices:   []int{0, 1},
-		}},
+		Forks: []*signals.Fork{{LineIndices: []int{1}}},
 		Nodes: []signals.SubwayNode{
 			subwayNode("A", signals.SubwayNodeTodo),
 			subwayNode("B", signals.SubwayNodeTodo),
@@ -920,45 +893,189 @@ func TestLayoutSubway_NoTwoNodesShareACoordinate(t *testing.T) {
 	}
 }
 
-// Regression for the second face of ?at=1288: a fork branch from a
-// shared-LCA-line-anchor down to a child line anchor sits at the
-// same column on both rows (the LCA's line and the child's line
-// share anchorCol). Pre-fix the edge fell into the L/R-anchored
-// curve branch with x1=fromCX+r, x2=fromCX-r — drawing an S-shape
-// that exits the "from" node's right side and enters the "to"
-// node's left side, leaving the marker-end arrowhead pointing
-// backward into the child. The fix routes such same-column
-// different-row edges vertically: exit the bottom of "from",
-// enter the top of "to", arrow points down.
-func TestLayoutSubway_SameColumnDifferentRow_RoutedVertically(t *testing.T) {
-	s := scenarioLineAnchorIsStopOnPriorLineSubway()
-	v := LayoutSubway(s)
+// (Removed in S4a — same-column vertical-line band-aid retired
+// alongside its regression test. Under the depth-aligned layout
+// every row's leftmost sits at col(parent) + 1, so two rendered
+// nodes can't share a column, and the band-aid is unreachable.)
 
-	a := assertNodePositioned(t, v, "A")
-	b := assertNodePositioned(t, v, "B")
+// ------------------------------------------------------------------
+// S3 (depth-aligned columns + centering) red-stage fixtures
+//
+// These fixtures match the multi-focal tree-map shape that
+// buildMultiFocalRows emits as of S2 (project/2026-04-27-graph-row-
+// merging.md): each non-top row carries a ParentShortID identifying
+// its branch parent; the topmost row's leftmost is the cluster LCA
+// (no parent). The S3 layout pivot will use ParentShortID to lay out
+// each row's leftmost at parent's col + 1, with the topmost row's
+// leftmost at col 0 (cluster-relative).
+// ------------------------------------------------------------------
 
-	aCX := a.Left + subwayNodeRadius
-	bCX := b.Left + subwayNodeRadius
-	if aCX != bCX {
-		t.Fatalf("test precondition: expected A and B at same column; got cx %d vs %d", aCX, bCX)
+// deepLcaTreeMapSubway matches the DeepLCAPath multi-focal scenario
+// after S2: Solo is the cluster LCA below the project root, with B
+// and G as sub-rows branching off Solo. Hand-constructed so the
+// render test doesn't depend on signals internals.
+//
+//	Solo                       (top row: leftmost-only)
+//	├── B → C → D              (sub-row, parent=Solo)
+//	└── G → H → I              (sub-row, parent=Solo)
+func deepLcaTreeMapSubway() signals.Subway {
+	return signals.Subway{
+		Lines: []signals.Line{
+			{AnchorShortID: "Solo", ParentShortID: ""},
+			{
+				AnchorShortID: "B",
+				ParentShortID: "Solo",
+				Items:         []signals.LineItem{stopItem("C"), stopItem("D")},
+			},
+			{
+				AnchorShortID: "G",
+				ParentShortID: "Solo",
+				Items:         []signals.LineItem{stopItem("H"), stopItem("I")},
+			},
+		},
+		Forks: []*signals.Fork{{LineIndices: []int{1, 2}}},
+		Nodes: []signals.SubwayNode{
+			subwayNode("Solo", signals.SubwayNodeTodo),
+			subwayNode("B", signals.SubwayNodeTodo),
+			subwayNode("C", signals.SubwayNodeActive),
+			subwayNode("D", signals.SubwayNodeTodo),
+			subwayNode("G", signals.SubwayNodeTodo),
+			subwayNode("H", signals.SubwayNodeActive),
+			subwayNode("I", signals.SubwayNodeTodo),
+		},
+		Edges: []signals.SubwayEdge{
+			{FromShortID: "Solo", ToShortID: "B", Kind: signals.SubwayEdgeBranch},
+			{FromShortID: "Solo", ToShortID: "G", Kind: signals.SubwayEdgeBranch},
+			{FromShortID: "B", ToShortID: "C", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "C", ToShortID: "D", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "G", ToShortID: "H", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "H", ToShortID: "I", Kind: signals.SubwayEdgeFlow},
+		},
 	}
+}
 
-	e := assertEdgePresent(t, v, "A", "B")
-	// Bad case: path begins at fromCX+radius — horizontal exit from
-	// the right side of "from", which combined with toCX-radius on
-	// the receiving end is the backward S-curve.
-	badPrefix := fmt.Sprintf("M%d ", aCX+subwayNodeRadius)
-	if strings.HasPrefix(e.PathD, badPrefix) {
-		t.Errorf("A→B path uses horizontal-exit S-curve (arrow points backward); got d=%q",
-			e.PathD)
+// carveOutWithDeeperSubtreeSubway matches a multi-focal scenario
+// where the LCA's chain extends through a stop P, P has two focal
+// siblings (F1, F2) that share P's row via the same-parent-siblings
+// carve-out, and a deeper subtree (Q→C) branches off P as a sub-
+// row. P sits as a stop on the top row at col 1; the sub-row's
+// leftmost Q therefore sits at col(P)+1 = col 2.
+//
+//	LCA                        (top row leftmost, col 0)
+//	└── P                      (top row stop, col 1)
+//	    ├── F1                 (top row stop, col 2; carve-out focal sibling)
+//	    ├── F2                 (top row stop, col 3; carve-out focal sibling)
+//	    └── Q                  (sub-row leftmost, parent=P, col 2 = col(P)+1)
+//	        └── C              (sub-row stop, col 3)
+func carveOutWithDeeperSubtreeSubway() signals.Subway {
+	return signals.Subway{
+		Lines: []signals.Line{
+			{
+				AnchorShortID: "LCA",
+				ParentShortID: "",
+				Items: []signals.LineItem{
+					stopItem("P"), stopItem("F1"), stopItem("F2"),
+				},
+			},
+			{
+				AnchorShortID: "Q",
+				ParentShortID: "P",
+				Items:         []signals.LineItem{stopItem("C")},
+			},
+		},
+		Forks: []*signals.Fork{{LineIndices: []int{1}}},
+		Nodes: []signals.SubwayNode{
+			subwayNode("LCA", signals.SubwayNodeTodo),
+			subwayNode("P", signals.SubwayNodeTodo),
+			subwayNode("F1", signals.SubwayNodeActive),
+			subwayNode("F2", signals.SubwayNodeActive),
+			subwayNode("Q", signals.SubwayNodeTodo),
+			subwayNode("C", signals.SubwayNodeActive),
+		},
+		Edges: []signals.SubwayEdge{
+			{FromShortID: "LCA", ToShortID: "P", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "P", ToShortID: "F1", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "F1", ToShortID: "F2", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "P", ToShortID: "Q", Kind: signals.SubwayEdgeBranch},
+			{FromShortID: "Q", ToShortID: "C", Kind: signals.SubwayEdgeFlow},
+		},
 	}
-	// Good case: vertical routing exits the bottom of "from", so
-	// the path's first M coordinate sits at the shared column
-	// center, not its left/right edge.
-	goodPrefix := fmt.Sprintf("M%d ", aCX)
-	if !strings.HasPrefix(e.PathD, goodPrefix) {
-		t.Errorf("A→B path should begin at column center x=%d (vertical routing); got d=%q",
-			aCX, e.PathD)
+}
+
+// renderedExtent walks v.Nodes and returns the leftmost Left and the
+// rightmost (Left + node size). Used to assert that the centering
+// pass leaves the rendered bounding box's midpoint at CanvasW/2.
+func renderedExtent(v SubwayView) (minLeft, maxRight int) {
+	for i, n := range v.Nodes {
+		right := n.Left + subwayNodeSize
+		if i == 0 || n.Left < minLeft {
+			minLeft = n.Left
+		}
+		if i == 0 || right > maxRight {
+			maxRight = right
+		}
+	}
+	return minLeft, maxRight
+}
+
+// S3 — top row's leftmost (cluster LCA) sits at col 0 (cluster-
+// relative depth = 0). Under the legacy anchorCol = maxChain rule
+// the top row's leftmost gets pushed right by len(AncestorChain),
+// leaving the col 0 slot empty and the rendered extent skewed right.
+// Once the depth-aligned-leftmost rule lands, the cluster LCA is
+// at col 0 and Solo is the leftmost rendered node.
+func TestLayoutSubway_S3_TopRowLeftmostAtCol0_DepthAligned(t *testing.T) {
+	v := LayoutSubway(deepLcaTreeMapSubway())
+	assertNonEmpty(t, v)
+
+	solo := assertNodePositioned(t, v, "Solo")
+	if solo.Left != subwayMarginLeft {
+		t.Errorf("Solo.Left: got %d, want %d (top row's leftmost at col 0)",
+			solo.Left, subwayMarginLeft)
+	}
+	// Solo is also the leftmost rendered node — nothing renders left of
+	// the cluster LCA.
+	for _, n := range v.Nodes {
+		if n.Left < solo.Left {
+			t.Errorf("%s renders left of Solo: %s.Left=%d, Solo.Left=%d",
+				n.ShortID, n.ShortID, n.Left, solo.Left)
+		}
+	}
+}
+
+// S3 — every non-top row's leftmost sits at col = parent's col + 1.
+// The carve-out fixture places P (the sub-row Q's branch parent) at
+// a non-zero col on the top row; under the legacy "all anchors at
+// anchorCol" rule Q lands at the same col as the top row's leftmost,
+// not at col(P)+1. Once the per-row parent-edge rule lands Q sits
+// one column to the right of P.
+func TestLayoutSubway_S3_NonTopRowLeftmostAtParentColPlus1(t *testing.T) {
+	v := LayoutSubway(carveOutWithDeeperSubtreeSubway())
+	assertNonEmpty(t, v)
+
+	p := assertNodePositioned(t, v, "P")
+	q := assertNodePositioned(t, v, "Q")
+	if q.Left != p.Left+subwayColStep {
+		t.Errorf("Q.Left: got %d, want %d (P.Left + colStep)",
+			q.Left, p.Left+subwayColStep)
+	}
+}
+
+// S3 — the centering pass leaves the rendered bounding box's
+// midpoint at CanvasW/2, regardless of the depth offset induced by
+// a deep LCA or a sub-row that sits further right than the top row.
+// The legacy layout sizes CanvasW from anchorCol = maxChain, so the
+// rendered extent skews right of center whenever maxChain > 0.
+func TestLayoutSubway_S3_RenderedExtentCentered(t *testing.T) {
+	v := LayoutSubway(deepLcaTreeMapSubway())
+	assertNonEmpty(t, v)
+
+	minLeft, maxRight := renderedExtent(v)
+	midpoint := (minLeft + maxRight) / 2
+	want := v.CanvasW / 2
+	if midpoint != want {
+		t.Errorf("rendered extent midpoint: got %d, want %d (CanvasW/2); extent=[%d,%d], CanvasW=%d",
+			midpoint, want, minLeft, maxRight, v.CanvasW)
 	}
 }
 

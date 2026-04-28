@@ -130,12 +130,22 @@ func sortBySortOrder(ts []*graphTask) {
 // pickFocals returns the tasks each lane should be centered on. When
 // any tasks are claimed, every claim becomes its own lane; otherwise
 // the lane is anchored on the globally-next available leaf.
+//
+// Focals are leaves only (project/2026-04-27-graph-row-merging.md,
+// invariant 1). The leaf-frontier rule normally prevents parent
+// claims, but legacy data and non-CLI clients can still produce
+// them; the len(t.children) > 0 guard is the safety net so the
+// multi-focal mode never tries to render a parent as a focal stop.
 func pickFocals(w *graphWorld) []*graphTask {
 	var active []*graphTask
 	for _, t := range w.byID {
-		if t.status == "claimed" {
-			active = append(active, t)
+		if t.status != "claimed" {
+			continue
 		}
+		if len(t.children) > 0 {
+			continue
+		}
+		active = append(active, t)
 	}
 	if len(active) > 0 {
 		// Stable order: preorder position in the project tree so

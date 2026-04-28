@@ -377,126 +377,13 @@ func TestCollectLines_NoFocals(t *testing.T) {
 }
 
 // ------------------------------------------------------------------
-// LCA fork tests
+// LCA fork tests retired in S3d (project/2026-04-27-graph-row-
+// merging.md). Fork.AncestorChain went away in favor of per-row
+// Line.ParentShortID, and BuildSubway hasn't called the legacy
+// computeFork/computeForks helpers since S2 — the build-shape
+// invariants for multi-cluster rendering are now covered by the
+// TestBuildSubway_* scenarios that read ParentShortID directly.
 // ------------------------------------------------------------------
-
-type expectedFork struct {
-	chain   []string
-	indices []int
-}
-
-func assertFork(t *testing.T, got *Fork, want *expectedFork) {
-	t.Helper()
-	if want == nil {
-		if got != nil {
-			t.Errorf("fork: got %+v, want nil", got)
-		}
-		return
-	}
-	if got == nil {
-		t.Fatalf("fork: got nil, want chain=%v indices=%v",
-			want.chain, want.indices)
-	}
-	if !equalSubwayStrings(got.AncestorChain, want.chain) {
-		t.Errorf("fork chain: got %v, want %v", got.AncestorChain, want.chain)
-	}
-	if !equalIntSlice(got.LineIndices, want.indices) {
-		t.Errorf("fork indices: got %v, want %v", got.LineIndices, want.indices)
-	}
-}
-
-func equalIntSlice(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// One line → no fork (chrome).
-func TestComputeFork_SingleLine(t *testing.T) {
-	w := newTestWorld(referenceTree(map[string]string{"D": "claimed"}))
-	seeds := collectLines(w, []*graphTask{mustTask(w, "D")}, 2)
-
-	assertFork(t, computeFork(seeds), nil)
-}
-
-// Two lines under the same root → fork at A.
-func TestComputeFork_TwoLines_SharedRoot(t *testing.T) {
-	w := newTestWorld(referenceTree(map[string]string{
-		"D": "claimed",
-		"K": "claimed",
-	}))
-	seeds := collectLines(w, []*graphTask{mustTask(w, "D"), mustTask(w, "K")}, 2)
-
-	assertFork(t, computeFork(seeds), &expectedFork{
-		chain:   []string{"A"},
-		indices: []int{0, 1},
-	})
-}
-
-// Three lines under the same root → fork at A, indices preserve
-// preorder.
-func TestComputeFork_ThreeLines_SharedRoot(t *testing.T) {
-	w := newTestWorld(referenceTree(map[string]string{
-		"D": "claimed",
-		"H": "claimed",
-	}))
-	seeds := collectLines(w, []*graphTask{mustTask(w, "D"), mustTask(w, "H")}, 2)
-
-	assertFork(t, computeFork(seeds), &expectedFork{
-		chain:   []string{"A"},
-		indices: []int{0, 1, 2},
-	})
-}
-
-// Scenario 6 — B's subtree gone, G and J under A → fork at A.
-func TestComputeFork_Scenario6(t *testing.T) {
-	w := newTestWorld(referenceTree(map[string]string{
-		"B": "done", "C": "done", "D": "done",
-		"E": "done", "F": "done",
-		"H": "claimed",
-		"K": "claimed",
-	}))
-	seeds := collectLines(w, []*graphTask{mustTask(w, "H"), mustTask(w, "K")}, 2)
-
-	assertFork(t, computeFork(seeds), &expectedFork{
-		chain:   []string{"A"},
-		indices: []int{0, 1},
-	})
-}
-
-// Deep LCA: tree is Root → Solo → {B, G}. LCA of B and G is Solo,
-// not Root. Chain has length 1 — extending the chain upward when the
-// divergence sits below an only-child cascade is a documented
-// refinement (see the spec's edge cases).
-func TestComputeFork_DeepLCA_DivergenceBelowSolo(t *testing.T) {
-	w := newTestWorld([]tt{
-		{short: "Root", parent: "", status: "available"},
-		{short: "Solo", parent: "Root", status: "available"},
-		{short: "B", parent: "Solo", status: "available"},
-		{short: "C", parent: "B", status: "claimed"},
-		{short: "D", parent: "B", status: "available"},
-		{short: "G", parent: "Solo", status: "available"},
-		{short: "H", parent: "G", status: "claimed"},
-		{short: "I", parent: "G", status: "available"},
-	})
-	seeds := collectLines(w, []*graphTask{mustTask(w, "C"), mustTask(w, "H")}, 2)
-
-	assertFork(t, computeFork(seeds), &expectedFork{
-		chain:   []string{"Solo"},
-		indices: []int{0, 1},
-	})
-}
-
-// Empty input → no fork.
-func TestComputeFork_NoSeeds(t *testing.T) {
-	assertFork(t, computeFork(nil), nil)
-}
 
 // ------------------------------------------------------------------
 // Windowing tests
@@ -552,14 +439,12 @@ func buildSeedWithLookahead(parent *graphTask, children []*graphTask, focalIndic
 }
 
 type expectedItem struct {
-	kind      LineItemKind
-	short     string
-	moreCount int
+	kind  LineItemKind
+	short string
 }
 
 func stop(s string) expectedItem { return expectedItem{kind: LineItemStop, short: s} }
 func elision() expectedItem      { return expectedItem{kind: LineItemElision} }
-func more(n int) expectedItem    { return expectedItem{kind: LineItemMore, moreCount: n} }
 func stops(short ...string) []expectedItem {
 	out := make([]expectedItem, len(short))
 	for i, s := range short {
@@ -587,15 +472,8 @@ func equalItems(got []LineItem, want []expectedItem) bool {
 		if got[i].Kind != want[i].kind {
 			return false
 		}
-		switch want[i].kind {
-		case LineItemStop:
-			if got[i].ShortID != want[i].short {
-				return false
-			}
-		case LineItemMore:
-			if got[i].MoreCount != want[i].moreCount {
-				return false
-			}
+		if want[i].kind == LineItemStop && got[i].ShortID != want[i].short {
+			return false
 		}
 	}
 	return true
@@ -607,8 +485,6 @@ func summarizeItems(items []LineItem) string {
 		switch it.Kind {
 		case LineItemElision:
 			parts[i] = "…"
-		case LineItemMore:
-			parts[i] = fmt.Sprintf("(+%d)", it.MoreCount)
 		default:
 			parts[i] = it.ShortID
 		}
@@ -622,8 +498,6 @@ func summarizeWantItems(items []expectedItem) string {
 		switch it.kind {
 		case LineItemElision:
 			parts[i] = "…"
-		case LineItemMore:
-			parts[i] = fmt.Sprintf("(+%d)", it.moreCount)
 		default:
 			parts[i] = it.short
 		}
@@ -1071,8 +945,17 @@ func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
 			got.Lines[0].AnchorShortID)
 	}
-	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
-		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
+	// All sub-rows should branch off A (the cluster LCA); under the
+	// per-row parent edge model (S3d) that's expressed by each non-
+	// top row's ParentShortID rather than Fork.AncestorChain.
+	for i, line := range got.Lines {
+		if i == 0 {
+			continue
+		}
+		if line.ParentShortID != "A" {
+			t.Errorf("Lines[%d].ParentShortID: got %q, want %q",
+				i, line.ParentShortID, "A")
+		}
 	}
 	for _, anchor := range []string{"B", "G"} {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
@@ -1210,10 +1093,8 @@ func TestBuildSubway_GlobalNextWithDoneSibling_HonorsCenteringAndCount(t *testin
 // A row with hidden trailing siblings renders a terminating
 // ellipsis on the topological model (project/2026-04-27-graph-
 // row-merging.md): LineItemElisionTerminating sits at the row's
-// right edge. The legacy LineItemMore (+N) pill is gone in
-// single-focal preorder mode, so there is no synthetic edge target
-// for trailing dots — the renderer paints the dots from the
-// elision marker alone.
+// right edge — the legacy LineItemMore (+N) pill is gone, so the
+// renderer paints the dots from the elision marker alone.
 func TestBuildSubway_TrailingTerminatingElision_NoMorePill(t *testing.T) {
 	tasks := []tt{{short: "P", parent: "", status: "available"}}
 	for i := range 10 {
@@ -1237,10 +1118,6 @@ func TestBuildSubway_TrailingTerminatingElision_NoMorePill(t *testing.T) {
 	line := got.Lines[0]
 	hasTerminating := false
 	for _, item := range line.Items {
-		if item.Kind == LineItemMore {
-			t.Errorf("unexpected LineItemMore in single-focal mode: %s",
-				summarizeItems(line.Items))
-		}
 		if item.Kind == LineItemElisionTerminating {
 			hasTerminating = true
 		}
@@ -1248,14 +1125,6 @@ func TestBuildSubway_TrailingTerminatingElision_NoMorePill(t *testing.T) {
 	if !hasTerminating {
 		t.Errorf("expected trailing LineItemElisionTerminating, got %s",
 			summarizeItems(line.Items))
-	}
-	// No edge should target the legacy synthetic More short ID.
-	moreID := MoreShortID("P")
-	for _, e := range got.Edges {
-		if e.ToShortID == moreID {
-			t.Errorf("unexpected edge to legacy MoreShortID %q: %s",
-				moreID, edgeSummary(got.Edges))
-		}
 	}
 }
 
@@ -1450,8 +1319,17 @@ func TestBuildSubway_FourActivePhases(t *testing.T) {
 		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
 			got.Lines[0].AnchorShortID)
 	}
-	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
-		t.Fatalf("Forks: want chain=[A], got %+v", got.Forks)
+	// All sub-rows should branch off A (the cluster LCA); under the
+	// per-row parent edge model (S3d) that's expressed by each non-
+	// top row's ParentShortID rather than Fork.AncestorChain.
+	for i, line := range got.Lines {
+		if i == 0 {
+			continue
+		}
+		if line.ParentShortID != "A" {
+			t.Errorf("Lines[%d].ParentShortID: got %q, want %q",
+				i, line.ParentShortID, "A")
+		}
 	}
 	for _, anchor := range []string{"B", "E", "H", "K"} {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
@@ -1461,8 +1339,8 @@ func TestBuildSubway_FourActivePhases(t *testing.T) {
 }
 
 // Deep LCA — two claims share an only-child ancestor (Solo) below
-// the project root. The fork's AncestorChain should anchor at Solo,
-// not Root.
+// the project root. Each sub-row's ParentShortID should anchor at
+// Solo, not Root.
 //
 //	Root
 //	└── Solo
@@ -1485,8 +1363,16 @@ func TestBuildSubway_DeepLCAPath(t *testing.T) {
 	if len(got.Forks) == 0 {
 		t.Fatalf("Fork: got nil, want non-nil")
 	}
-	if got.Forks[0].AncestorChain[0] != "Solo" {
-		t.Errorf("Fork ancestor: got %q, want %q", got.Forks[0].AncestorChain[0], "Solo")
+	// Each sub-row's ParentShortID anchors at Solo (the LCA) rather
+	// than Root — there's no AncestorChain anymore (S3d).
+	for i, line := range got.Lines {
+		if i == 0 {
+			continue
+		}
+		if line.ParentShortID != "Solo" {
+			t.Errorf("Lines[%d].ParentShortID: got %q, want %q",
+				i, line.ParentShortID, "Solo")
+		}
 	}
 	if _, ok := findSubwayNode(got.Nodes, "Solo"); !ok {
 		t.Errorf("Solo missing from Nodes %v", subwayNodeShortIDs(got.Nodes))
@@ -1648,8 +1534,15 @@ func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 			t.Errorf("%s actor: got %q, want %q", s, n.Actor, "alice")
 		}
 	}
-	// Fork still emerges at A regardless of actor identity.
-	if len(got.Forks) == 0 || got.Forks[0].AncestorChain[0] != "A" {
-		t.Errorf("Forks: want chain=[A], got %+v", got.Forks)
+	// Each sub-row branches off A regardless of actor identity (the
+	// per-row parent edge is on Line.ParentShortID after S3d).
+	for i, line := range got.Lines {
+		if i == 0 {
+			continue
+		}
+		if line.ParentShortID != "A" {
+			t.Errorf("Lines[%d].ParentShortID: got %q, want %q",
+				i, line.ParentShortID, "A")
+		}
 	}
 }

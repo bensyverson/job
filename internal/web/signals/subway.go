@@ -43,24 +43,70 @@ func buildSubway(w *graphWorld) Subway {
 
 // buildSubwayWith is the parameterized core. The public entry point
 // (BuildSubway) and buildSubway both delegate here.
+//
+// Mode dispatch is per-cluster (focals grouped by project root):
+// single-focal clusters render via buildSingleFocalLine (project/
+// 2026-04-27-graph-row-merging.md, single-focal preorder window
+// mode); multi-focal clusters fall through to the legacy parent-
+// rooted line machinery (collectLines + applyWindow + computeForks)
+// until S2 lands the multi-focal tree-map mode.
 func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 	focals := pickFocals(w)
 	if len(focals) == 0 {
 		return Subway{}
 	}
-	seeds := collectLines(w, focals, lookahead)
-	if len(seeds) == 0 {
+
+	preorder := preorderAll(w)
+	preorderPos := make(map[int64]int, len(preorder))
+	for i, t := range preorder {
+		preorderPos[t.id] = i
+	}
+
+	clusters := map[int64][]*graphTask{}
+	var rootOrder []*graphTask
+	for _, f := range focals {
+		root := f
+		for root.parent != nil {
+			root = root.parent
+		}
+		if _, ok := clusters[root.id]; !ok {
+			rootOrder = append(rootOrder, root)
+		}
+		clusters[root.id] = append(clusters[root.id], f)
+	}
+	sort.SliceStable(rootOrder, func(i, j int) bool {
+		return preorderPos[rootOrder[i].id] < preorderPos[rootOrder[j].id]
+	})
+
+	var lines []Line
+	var forks []*Fork
+	var oldFocals []*graphTask
+	for _, root := range rootOrder {
+		clusterFocals := clusters[root.id]
+		if len(clusterFocals) == 1 {
+			lines = append(lines, buildSingleFocalLine(w, clusterFocals[0], window))
+			continue
+		}
+		oldFocals = append(oldFocals, clusterFocals...)
+	}
+	if len(oldFocals) > 0 {
+		seeds := collectLines(w, oldFocals, lookahead)
+		oldForks := computeForks(seeds)
+		baseIdx := len(lines)
+		for _, seed := range seeds {
+			lines = append(lines, applyWindow(seed, window))
+		}
+		for _, fork := range oldForks {
+			for i := range fork.LineIndices {
+				fork.LineIndices[i] += baseIdx
+			}
+			forks = append(forks, fork)
+		}
+	}
+	if len(lines) == 0 {
 		return Subway{}
 	}
-	forks := computeForks(seeds)
 
-	lines := make([]Line, len(seeds))
-	for i, seed := range seeds {
-		lines[i] = applyWindow(seed, window)
-	}
-
-	// Render order: fork ancestors first, then for each line its
-	// anchor followed by its visible stops. Deduplicated by ShortID.
 	byShort := indexByShortID(w)
 	var nodes []SubwayNode
 	seen := map[string]bool{}
@@ -82,26 +128,23 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 			pushNode(byShort[sid])
 		}
 	}
-	for i, seed := range seeds {
-		pushNode(seed.parent)
-		for _, item := range lines[i].Items {
+	for _, line := range lines {
+		pushNode(byShort[line.AnchorShortID])
+		for _, item := range line.Items {
 			if item.Kind == LineItemStop {
 				pushNode(byShort[item.ShortID])
 			}
 		}
 	}
 
-	// Edges. Order: branch edges (fork → each line anchor), then
-	// flow edges line by line, then explicit blocker edges.
 	var edges []SubwayEdge
-	anchorSet := map[string]bool{}
-	for _, seed := range seeds {
-		anchorSet[seed.parent.shortID] = true
-	}
 	for _, fork := range forks {
 		divergence := fork.AncestorChain[len(fork.AncestorChain)-1]
 		for _, idx := range fork.LineIndices {
-			anchor := seeds[idx].parent
+			anchor := byShort[lines[idx].AnchorShortID]
+			if anchor == nil {
+				continue
+			}
 			kind := SubwayEdgeBranch
 			if anchor.openBlockers > 0 {
 				kind = SubwayEdgeBranchClosed
@@ -113,29 +156,39 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 			})
 		}
 	}
-	// Same-line stop blockage renders on the immediate ingress edge,
-	// not as a long span from the original blocker — the subway
-	// metaphor is "this stop's ingress is closed," like BranchClosed
-	// at the LCA but within a single line. For each rendered open
-	// blocker on the same line as something it blocks, the *nearest*
-	// blocked stop's ingress edge becomes a Blocker (replacing Flow);
-	// subsequent blocks by the same blocker are transitive and don't
-	// earn an extra marker. Cross-line blocks at stop level aren't
-	// drawn here — the design covers cross-line blockage via
-	// BranchClosed on the LCA ingress to the line anchor.
+	// Same-row stop blockage renders on the immediate ingress edge.
+	// "Same row" means both stops appear on the same Line (under the
+	// new single-focal preorder mode this is "same preorder window";
+	// under the legacy parent-rooted model it's "same parent," which
+	// happens to be a stricter version of the same predicate). The
+	// nearest blocked stop's ingress edge becomes a Blocker
+	// (replacing Flow); subsequent blocks by the same blocker are
+	// transitive and don't earn an extra marker.
+	lineByStop := map[string]int{}
+	for i, line := range lines {
+		for _, item := range line.Items {
+			if item.Kind == LineItemStop {
+				lineByStop[item.ShortID] = i
+			}
+		}
+	}
 	candidates := map[string][]*graphTask{}
 	var blockerOrder []string
+	anchorSet := map[string]bool{}
+	for _, line := range lines {
+		anchorSet[line.AnchorShortID] = true
+	}
 	for _, n := range nodes {
 		if anchorSet[n.ShortID] {
 			continue
 		}
 		t := byShort[n.ShortID]
-		if t == nil || t.parent == nil {
+		if t == nil {
 			continue
 		}
 		for _, blockerID := range t.blockerIDs {
 			blocker := w.byID[blockerID]
-			if blocker == nil || blocker.parent == nil {
+			if blocker == nil {
 				continue
 			}
 			if blocker.status == "done" || blocker.status == "canceled" {
@@ -144,8 +197,9 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 			if !seen[blocker.shortID] {
 				continue
 			}
-			// Same-line check: blocker and blocked share a parent.
-			if blocker.parent.id != t.parent.id {
+			bLine, bOK := lineByStop[blocker.shortID]
+			tLine, tOK := lineByStop[t.shortID]
+			if !bOK || !tOK || bLine != tLine {
 				continue
 			}
 			if _, exists := candidates[blocker.shortID]; !exists {
@@ -153,15 +207,6 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 			}
 			candidates[blocker.shortID] = append(candidates[blocker.shortID], t)
 		}
-	}
-	preorder := preorderAll(w)
-	preorderPos := make(map[int64]int, len(preorder))
-	for i, t := range preorder {
-		preorderPos[t.id] = i
-	}
-	lineByAnchor := map[string]int{}
-	for i, line := range lines {
-		lineByAnchor[line.AnchorShortID] = i
 	}
 	type pair struct{ from, to string }
 	ingressBlocked := map[pair]bool{}
@@ -171,7 +216,7 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 			return preorderPos[blocked[i].id] < preorderPos[blocked[j].id]
 		})
 		nearest := blocked[0]
-		lineIdx, ok := lineByAnchor[nearest.parent.shortID]
+		lineIdx, ok := lineByStop[nearest.shortID]
 		if !ok {
 			continue
 		}
@@ -272,14 +317,28 @@ type Subway struct {
 	Edges []SubwayEdge
 }
 
-// Line is a single subway line: a parent anchor followed by an
-// ordered sequence of items (stops and elision markers). The anchor
-// is the parent node whose children render as stops along this line.
+// Line is a single subway line / row: an anchor (the row's
+// leftmost) followed by an ordered sequence of items (stops and
+// elision markers). The anchor's semantics depend on the cluster's
+// rendering mode:
+//
+//   - Legacy parent-rooted line: anchor is the parent task whose
+//     children render as stops along this line.
+//   - Single-focal preorder window mode (project/2026-04-27-graph-
+//     row-merging.md): anchor is the project root; items are the
+//     focal's ±N preorder neighbors within the project tree.
+//   - Multi-focal tree-map mode (same doc): anchor is the row's
+//     leftmost in the focal-path subgraph; items are the visible
+//     stops on that row's branch with per-row ±N windowing.
+//     ParentShortID identifies the row's parent in the subgraph
+//     for the branch-curve geometry; it is empty for the topmost
+//     row.
 //
 // Tree order, not claim order: stops follow their underlying
 // sort_order so the layout stays stable as claims churn.
 type Line struct {
 	AnchorShortID string
+	ParentShortID string
 	Items         []LineItem
 }
 
@@ -312,8 +371,9 @@ func MoreShortID(anchorShortID string) string {
 	return "~more~" + anchorShortID
 }
 
-// LineItemKind tags a LineItem as a stop, an in-gap elision, or a
-// terminal More pill.
+// LineItemKind tags a LineItem as a stop, an in-gap elision, a
+// broken-line elision (single-focal preorder mode), a terminating
+// ellipsis (single-focal preorder mode), or a terminal More pill.
 type LineItemKind int
 
 const (
@@ -321,12 +381,27 @@ const (
 	LineItemStop LineItemKind = iota
 	// LineItemElision is an in-gap dots marker; ShortID is empty,
 	// MoreCount is zero. Sits between two surrounding items, takes
-	// no slot.
+	// no slot. Used by the legacy parent-rooted line model.
 	LineItemElision
 	// LineItemMore is a terminal `(+N)` pill summarizing the count
 	// of hidden trailing siblings. MoreCount > 0; ShortID is empty.
-	// Takes a column slot like a stop.
+	// Takes a column slot like a stop. Used by the legacy
+	// parent-rooted line model; the single-focal preorder mode
+	// renders trailing elision as LineItemElisionTerminating instead.
 	LineItemMore
+	// LineItemElisionBroken is a broken-line elision used by the
+	// single-focal preorder window mode: a short stub from the
+	// preceding item, three small SVG circles in negative space, a
+	// short stub into the following item. Used between leftmost and
+	// the row's first content stop when the -N walk doesn't reach
+	// the project root, and between two non-adjacent visible windows
+	// inside the same row. Takes no slot.
+	LineItemElisionBroken
+	// LineItemElisionTerminating is a trailing terminating ellipsis
+	// at the right edge of a single-focal preorder row: disc →
+	// segment → three dots, no trailing arrow stub. Replaces the
+	// legacy LineItemMore pill in the new mode. Takes no slot.
+	LineItemElisionTerminating
 )
 
 // Fork is the transfer station where two or more lines diverge from a
@@ -663,10 +738,12 @@ func applyWindow(seed *lineSeed, N int) Line {
 		})
 	}
 	if last := visible[len(visible)-1]; last < len(children)-1 {
-		line.Items = append(line.Items, LineItem{
-			Kind:      LineItemMore,
-			MoreCount: len(children) - 1 - last,
-		})
+		// Trailing siblings beyond the visible window collapse to a
+		// terminating ellipsis; the legacy `(+N)` pill (LineItemMore)
+		// is gone from the data path (project/2026-04-27-graph-row-
+		// merging.md, S1). The template/CSS for the pill linger until
+		// S4 cleanup.
+		line.Items = append(line.Items, LineItem{Kind: LineItemElisionTerminating})
 	}
 	return line
 }
@@ -783,6 +860,438 @@ func lcaPair(a, b *graphTask) *graphTask {
 		}
 	}
 	return nil
+}
+
+// buildSingleFocalLine returns the Line for a single-focal cluster
+// under the new preorder window mode (project/2026-04-27-graph-row-
+// merging.md). The row's leftmost is the project root containing
+// focal; content stops are the focal's ±N preorder neighbors within
+// that project tree.
+//
+// AnchorShortID is the project root's short ID. Items lists the
+// visible content stops in preorder, excluding the project root
+// itself (rendered as the anchor at col 0). Leading broken-line
+// elision (LineItemElisionBroken) sits before the first content stop
+// when the -N walk doesn't reach the project root; trailing
+// terminating elision (LineItemElisionTerminating) sits at the right
+// edge when the +N walk continues past the row's last visible stop.
+//
+// The function never emits LineItemMore — trailing siblings collapse
+// to LineItemElisionTerminating. It also never emits LineItemElision
+// (the old in-gap dots marker), which belongs to the legacy
+// parent-rooted line model.
+func buildSingleFocalLine(_ *graphWorld, focal *graphTask, N int) Line {
+	if focal == nil {
+		return Line{}
+	}
+	root := focal
+	for root.parent != nil {
+		root = root.parent
+	}
+	preorder := preorderSubtree(root)
+	focalPos := -1
+	for i, t := range preorder {
+		if t.id == focal.id {
+			focalPos = i
+			break
+		}
+	}
+	if focalPos < 0 {
+		return Line{AnchorShortID: root.shortID}
+	}
+
+	startPos := max(focalPos-N, 0)
+	endPos := min(focalPos+N, len(preorder)-1)
+
+	line := Line{AnchorShortID: root.shortID}
+	// Leading broken-line elision when the -N walk doesn't reach the
+	// project root. The leftmost (anchor) is rendered separately at
+	// col 0; the elision sits between it and the row's first content
+	// stop.
+	if startPos > 0 {
+		line.Items = append(line.Items, LineItem{Kind: LineItemElisionBroken})
+	}
+	// Content stops in preorder. Skip the project root itself when it
+	// falls inside the window (it's already rendered as the anchor;
+	// invariant 2 forbids rendering a node twice).
+	for i := startPos; i <= endPos; i++ {
+		t := preorder[i]
+		if t.id == root.id {
+			continue
+		}
+		line.Items = append(line.Items, LineItem{
+			Kind:    LineItemStop,
+			ShortID: t.shortID,
+		})
+	}
+	// Trailing terminating elision when the +N walk continues past
+	// the row's last visible stop. If the focal sits at or past the
+	// preorder's last position, the row terminates at the focal —
+	// no trailing dots.
+	if endPos < len(preorder)-1 {
+		line.Items = append(line.Items, LineItem{Kind: LineItemElisionTerminating})
+	}
+	return line
+}
+
+// focalPathSubgraph returns the LCA of focals and the IDs of every
+// node on the path from the LCA down to each focal. Focals must
+// share a project root; otherwise the function returns (nil, nil).
+//
+// The subgraph is the structural skeleton used by the multi-focal
+// tree-map mode (project/2026-04-27-graph-row-merging.md): every
+// rendered node in that mode comes from this set, every fork point
+// lives within it, and non-focal-bearing branches off the LCA's
+// subtree are excluded.
+func focalPathSubgraph(focals []*graphTask) (*graphTask, map[int64]bool) {
+	if len(focals) == 0 {
+		return nil, nil
+	}
+	lca := focals[0]
+	for i := 1; i < len(focals); i++ {
+		lca = lcaPair(lca, focals[i])
+		if lca == nil {
+			return nil, nil
+		}
+	}
+	ids := map[int64]bool{}
+	for _, f := range focals {
+		for cur := f; cur != nil; cur = cur.parent {
+			ids[cur.id] = true
+			if cur.id == lca.id {
+				break
+			}
+		}
+	}
+	return lca, ids
+}
+
+// subgraphForkPoints returns the subgraph nodes that have two or
+// more in-subgraph children, in tree (preorder) order. These are
+// the divergence points where rows split in the multi-focal tree-
+// map mode.
+func subgraphForkPoints(ids map[int64]bool, lca *graphTask) []*graphTask {
+	if lca == nil || !ids[lca.id] {
+		return nil
+	}
+	var forks []*graphTask
+	var visit func(t *graphTask)
+	visit = func(t *graphTask) {
+		if !ids[t.id] {
+			return
+		}
+		inCount := 0
+		for _, c := range t.children {
+			if ids[c.id] {
+				inCount++
+			}
+		}
+		if inCount >= 2 {
+			forks = append(forks, t)
+		}
+		for _, c := range t.children {
+			visit(c)
+		}
+	}
+	visit(lca)
+	return forks
+}
+
+// buildMultiFocalRows returns the rows for a multi-focal cluster
+// under the new tree-map mode (project/2026-04-27-graph-row-
+// merging.md). Each row is a maximal linear chain through the
+// focal-path subgraph between fork points; every row's leftmost
+// is depth-aligned and rendered as the curve target for any
+// incoming branch curve. Rows beyond the topmost carry a
+// ParentShortID identifying the parent's rendered position so the
+// layout can draw the branch curve.
+//
+// All focals must share a project root (cluster invariant). The
+// topmost row's leftmost is the LCA of all focals; sub-rows
+// branch off fork points (subgraph nodes with ≥2 in-subgraph
+// children). The same-parent-siblings carve-out keeps focal
+// siblings sharing a parent on one row, with ≤2 non-focal
+// siblings rendered inline and ≥3 collapsed to a mid-line broken-
+// line elision.
+func buildMultiFocalRows(w *graphWorld, focals []*graphTask, N int) []Line {
+	if len(focals) == 0 {
+		return nil
+	}
+	lca, subgraph := focalPathSubgraph(focals)
+	if lca == nil {
+		return nil
+	}
+	focalSet := map[int64]bool{}
+	for _, f := range focals {
+		focalSet[f.id] = true
+	}
+
+	var rows []Line
+	queue := []buildOneRowResult{{leftmost: lca, parentShort: ""}}
+	for len(queue) > 0 {
+		rt := queue[0]
+		queue = queue[1:]
+		row, subRows := buildOneRow(w, rt.leftmost, rt.parentShort, subgraph, focalSet, N)
+		rows = append(rows, row)
+		queue = append(queue, subRows...)
+	}
+	return rows
+}
+
+// buildOneRowResult is the per-row sub-row task carrying the next
+// row's leftmost and parent.
+type buildOneRowResult struct {
+	leftmost    *graphTask
+	parentShort string
+}
+
+// buildOneRow constructs a single row starting at leftmost, walking
+// the subgraph along the inline child at each fork point until it
+// hits a leaf or a same-parent-siblings carve-out. Returns the
+// constructed Line plus the sub-row tasks for non-inline subgraph
+// children encountered along the chain. Sub-rows are returned in
+// tree (preorder) order so the caller can append them to the row
+// queue.
+func buildOneRow(
+	_ *graphWorld,
+	leftmost *graphTask,
+	parentShort string,
+	subgraph map[int64]bool,
+	focalSet map[int64]bool,
+	N int,
+) (Line, []buildOneRowResult) {
+	excluded := map[int64]bool{}
+	chainIDs := map[int64]bool{leftmost.id: true}
+	var subRows []buildOneRowResult
+	cur := leftmost
+	for {
+		var inSubKids, focalLeafKids, deeperKids []*graphTask
+		for _, c := range cur.children {
+			if !subgraph[c.id] {
+				continue
+			}
+			inSubKids = append(inSubKids, c)
+			if focalSet[c.id] {
+				focalLeafKids = append(focalLeafKids, c)
+			} else {
+				deeperKids = append(deeperKids, c)
+			}
+		}
+		if len(inSubKids) == 0 {
+			break
+		}
+		// Carve-out: ≥2 focal-leaf-children share cur's row. Deeper
+		// children (if any) become sub-rows branching off cur.
+		if len(focalLeafKids) >= 2 {
+			for _, c := range deeperKids {
+				excluded[c.id] = true
+				subRows = append(subRows, buildOneRowResult{
+					leftmost: c, parentShort: cur.shortID,
+				})
+			}
+			break
+		}
+		// No carve-out at this node. If only one in-subgraph child,
+		// continue the chain. If ≥2, this is a real fork — every
+		// in-subgraph child becomes its own sub-row branching off
+		// cur. The data layer doesn't inline; the layout step
+		// (project/2026-04-27-graph-row-merging.md, S3) chooses
+		// which sub-row to render inline with the parent visually.
+		if len(inSubKids) == 1 {
+			next := inSubKids[0]
+			chainIDs[next.id] = true
+			cur = next
+			continue
+		}
+		for _, c := range inSubKids {
+			excluded[c.id] = true
+			subRows = append(subRows, buildOneRowResult{
+				leftmost: c, parentShort: cur.shortID,
+			})
+		}
+		break
+	}
+
+	// Preorder walk of leftmost's subtree, skipping subtrees rooted
+	// at excluded sub-row leftmosts. The leftmost itself sits at
+	// position 0 (anchor); content stops are positions 1..len-1.
+	var rowPreorder []*graphTask
+	var visit func(t *graphTask)
+	visit = func(t *graphTask) {
+		if excluded[t.id] {
+			return
+		}
+		rowPreorder = append(rowPreorder, t)
+		for _, c := range t.children {
+			visit(c)
+		}
+	}
+	visit(leftmost)
+
+	line := Line{AnchorShortID: leftmost.shortID, ParentShortID: parentShort}
+
+	// Identify focal positions on this row.
+	var focalPositions []int
+	for i, t := range rowPreorder {
+		if focalSet[t.id] {
+			focalPositions = append(focalPositions, i)
+		}
+	}
+	if len(focalPositions) == 0 {
+		// Row's chain ends at a fork point with no focal of its
+		// own (its focals live on sub-rows). Items list is empty —
+		// only the row's leftmost (anchor) renders, serving as the
+		// curve target for sub-rows.
+		return line, subRows
+	}
+
+	// Compute visible window: union of ±N around each focal in
+	// preorder. Then apply the same-parent-siblings carve-out
+	// collapse: if there are ≥3 non-focal direct siblings between
+	// two focal siblings on a carve-out parent, drop those
+	// positions so they elide regardless of windowing.
+	visible := map[int]bool{}
+	for _, p := range focalPositions {
+		lo, hi := p-N, p+N
+		if lo < 0 {
+			lo = 0
+		}
+		if hi > len(rowPreorder)-1 {
+			hi = len(rowPreorder) - 1
+		}
+		for i := lo; i <= hi; i++ {
+			visible[i] = true
+		}
+	}
+	collapsed := carveOutCollapseRanges(rowPreorder, focalSet)
+	for _, rng := range collapsed {
+		for i := rng.lo; i <= rng.hi; i++ {
+			delete(visible, i)
+		}
+	}
+	var visibleIdx []int
+	for i := range visible {
+		visibleIdx = append(visibleIdx, i)
+	}
+	sort.Ints(visibleIdx)
+	if len(visibleIdx) == 0 {
+		return line, subRows
+	}
+
+	// Leading broken-line elision: when the first visible content
+	// stop sits past position 1 (the leftmost's first child).
+	if visibleIdx[0] > 1 {
+		line.Items = append(line.Items, LineItem{Kind: LineItemElisionBroken})
+	}
+	// Walk visible indices, emitting stops and broken-line elisions
+	// for internal gaps. Skip the leftmost (pos 0) — it's the
+	// anchor.
+	prev := -1
+	for _, idx := range visibleIdx {
+		if idx == 0 {
+			prev = idx
+			continue
+		}
+		if prev >= 1 && idx > prev+1 {
+			line.Items = append(line.Items, LineItem{Kind: LineItemElisionBroken})
+		}
+		line.Items = append(line.Items, LineItem{
+			Kind:    LineItemStop,
+			ShortID: rowPreorder[idx].shortID,
+		})
+		prev = idx
+	}
+	// Trailing terminating elision: visible window doesn't reach
+	// the row's last preorder position.
+	if visibleIdx[len(visibleIdx)-1] < len(rowPreorder)-1 {
+		line.Items = append(line.Items, LineItem{Kind: LineItemElisionTerminating})
+	}
+	return line, subRows
+}
+
+// carveOutCollapseRanges identifies non-focal sibling runs of ≥3
+// between two focal-leaf siblings sharing the same parent within
+// rowPreorder. The returned ranges are positions inside
+// rowPreorder; the caller drops these from the visible window and
+// inserts a single broken-line elision marker between the
+// surrounding focal stops.
+func carveOutCollapseRanges(rowPreorder []*graphTask, focalSet map[int64]bool) []struct{ lo, hi int } {
+	posByID := make(map[int64]int, len(rowPreorder))
+	for i, t := range rowPreorder {
+		posByID[t.id] = i
+	}
+	// For each parent that has ≥2 focal-leaf children present in
+	// rowPreorder, walk between adjacent focal siblings and look
+	// for runs of ≥3 non-focal siblings.
+	var out []struct{ lo, hi int }
+	parentsSeen := map[int64]bool{}
+	for _, t := range rowPreorder {
+		p := t.parent
+		if p == nil || parentsSeen[p.id] {
+			continue
+		}
+		parentsSeen[p.id] = true
+		var focalChildren []*graphTask
+		for _, c := range p.children {
+			if focalSet[c.id] {
+				if _, ok := posByID[c.id]; ok {
+					focalChildren = append(focalChildren, c)
+				}
+			}
+		}
+		if len(focalChildren) < 2 {
+			continue
+		}
+		// Sort by sortOrder (already stable in p.children order).
+		sort.SliceStable(focalChildren, func(i, j int) bool {
+			return focalChildren[i].sortOrder < focalChildren[j].sortOrder
+		})
+		for i := 0; i+1 < len(focalChildren); i++ {
+			a, b := focalChildren[i], focalChildren[i+1]
+			// Count direct non-focal siblings between a and b in
+			// p.children order.
+			var run []*graphTask
+			between := false
+			for _, c := range p.children {
+				if c.id == a.id {
+					between = true
+					continue
+				}
+				if c.id == b.id {
+					break
+				}
+				if !between {
+					continue
+				}
+				if !focalSet[c.id] {
+					run = append(run, c)
+				}
+			}
+			if len(run) >= 3 {
+				lo := posByID[run[0].id]
+				hi := posByID[run[len(run)-1].id]
+				out = append(out, struct{ lo, hi int }{lo, hi})
+			}
+		}
+	}
+	return out
+}
+
+// preorderSubtree returns every task rooted at root in DFS preorder.
+// Used by the single-focal preorder window mode to address tasks by
+// their position relative to the focal within the focal's project
+// tree.
+func preorderSubtree(root *graphTask) []*graphTask {
+	var out []*graphTask
+	var visit func(t *graphTask)
+	visit = func(t *graphTask) {
+		out = append(out, t)
+		for _, c := range t.children {
+			visit(c)
+		}
+	}
+	visit(root)
+	return out
 }
 
 // successorPreorder returns the next task in DFS preorder strictly

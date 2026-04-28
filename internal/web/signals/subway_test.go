@@ -647,7 +647,9 @@ func TestApplyWindow_AllVisible_NoElision(t *testing.T) {
 }
 
 // Long line, single focal mid-way — leading elision (in-gap dots),
-// trailing summarized as a (+N) terminal pill.
+// trailing collapsed to a terminating ellipsis. Per project/2026-04-
+// 27-graph-row-merging.md the legacy `(+N)` pill is replaced with
+// LineItemElisionTerminating in both code paths.
 func TestApplyWindow_LongLine_ElisionBothSides(t *testing.T) {
 	statuses := make([]string, 30)
 	for i := range statuses {
@@ -661,12 +663,12 @@ func TestApplyWindow_LongLine_ElisionBothSides(t *testing.T) {
 
 	want := []expectedItem{elision()}
 	want = append(want, stops("c15", "c16", "c17", "c18", "c19")...)
-	want = append(want, more(10))
+	want = append(want, elisionTerminating())
 	assertLine(t, line, "P", want)
 }
 
 // Two close focals (within 2N+1) — windows merge into one visible
-// span; trailing siblings render as a (+N) pill.
+// span; trailing siblings collapse to a terminating ellipsis.
 func TestApplyWindow_MultiFocal_Contiguous(t *testing.T) {
 	statuses := []string{"available", "claimed", "available", "claimed", "available", "available"}
 	_, parent, children := newWideLine(statuses)
@@ -676,12 +678,12 @@ func TestApplyWindow_MultiFocal_Contiguous(t *testing.T) {
 
 	want := []expectedItem{}
 	want = append(want, stops("c00", "c01", "c02", "c03", "c04")...)
-	want = append(want, more(1))
+	want = append(want, elisionTerminating())
 	assertLine(t, line, "P", want)
 }
 
 // Two distant focals — two visible windows separated by an in-gap
-// `…`; trailing summarized as (+N).
+// `…`; trailing collapses to a terminating ellipsis.
 func TestApplyWindow_MultiFocal_GapElided(t *testing.T) {
 	statuses := make([]string, 12)
 	for i := range statuses {
@@ -698,12 +700,12 @@ func TestApplyWindow_MultiFocal_GapElided(t *testing.T) {
 	want = append(want, stops("c00", "c01", "c02")...)
 	want = append(want, elision())
 	want = append(want, stops("c07", "c08", "c09")...)
-	want = append(want, more(2))
+	want = append(want, elisionTerminating())
 	assertLine(t, line, "P", want)
 }
 
-// Anchor at start — no leading elision; trailing siblings render as
-// a (+N) pill.
+// Anchor at start — no leading elision; trailing siblings collapse
+// to a terminating ellipsis.
 func TestApplyWindow_AnchorAtStart(t *testing.T) {
 	statuses := []string{"claimed", "available", "available", "available", "available"}
 	_, parent, children := newWideLine(statuses)
@@ -713,7 +715,7 @@ func TestApplyWindow_AnchorAtStart(t *testing.T) {
 
 	want := []expectedItem{}
 	want = append(want, stops("c00", "c01", "c02")...)
-	want = append(want, more(2))
+	want = append(want, elisionTerminating())
 	assertLine(t, line, "P", want)
 }
 
@@ -759,13 +761,13 @@ func TestApplyWindow_LookaheadInsideFocalWindow_Drops(t *testing.T) {
 
 	want := []expectedItem{elision()}
 	want = append(want, stops("c03", "c04", "c05", "c06", "c07")...)
-	want = append(want, more(2))
+	want = append(want, elisionTerminating())
 	assertLine(t, line, "P", want)
 }
 
 // Two real focals close together plus a lookahead inside their union
 // window — the lookahead drops, the windows merge into one span;
-// trailing siblings summarized as (+N).
+// trailing siblings collapse to a terminating ellipsis.
 func TestApplyWindow_TwoFocalsPlusInsideLookahead(t *testing.T) {
 	statuses := []string{
 		"available", "claimed", "available", "claimed",
@@ -778,7 +780,7 @@ func TestApplyWindow_TwoFocalsPlusInsideLookahead(t *testing.T) {
 
 	want := []expectedItem{}
 	want = append(want, stops("c00", "c01", "c02", "c03", "c04", "c05")...)
-	want = append(want, more(2))
+	want = append(want, elisionTerminating())
 	assertLine(t, line, "P", want)
 }
 
@@ -883,20 +885,24 @@ func TestBuildSubway_NothingActionable_EmptySubway(t *testing.T) {
 }
 
 // No claims but available leaf exists → falls back to globalNext.
+// One focal → single-focal preorder window mode (project/2026-04-27-
+// graph-row-merging.md): the line anchors on the project root and
+// items walk preorder around the focal, not on the focal's parent.
 func TestBuildSubway_FallsBackToGlobalNext_WhenNoClaims(t *testing.T) {
 	w := newTestWorld(referenceTree(nil))
 
 	got := buildSubway(w)
 
 	// globalNext picks the first preorder available leaf with no
-	// blockers — that's C in the reference tree. C's parent is B,
-	// so the line anchors on B with anchors {C, D} (C focal + D from
-	// lookahead step 1; step 2 reaches E).
+	// blockers — that's C in the reference tree. Single-focal
+	// preorder mode anchors the row on the project root A and walks
+	// ±N preorder steps around C.
 	if len(got.Lines) != 1 {
 		t.Fatalf("Lines: got %d, want 1 (single fallback line)", len(got.Lines))
 	}
-	if got.Lines[0].AnchorShortID != "B" {
-		t.Errorf("Line anchor: got %q, want %q", got.Lines[0].AnchorShortID, "B")
+	if got.Lines[0].AnchorShortID != "A" {
+		t.Errorf("Line anchor: got %q, want %q (project root)",
+			got.Lines[0].AnchorShortID, "A")
 	}
 	if len(got.Forks) != 0 {
 		t.Errorf("Forks: got %d, want 0 for single line", len(got.Forks))
@@ -1135,11 +1141,14 @@ func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
 // preceding sibling already done (Dashboard polish pass) and no
 // claims anywhere on the line, so the focal falls through to
 // globalNext (Empty-state polish at idx 1). Pre-fix the lookahead
-// union was widening the visible window past the focal's ±N — the
-// graph showed all five children plus a trailing `…`. After the
-// Tx8rV fix the line should render the four ±2 stops and a (+1)
-// terminal pill summarizing the single hidden Accessibility-sweep
-// sibling.
+// union was widening the visible window past the focal's ±N.
+//
+// Under the single-focal preorder window mode (project/2026-04-27-
+// graph-row-merging.md) the row anchors on the project root P, and
+// trailing siblings beyond the +N walk render as LineItemElision-
+// Terminating dots — there is no (+N) count anywhere. The window
+// includes the project root preorder position, so no leading
+// elision is needed.
 func TestBuildSubway_GlobalNextWithDoneSibling_HonorsCenteringAndCount(t *testing.T) {
 	tasks := []tt{{short: "P", parent: "", status: "available"}}
 	statuses := []string{"done", "available", "available", "available", "available"}
@@ -1161,9 +1170,12 @@ func TestBuildSubway_GlobalNextWithDoneSibling_HonorsCenteringAndCount(t *testin
 	if line.AnchorShortID != "P" {
 		t.Errorf("anchor: got %q, want P", line.AnchorShortID)
 	}
+	// Preorder: P, c00, c01, c02, c03, c04. globalNext = c01 at
+	// pos 2; N=2 → window [0, 4]. P (anchor) drops out of items;
+	// c04 is hidden → LineItemElisionTerminating.
 	wantItems := []expectedItem{
 		stop("c00"), stop("c01"), stop("c02"), stop("c03"),
-		more(1),
+		elisionTerminating(),
 	}
 	if !equalItems(line.Items, wantItems) {
 		t.Errorf("items: got %s, want %s",
@@ -1177,11 +1189,14 @@ func TestBuildSubway_GlobalNextWithDoneSibling_HonorsCenteringAndCount(t *testin
 	}
 }
 
-// A line with hidden trailing siblings renders a terminal (+N) pill
-// on the topological model. BuildSubway emits a Flow edge from the
-// last visible stop to the synthetic More short ID for that line so
-// the layout/template can draw the connector.
-func TestBuildSubway_TrailingMore_EmitsFlowEdgeToMore(t *testing.T) {
+// A row with hidden trailing siblings renders a terminating
+// ellipsis on the topological model (project/2026-04-27-graph-
+// row-merging.md): LineItemElisionTerminating sits at the row's
+// right edge. The legacy LineItemMore (+N) pill is gone in
+// single-focal preorder mode, so there is no synthetic edge target
+// for trailing dots — the renderer paints the dots from the
+// elision marker alone.
+func TestBuildSubway_TrailingTerminatingElision_NoMorePill(t *testing.T) {
 	tasks := []tt{{short: "P", parent: "", status: "available"}}
 	for i := range 10 {
 		s := "available"
@@ -1196,14 +1211,33 @@ func TestBuildSubway_TrailingMore_EmitsFlowEdgeToMore(t *testing.T) {
 	}
 	w := newTestWorld(tasks)
 
-	// L=0 disables lookahead so the test focuses on focal-only
-	// trailing computation. Focal at c01 with N=2 yields visible
-	// [0..3]; six trailing children become a (+6) pill.
 	got := buildSubwayWith(w, 0, 2)
 
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
+	}
+	line := got.Lines[0]
+	hasTerminating := false
+	for _, item := range line.Items {
+		if item.Kind == LineItemMore {
+			t.Errorf("unexpected LineItemMore in single-focal mode: %s",
+				summarizeItems(line.Items))
+		}
+		if item.Kind == LineItemElisionTerminating {
+			hasTerminating = true
+		}
+	}
+	if !hasTerminating {
+		t.Errorf("expected trailing LineItemElisionTerminating, got %s",
+			summarizeItems(line.Items))
+	}
+	// No edge should target the legacy synthetic More short ID.
 	moreID := MoreShortID("P")
-	if !hasSubwayEdge(got.Edges, "c03", moreID, SubwayEdgeFlow) {
-		t.Errorf("expected Flow edge c03 → %q, got %s", moreID, edgeSummary(got.Edges))
+	for _, e := range got.Edges {
+		if e.ToShortID == moreID {
+			t.Errorf("unexpected edge to legacy MoreShortID %q: %s",
+				moreID, edgeSummary(got.Edges))
+		}
 	}
 }
 
@@ -1444,14 +1478,16 @@ func TestBuildSubway_DeepLCAPath(t *testing.T) {
 	}
 }
 
-// Mid-row deep focal — claim is on a grandchild. The line should
-// anchor on the grandchild's immediate parent (the deepest ancestor
-// whose other children are relevant context), not on the line's
-// great-grandparent.
+// Mid-row deep focal — claim is on a grandchild. Under the single-
+// focal preorder window mode (project/2026-04-27-graph-row-
+// merging.md) the row's leftmost is the project root; ±N preorder
+// steps around the focal pull in the relevant ancestors and
+// siblings. Top is now the row anchor (col 0); Mid sits between Top
+// and B in the preorder walk.
 //
-//	Top
+//	Top   (project root, becomes the row anchor)
 //	└── Mid
-//	    └── B (line anchor — siblings X, Y matter)
+//	    └── B
 //	        ├── X
 //	        └── Y [claimed]
 func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
@@ -1468,34 +1504,42 @@ func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
 	if len(got.Lines) != 1 {
 		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
 	}
-	if got.Lines[0].AnchorShortID != "B" {
-		t.Errorf("anchor: got %q, want B (grandchild's parent)", got.Lines[0].AnchorShortID)
+	if got.Lines[0].AnchorShortID != "Top" {
+		t.Errorf("anchor: got %q, want Top (project root)",
+			got.Lines[0].AnchorShortID)
 	}
 	// Y renders as the active stop.
 	if n, _ := findSubwayNode(got.Nodes, "Y"); n.State != SubwayNodeActive {
 		t.Errorf("Y state: got %d, want Active", n.State)
 	}
-	// Top and Mid are above the line anchor and should not appear.
-	for _, s := range []string{"Top", "Mid"} {
-		if _, ok := findSubwayNode(got.Nodes, s); ok {
-			t.Errorf("%s should not appear (above line anchor); got %v",
-				s, subwayNodeShortIDs(got.Nodes))
-		}
+	// Preorder: Top, Mid, B, X, Y. Focal Y at pos 4; N=2 →
+	// window [2, 4] = {B, X, Y}. Mid sits at pos 1, outside the
+	// window, and should not appear.
+	if _, ok := findSubwayNode(got.Nodes, "Mid"); ok {
+		t.Errorf("Mid should not appear (outside preorder window); got %v",
+			subwayNodeShortIDs(got.Nodes))
+	}
+	// Top is the anchor and is rendered.
+	if _, ok := findSubwayNode(got.Nodes, "Top"); !ok {
+		t.Errorf("Top should appear as the row anchor; got %v",
+			subwayNodeShortIDs(got.Nodes))
 	}
 }
 
 // Cross-project claims — focals under two different project roots
-// produce one Fork per cluster, each anchored at its respective
-// root. Without per-cluster fork emission the legacy "global LCA or
-// none" rule would drop the fork entirely (no shared ancestor
-// exists), and the home view would render disconnected lines without
-// any transfer station context.
+// produce one independent rendering per project root, stacked
+// vertically (project/2026-04-27-graph-row-merging.md). Each
+// cluster is single-focal here, so each renders via the new
+// preorder window mode: the project root is the row's leftmost
+// (col 0), no Fork is emitted (the project root IS the anchor; no
+// transfer-station chrome is needed when only one row branches off
+// it).
 //
 //	RootA            RootB
 //	└── B            └── G
 //	    ├── C [c]        ├── H [c]
 //	    └── D            └── I
-func TestBuildSubway_CrossProjectClaims_OneForkPerRoot(t *testing.T) {
+func TestBuildSubway_CrossProjectClaims_PerClusterRows(t *testing.T) {
 	w := newTestWorld([]tt{
 		{short: "RootA", parent: "", status: "available"},
 		{short: "B", parent: "RootA", status: "available"},
@@ -1509,20 +1553,36 @@ func TestBuildSubway_CrossProjectClaims_OneForkPerRoot(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Forks) != 2 {
-		t.Fatalf("Forks: got %d, want 2 (one per project root)", len(got.Forks))
+	// Single-focal clusters do not emit Forks under the new mode —
+	// the project root is the leftmost of its row, no transfer-
+	// station chrome is needed.
+	if len(got.Forks) != 0 {
+		t.Errorf("Forks: got %d, want 0 (single-focal clusters need no fork)",
+			len(got.Forks))
 	}
-	// Both project roots render — that's the user-visible signal that
-	// the cross-project context exists.
-	for _, sid := range []string{"RootA", "RootB"} {
-		if _, ok := findSubwayNode(got.Nodes, sid); !ok {
-			t.Errorf("expected root %q in Nodes; got %v", sid, subwayNodeShortIDs(got.Nodes))
+	// Two rows, one per cluster, each anchored on its project root.
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2 (one per cluster)", len(got.Lines))
+	}
+	anchors := []string{got.Lines[0].AnchorShortID, got.Lines[1].AnchorShortID}
+	for _, want := range []string{"RootA", "RootB"} {
+		found := slices.Contains(anchors, want)
+		if !found {
+			t.Errorf("expected line anchored on %q; anchors=%v", want, anchors)
 		}
 	}
-	// Each cluster's Branch goes from its own root to its line anchor.
+	// Both project roots render as nodes.
+	for _, sid := range []string{"RootA", "RootB"} {
+		if _, ok := findSubwayNode(got.Nodes, sid); !ok {
+			t.Errorf("expected root %q in Nodes; got %v",
+				sid, subwayNodeShortIDs(got.Nodes))
+		}
+	}
+	// Each cluster's anchor flows to its first content stop (Flow,
+	// not Branch — there is no fork in single-focal mode).
 	for _, p := range [][2]string{{"RootA", "B"}, {"RootB", "G"}} {
-		if !hasSubwayEdge(got.Edges, p[0], p[1], SubwayEdgeBranch) {
-			t.Errorf("missing Branch %s→%s in %s", p[0], p[1], edgeSummary(got.Edges))
+		if !hasSubwayEdge(got.Edges, p[0], p[1], SubwayEdgeFlow) {
+			t.Errorf("missing Flow %s→%s in %s", p[0], p[1], edgeSummary(got.Edges))
 		}
 	}
 }

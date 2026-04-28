@@ -228,8 +228,9 @@
   {{- if .Empty -}}
     <div class="c-empty">No active claims or upcoming work</div>
   {{- else -}}
-    <div class="c-graph-canvas" style="position: relative; width: {{.CanvasW}}px; max-width: 100%; height: {{.CanvasH}}px">
-      <svg viewBox="0 0 {{.CanvasW}} {{.CanvasH}}" width="100%" height="{{.CanvasH}}"
+    <div class="c-graph-frame" style="--canvas-w: {{.CanvasW}}; --canvas-h: {{.CanvasH}}">
+    <div class="c-graph-canvas" style="width: {{.CanvasW}}px; height: {{.CanvasH}}px">
+      <svg viewBox="0 0 {{.CanvasW}} {{.CanvasH}}" width="{{.CanvasW}}" height="{{.CanvasH}}"
            style="position: absolute; inset: 0; color: var(--color-outline-strong)" aria-hidden="true">
         <defs>
           <marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -242,6 +243,13 @@
           {{- else -}}
             <path class="{{.CSSClass}}" d="{{.PathD}}" marker-end="url(#graph-arrow)" />
           {{- end -}}
+        {{- end -}}
+        {{- range .Elisions -}}
+          <g class="c-subway-elision" transform="translate({{.Left}} {{.Top}})" aria-hidden="true">
+            <circle cx="-6" cy="0" r="1.25" />
+            <circle cx="0" cy="0" r="1.25" />
+            <circle cx="6" cy="0" r="1.25" />
+          </g>
         {{- end -}}
       </svg>
       {{- range .Nodes -}}
@@ -277,9 +285,12 @@
                 aria-label="Connection closed — prior phase incomplete">⊘</span>
         {{- end -}}
       {{- end -}}
-      {{- range .Elisions -}}
-        <span class="c-subway-elision" style="left: {{.Left}}px; top: {{.Top}}px" aria-hidden="true">…</span>
+      {{- range .Mores -}}
+        <span class="c-subway-more"
+              style="position: absolute; left: {{.Left}}px; top: {{.Top}}px"
+              aria-label="{{.Count}} more">+{{.Count}}</span>
       {{- end -}}
+    </div>
     </div>
   {{- end -}}
 </div>{{end}}

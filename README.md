@@ -355,7 +355,7 @@ job serve --db /path/to/.jobs.db         # custom database
 
 Views:
 
-- `/` — Home: signal cards (activity histogram + alarm cards), an active-claims table, recent completions, an Upcoming panel, a Blocked strip, and a **dependency-flow mini-graph** rendered as a [subway-system map](project/2026-04-25-graph-clarification.md) — one line per parent whose subtree contains active or imminent work, an LCA fork when two or more lines exist, closure markers (`⊘`) on edges into sequence-blocked lines, and `…` glyphs for elided spans of out-of-window siblings.
+- `/` — Home: signal cards (activity histogram + alarm cards), an active-claims table, recent completions, an Upcoming panel, a Blocked strip, and a **dependency-flow mini-graph** rendered as a [subway-system map](project/2026-04-25-graph-clarification.md) — one line per parent whose subtree contains active or imminent work, an LCA fork when two or more lines exist, closure markers (`⊘`) on edges into sequence-blocked lines, in-gap `…` dots between non-adjacent visible windows, and a `(+N)` terminal pill summarizing trailing siblings that fall outside the focal's ±N window.
 - `/log` — event stream with filter chips (actor / event type / label)
 - `/tasks/<id>` — task detail: status, labels, parent, blocked-by, blocks, description, completion note, history
 

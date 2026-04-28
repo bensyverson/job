@@ -71,10 +71,13 @@ func TestBuildSubwayFromInput_HonorsBlockerStatuses(t *testing.T) {
 }
 
 func TestBuildSubwayFromInput_OpenBlockerClosesBranch(t *testing.T) {
-	// Same shape but B is still in progress — the block IS open.
+	// Two leaf focals in distinct subtrees so each focal's parent
+	// gets its own line (the parent-boundary rule absorbs same-parent
+	// focals into one line). D under B, H under G; B blocks G, so
+	// G's branch ingress must render BranchClosed.
 	tasks := referenceTree(map[string]string{
-		"B": "claimed",
-		"G": "claimed",
+		"D": "claimed",
+		"H": "claimed",
 	})
 	in := SubwayInput{}
 	for _, td := range tasks {

@@ -2526,6 +2526,30 @@ a.c-graph-node__bug:focus-visible {
   filter: blur(2px);
 }
 
+/* Scalable frame around the graph canvas. The inner .c-graph-canvas
+   keeps its intrinsic pixel size (CanvasW × CanvasH) so SVG paths
+   and HTML-positioned nodes/labels stay aligned at any scale; the
+   frame uses container queries to compute a shrink-only scale when
+   the parent is narrower than CanvasW, and an aspect-ratio so its
+   own height tracks the scaled content. --canvas-w/--canvas-h are
+   stamped into the markup by the home_graph template (unitless
+   pixel counts). */
+.c-graph-frame {
+  position: relative;
+  width: 100%;
+  max-width: calc(var(--canvas-w) * 1px);
+  aspect-ratio: var(--canvas-w) / var(--canvas-h);
+  container-type: inline-size;
+  overflow: hidden;
+}
+
+.c-graph-canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform-origin: top left;
+  transform: scale(min(1, calc(100cqw / (var(--canvas-w) * 1px))));
+}
+
 /* Mini-graph edges (SVG paths under the node discs). Base is the
    solid "flow" stroke used for sibling + parent/child hops; cousin
    drops opacity for cross-parent-boundary hops; blocker swaps to
@@ -2590,22 +2614,33 @@ a.c-graph-node__bug:focus-visible {
   user-select: none;
 }
 
-/* The `…` glyph that fills an elided span between visible windows on
-   a line (or between the line anchor and the first visible stop, or
-   after the last visible stop). Positioned at the column slot the
-   data layer reserved for the elision. */
+/* In-gap elision dots — three small SVG circles riding the
+   connector between two surrounding items on a line. Drawn inside
+   the SVG so the marker scales with the canvas and never depends on
+   the surrounding font's `…` glyph metrics. */
 .c-subway-elision {
-  position: absolute;
-  margin-left: -8px;
-  margin-top: -8px;
-  width: 16px;
-  height: 16px;
+  fill: var(--color-on-surface-dim);
+  pointer-events: none;
+}
+
+/* Terminal `(+N)` pill summarizing the count of trailing siblings
+   hidden after the last visible stop on a line. Sized down from a
+   regular stop disc so the eye registers it as a summary rather
+   than another node. */
+.c-subway-more {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-outline-strong);
   color: var(--color-on-surface-dim);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
   pointer-events: none;
   user-select: none;
 }

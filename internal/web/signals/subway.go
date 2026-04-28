@@ -192,19 +192,25 @@ func buildSubwayWith(w *graphWorld, lookahead, window int) Subway {
 	for _, line := range lines {
 		prev := line.AnchorShortID
 		for _, item := range line.Items {
-			if item.Kind != LineItemStop {
-				continue
+			switch item.Kind {
+			case LineItemStop:
+				kind := SubwayEdgeFlow
+				if ingressBlocked[pair{prev, item.ShortID}] {
+					kind = SubwayEdgeBlocker
+				}
+				edges = append(edges, SubwayEdge{
+					FromShortID: prev,
+					ToShortID:   item.ShortID,
+					Kind:        kind,
+				})
+				prev = item.ShortID
+			case LineItemMore:
+				edges = append(edges, SubwayEdge{
+					FromShortID: prev,
+					ToShortID:   MoreShortID(line.AnchorShortID),
+					Kind:        SubwayEdgeFlow,
+				})
 			}
-			kind := SubwayEdgeFlow
-			if ingressBlocked[pair{prev, item.ShortID}] {
-				kind = SubwayEdgeBlocker
-			}
-			edges = append(edges, SubwayEdge{
-				FromShortID: prev,
-				ToShortID:   item.ShortID,
-				Kind:        kind,
-			})
-			prev = item.ShortID
 		}
 	}
 
@@ -277,23 +283,50 @@ type Line struct {
 	Items         []LineItem
 }
 
-// LineItem is one element in a Line's sequence — either a stop (a
-// child node referenced by ShortID) or an elision marker (rendered
-// as `…` between non-adjacent visible windows or between the anchor
-// and the first visible stop).
+// LineItem is one element in a Line's sequence — a stop, an in-gap
+// elision marker, or a terminal More pill.
+//
+// Stop: ShortID is set; renders as a node disc on the line.
+//
+// Elision: drawn as small dots in the gap between two surrounding
+// items on the line (anchor↔stop, stop↔stop). It does not consume a
+// column slot and only carries presentational meaning.
+//
+// More: a terminal `(+N)` pill that stands in for trailing siblings
+// hidden after the last visible stop. MoreCount is the number of
+// elided trailing siblings; it consumes a column slot like a stop
+// and renders as a small pill at the end of the line.
 type LineItem struct {
-	Kind    LineItemKind
-	ShortID string
+	Kind      LineItemKind
+	ShortID   string
+	MoreCount int
 }
 
-// LineItemKind tags a LineItem as a stop or an elision marker.
+// MoreShortID returns the synthetic short ID assigned to the
+// terminal More pill on the line whose anchor is anchorShortID.
+// The `~` prefix never collides with real short IDs (which are
+// alphanumeric). Edges originating from the last visible stop and
+// terminating at the More pill are addressed via this synthetic ID;
+// the layout step resolves it to the pill's pixel position.
+func MoreShortID(anchorShortID string) string {
+	return "~more~" + anchorShortID
+}
+
+// LineItemKind tags a LineItem as a stop, an in-gap elision, or a
+// terminal More pill.
 type LineItemKind int
 
 const (
 	// LineItemStop is a rendered stop on the line; ShortID is set.
 	LineItemStop LineItemKind = iota
-	// LineItemElision is a `…` marker; ShortID is empty.
+	// LineItemElision is an in-gap dots marker; ShortID is empty,
+	// MoreCount is zero. Sits between two surrounding items, takes
+	// no slot.
 	LineItemElision
+	// LineItemMore is a terminal `(+N)` pill summarizing the count
+	// of hidden trailing siblings. MoreCount > 0; ShortID is empty.
+	// Takes a column slot like a stop.
+	LineItemMore
 )
 
 // Fork is the transfer station where two or more lines diverge from a
@@ -379,12 +412,24 @@ const (
 // whose subtree contains an active focal or a lookahead-touched stop.
 // LCA fork computation and windowing consume seeds in tree order.
 //
-// anchors is the union of claimed children of parent and
-// lookahead-touched children of parent, deduplicated, in tree order.
-// Both sets serve as window anchors for the ±N elision step.
+// focalAnchors are claimed children of parent (or, when nothing is
+// claimed globally, the single globally-next leaf). They always
+// anchor a ±N window in applyWindow.
+//
+// lookaheadAnchors are children of parent reached via the +L leaf
+// walk from a focal. They anchor a window only when their index
+// isn't already inside some focal's ±N window on the same parent —
+// the dedup that keeps the focal's line capped at ±N around the
+// focal in the common adjacent-lookahead case, while still
+// preserving a disjoint window for far lookaheads.
+//
+// Both slices are sorted in tree order (sort_order). A child can
+// appear in only one slice: if a task is both a focal and a
+// lookahead target, it stays a focal.
 type lineSeed struct {
-	parent  *graphTask
-	anchors []*graphTask
+	parent           *graphTask
+	focalAnchors     []*graphTask
+	lookaheadAnchors []*graphTask
 }
 
 // collectLines returns the line seeds that should render given the
@@ -402,33 +447,73 @@ func collectLines(w *graphWorld, focals []*graphTask, L int) []*lineSeed {
 	}
 
 	type lineDraft struct {
-		parent  *graphTask
-		anchors map[int64]*graphTask
+		parent     *graphTask
+		focals     map[int64]*graphTask
+		lookaheads map[int64]*graphTask
 	}
 	drafts := map[int64]*lineDraft{}
 
-	addAnchor := func(stop *graphTask) {
+	getDraft := func(parent *graphTask) *lineDraft {
+		d, ok := drafts[parent.id]
+		if !ok {
+			d = &lineDraft{
+				parent:     parent,
+				focals:     map[int64]*graphTask{},
+				lookaheads: map[int64]*graphTask{},
+			}
+			drafts[parent.id] = d
+		}
+		return d
+	}
+	// focalParents is the set of every parent that a focal sits
+	// under. A lookahead anchor whose parent is one of these — or a
+	// descendant of one — is inside an already-rendered line's
+	// subtree and earns no new line. Only lookaheads that *exit*
+	// upward across a parent boundary (cousin or further) seed a new
+	// peek-line. The fork machinery extends the LCA chain in that
+	// case.
+	focalParents := map[int64]bool{}
+	for _, focal := range focals {
+		if focal.parent != nil {
+			focalParents[focal.parent.id] = true
+		}
+	}
+	inFocalSubtree := func(stop *graphTask) bool {
+		if stop == nil || stop.parent == nil {
+			return false
+		}
+		for cur := stop.parent; cur != nil; cur = cur.parent {
+			if focalParents[cur.id] {
+				return true
+			}
+		}
+		return false
+	}
+	addFocal := func(stop *graphTask) {
 		if stop == nil || stop.parent == nil {
 			return
 		}
-		parent := stop.parent
-		d, ok := drafts[parent.id]
-		if !ok {
-			d = &lineDraft{parent: parent, anchors: map[int64]*graphTask{}}
-			drafts[parent.id] = d
+		getDraft(stop.parent).focals[stop.id] = stop
+	}
+	addLookahead := func(stop *graphTask) {
+		if stop == nil || stop.parent == nil {
+			return
 		}
-		d.anchors[stop.id] = stop
+		if inFocalSubtree(stop) {
+			return
+		}
+		getDraft(stop.parent).lookaheads[stop.id] = stop
 	}
 
 	for _, focal := range focals {
-		addAnchor(focal)
+		addFocal(focal)
 		cur := focal
 		for range L {
 			next := nextLeaf(w, cur)
 			if next == nil {
 				break
 			}
-			addAnchor(next)
+			addLookahead(next)
 			cur = next
 		}
 	}
@@ -449,14 +534,31 @@ func collectLines(w *graphWorld, focals []*graphTask, L int) []*lineSeed {
 
 	out := make([]*lineSeed, 0, len(ordered))
 	for _, d := range ordered {
-		anchors := make([]*graphTask, 0, len(d.anchors))
-		for _, a := range d.anchors {
-			anchors = append(anchors, a)
+		// A task that is both a focal and a lookahead target stays a
+		// focal — focals always anchor a window, lookaheads only when
+		// not already covered.
+		focals := make([]*graphTask, 0, len(d.focals))
+		for _, a := range d.focals {
+			focals = append(focals, a)
 		}
-		sort.SliceStable(anchors, func(i, j int) bool {
-			return anchors[i].sortOrder < anchors[j].sortOrder
+		sort.SliceStable(focals, func(i, j int) bool {
+			return focals[i].sortOrder < focals[j].sortOrder
 		})
-		out = append(out, &lineSeed{parent: d.parent, anchors: anchors})
+		lookaheads := make([]*graphTask, 0, len(d.lookaheads))
+		for _, a := range d.lookaheads {
+			if _, isFocal := d.focals[a.id]; isFocal {
+				continue
+			}
+			lookaheads = append(lookaheads, a)
+		}
+		sort.SliceStable(lookaheads, func(i, j int) bool {
+			return lookaheads[i].sortOrder < lookaheads[j].sortOrder
+		})
+		out = append(out, &lineSeed{
+			parent:           d.parent,
+			focalAnchors:     focals,
+			lookaheadAnchors: lookaheads,
+		})
 	}
 	return out
 }
@@ -508,16 +610,35 @@ func applyWindow(seed *lineSeed, N int) Line {
 	}
 
 	visibleSet := map[int]bool{}
-	for _, anchor := range seed.anchors {
-		idx, ok := indexOf[anchor.id]
-		if !ok {
-			continue
-		}
+	addWindow := func(idx int) {
 		lo := max(idx-N, 0)
 		hi := min(idx+N, len(children)-1)
 		for i := lo; i <= hi; i++ {
 			visibleSet[i] = true
 		}
+	}
+	for _, anchor := range seed.focalAnchors {
+		idx, ok := indexOf[anchor.id]
+		if !ok {
+			continue
+		}
+		addWindow(idx)
+	}
+	// Lookahead anchors anchor a window only when their index isn't
+	// already covered by a focal's window — adjacent lookahead stays
+	// inside the focal's frame (the common single-claim case caps at
+	// ±N around the focal), far lookahead opens a disjoint window
+	// that the elision pass joins to the focal's span with an in-line
+	// `…`.
+	for _, anchor := range seed.lookaheadAnchors {
+		idx, ok := indexOf[anchor.id]
+		if !ok {
+			continue
+		}
+		if visibleSet[idx] {
+			continue
+		}
+		addWindow(idx)
 	}
 	if len(visibleSet) == 0 {
 		return line
@@ -541,8 +662,11 @@ func applyWindow(seed *lineSeed, N int) Line {
 			ShortID: children[idx].shortID,
 		})
 	}
-	if visible[len(visible)-1] < len(children)-1 {
-		line.Items = append(line.Items, LineItem{Kind: LineItemElision})
+	if last := visible[len(visible)-1]; last < len(children)-1 {
+		line.Items = append(line.Items, LineItem{
+			Kind:      LineItemMore,
+			MoreCount: len(children) - 1 - last,
+		})
 	}
 	return line
 }

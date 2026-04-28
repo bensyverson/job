@@ -2,6 +2,7 @@ package signals
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -123,9 +124,14 @@ func taskShortIDs(ts []*graphTask) []string {
 }
 
 // expectedLine is a test-side description of a single lineSeed.
+// focals are tasks that always anchor a window; lookahead are tasks
+// reached via the +L leaf walk that anchor a window only when not
+// already covered. Tests that pre-date the focal/lookahead split set
+// only focals.
 type expectedLine struct {
-	parent  string
-	anchors []string
+	parent    string
+	focals    []string
+	lookahead []string
 }
 
 func assertLines(t *testing.T, got []*lineSeed, want []expectedLine) {
@@ -139,10 +145,15 @@ func assertLines(t *testing.T, got []*lineSeed, want []expectedLine) {
 			t.Errorf("line %d parent: got %q, want %q",
 				i, got[i].parent.shortID, want[i].parent)
 		}
-		gotAnchors := taskShortIDs(got[i].anchors)
-		if !equalSubwayStrings(gotAnchors, want[i].anchors) {
-			t.Errorf("line %d (%s) anchors: got %v, want %v",
-				i, want[i].parent, gotAnchors, want[i].anchors)
+		gotFocals := taskShortIDs(got[i].focalAnchors)
+		if !equalSubwayStrings(gotFocals, want[i].focals) {
+			t.Errorf("line %d (%s) focals: got %v, want %v",
+				i, want[i].parent, gotFocals, want[i].focals)
+		}
+		gotLookahead := taskShortIDs(got[i].lookaheadAnchors)
+		if !equalSubwayStrings(gotLookahead, want[i].lookahead) {
+			t.Errorf("line %d (%s) lookahead: got %v, want %v",
+				i, want[i].parent, gotLookahead, want[i].lookahead)
 		}
 	}
 }
@@ -150,7 +161,9 @@ func assertLines(t *testing.T, got []*lineSeed, want []expectedLine) {
 func summarizeSeeds(ls []*lineSeed) string {
 	parts := make([]string, len(ls))
 	for i, l := range ls {
-		parts[i] = l.parent.shortID + "{" + strings.Join(taskShortIDs(l.anchors), ",") + "}"
+		focals := strings.Join(taskShortIDs(l.focalAnchors), ",")
+		look := strings.Join(taskShortIDs(l.lookaheadAnchors), ",")
+		parts[i] = l.parent.shortID + "{" + focals + "|" + look + "}"
 	}
 	return strings.Join(parts, " ")
 }
@@ -158,7 +171,7 @@ func summarizeSeeds(ls []*lineSeed) string {
 func summarizeExpected(ls []expectedLine) string {
 	parts := make([]string, len(ls))
 	for i, l := range ls {
-		parts[i] = l.parent + "{" + strings.Join(l.anchors, ",") + "}"
+		parts[i] = l.parent + "{" + strings.Join(l.focals, ",") + "|" + strings.Join(l.lookahead, ",") + "}"
 	}
 	return strings.Join(parts, " ")
 }
@@ -194,7 +207,7 @@ func TestCollectLines_Scenario1_DClaimed(t *testing.T) {
 	got := collectLines(w, focals, 2)
 
 	assertLines(t, got, []expectedLine{
-		{parent: "B", anchors: []string{"D", "E", "F"}},
+		{parent: "B", focals: []string{"D"}},
 	})
 }
 
@@ -216,8 +229,8 @@ func TestCollectLines_Scenario2_DAndEClaimed(t *testing.T) {
 	got := collectLines(w, focals, 2)
 
 	assertLines(t, got, []expectedLine{
-		{parent: "B", anchors: []string{"D", "E", "F"}},
-		{parent: "G", anchors: []string{"H"}},
+		{parent: "B", focals: []string{"D", "E"}},
+		{parent: "G", lookahead: []string{"H"}},
 	})
 }
 
@@ -238,8 +251,8 @@ func TestCollectLines_Scenario3_DAndFClaimed(t *testing.T) {
 	got := collectLines(w, focals, 2)
 
 	assertLines(t, got, []expectedLine{
-		{parent: "B", anchors: []string{"D", "E", "F"}},
-		{parent: "G", anchors: []string{"H", "I"}},
+		{parent: "B", focals: []string{"D", "F"}},
+		{parent: "G", lookahead: []string{"H", "I"}},
 	})
 }
 
@@ -257,9 +270,9 @@ func TestCollectLines_Scenario4_DAndHClaimed(t *testing.T) {
 	got := collectLines(w, focals, 2)
 
 	assertLines(t, got, []expectedLine{
-		{parent: "B", anchors: []string{"D", "E", "F"}},
-		{parent: "G", anchors: []string{"H", "I"}},
-		{parent: "J", anchors: []string{"K"}},
+		{parent: "B", focals: []string{"D"}},
+		{parent: "G", focals: []string{"H"}},
+		{parent: "J", lookahead: []string{"K"}},
 	})
 }
 
@@ -277,8 +290,8 @@ func TestCollectLines_Scenario5_DAndKClaimed(t *testing.T) {
 	got := collectLines(w, focals, 2)
 
 	assertLines(t, got, []expectedLine{
-		{parent: "B", anchors: []string{"D", "E", "F"}},
-		{parent: "J", anchors: []string{"K", "L"}},
+		{parent: "B", focals: []string{"D"}},
+		{parent: "J", focals: []string{"K"}},
 	})
 }
 
@@ -299,8 +312,56 @@ func TestCollectLines_Scenario6_HAndKClaimed_BDone(t *testing.T) {
 	got := collectLines(w, focals, 2)
 
 	assertLines(t, got, []expectedLine{
-		{parent: "G", anchors: []string{"H", "I"}},
-		{parent: "J", anchors: []string{"K", "L"}},
+		{parent: "G", focals: []string{"H"}},
+		{parent: "J", focals: []string{"K"}},
+	})
+}
+
+// Image #9 regression (cursor ?at=1288). The +L walk descends from
+// the focal into a sibling's subtree (a leaf under another child of
+// the focal's parent). Under the parent-boundary rule that lookahead
+// is absorbed — a descent into the focal's parent's subtree does not
+// "exit" the focal's parent and so does not earn a new line. Only
+// focal F's parent contributes a line; the sibling A does not.
+func TestCollectLines_LookaheadDescendsIntoSibling_NoNewLine(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "P", parent: "", status: "available"},
+		{short: "F", parent: "P", status: "claimed"},
+		{short: "A", parent: "P", status: "available"},
+		{short: "A1", parent: "A", status: "available"},
+		{short: "A2", parent: "A", status: "available"},
+	})
+	focals := []*graphTask{mustTask(w, "F")}
+
+	got := collectLines(w, focals, 1)
+
+	assertLines(t, got, []expectedLine{
+		{parent: "P", focals: []string{"F"}, lookahead: nil},
+	})
+}
+
+// Cousin fence — when the +L walk does exit the focal's parent's
+// subtree by climbing to the LCA and descending into a different
+// branch, the cousin's parent earns its own line and the existing
+// fork machinery extends the LCA chain back to the divergence point.
+func TestCollectLines_LookaheadCrossesToCousin_NewLine(t *testing.T) {
+	// A is the LCA; B and G are siblings under A. focal D is B's
+	// only leaf, so nextLeaf(D) climbs to A and descends into G,
+	// landing on H. H exits B's subtree → G earns a line.
+	w := newTestWorld([]tt{
+		{short: "A", parent: "", status: "available"},
+		{short: "B", parent: "A", status: "available"},
+		{short: "D", parent: "B", status: "claimed"},
+		{short: "G", parent: "A", status: "available"},
+		{short: "H", parent: "G", status: "available"},
+	})
+	focals := []*graphTask{mustTask(w, "D")}
+
+	got := collectLines(w, focals, 1)
+
+	assertLines(t, got, []expectedLine{
+		{parent: "B", focals: []string{"D"}, lookahead: nil},
+		{parent: "G", focals: nil, lookahead: []string{"H"}},
 	})
 }
 
@@ -462,21 +523,43 @@ func newWideLine(statuses []string) (*graphWorld, *graphTask, []*graphTask) {
 	return w, parent, children
 }
 
-func buildSeed(parent *graphTask, children []*graphTask, anchorIndices []int) *lineSeed {
-	anchors := make([]*graphTask, len(anchorIndices))
-	for i, idx := range anchorIndices {
-		anchors[i] = children[idx]
+// buildSeed builds a lineSeed with all supplied anchors marked as
+// focals. Use buildSeedWithLookahead when a test needs to distinguish
+// focal anchors (which always anchor a window) from lookahead-only
+// anchors (which anchor a window only when not already covered).
+func buildSeed(parent *graphTask, children []*graphTask, focalIndices []int) *lineSeed {
+	return buildSeedWithLookahead(parent, children, focalIndices, nil)
+}
+
+func buildSeedWithLookahead(parent *graphTask, children []*graphTask, focalIndices, lookaheadIndices []int) *lineSeed {
+	focals := make([]*graphTask, len(focalIndices))
+	for i, idx := range focalIndices {
+		focals[i] = children[idx]
 	}
-	return &lineSeed{parent: parent, anchors: anchors}
+	lookaheads := make([]*graphTask, 0, len(lookaheadIndices))
+	for _, idx := range lookaheadIndices {
+		// A child can't be both focal and lookahead — focal wins.
+		isFocal := slices.Contains(focalIndices, idx)
+		if !isFocal {
+			lookaheads = append(lookaheads, children[idx])
+		}
+	}
+	return &lineSeed{
+		parent:           parent,
+		focalAnchors:     focals,
+		lookaheadAnchors: lookaheads,
+	}
 }
 
 type expectedItem struct {
-	kind  LineItemKind
-	short string
+	kind      LineItemKind
+	short     string
+	moreCount int
 }
 
 func stop(s string) expectedItem { return expectedItem{kind: LineItemStop, short: s} }
 func elision() expectedItem      { return expectedItem{kind: LineItemElision} }
+func more(n int) expectedItem    { return expectedItem{kind: LineItemMore, moreCount: n} }
 func stops(short ...string) []expectedItem {
 	out := make([]expectedItem, len(short))
 	for i, s := range short {
@@ -504,8 +587,15 @@ func equalItems(got []LineItem, want []expectedItem) bool {
 		if got[i].Kind != want[i].kind {
 			return false
 		}
-		if want[i].kind == LineItemStop && got[i].ShortID != want[i].short {
-			return false
+		switch want[i].kind {
+		case LineItemStop:
+			if got[i].ShortID != want[i].short {
+				return false
+			}
+		case LineItemMore:
+			if got[i].MoreCount != want[i].moreCount {
+				return false
+			}
 		}
 	}
 	return true
@@ -514,9 +604,12 @@ func equalItems(got []LineItem, want []expectedItem) bool {
 func summarizeItems(items []LineItem) string {
 	parts := make([]string, len(items))
 	for i, it := range items {
-		if it.Kind == LineItemElision {
+		switch it.Kind {
+		case LineItemElision:
 			parts[i] = "…"
-		} else {
+		case LineItemMore:
+			parts[i] = fmt.Sprintf("(+%d)", it.MoreCount)
+		default:
 			parts[i] = it.ShortID
 		}
 	}
@@ -526,9 +619,12 @@ func summarizeItems(items []LineItem) string {
 func summarizeWantItems(items []expectedItem) string {
 	parts := make([]string, len(items))
 	for i, it := range items {
-		if it.kind == LineItemElision {
+		switch it.kind {
+		case LineItemElision:
 			parts[i] = "…"
-		} else {
+		case LineItemMore:
+			parts[i] = fmt.Sprintf("(+%d)", it.moreCount)
+		default:
 			parts[i] = it.short
 		}
 	}
@@ -543,14 +639,15 @@ func TestApplyWindow_AllVisible_NoElision(t *testing.T) {
 	_, parent, children := newWideLine([]string{
 		"done", "claimed", "available", "available",
 	})
-	seed := buildSeed(parent, children, []int{1, 2, 3})
+	seed := buildSeedWithLookahead(parent, children, []int{1}, []int{2, 3})
 
 	line := applyWindow(seed, 2)
 
 	assertLine(t, line, "P", stops("c00", "c01", "c02", "c03"))
 }
 
-// Long line, single focal mid-way — elision on both sides.
+// Long line, single focal mid-way — leading elision (in-gap dots),
+// trailing summarized as a (+N) terminal pill.
 func TestApplyWindow_LongLine_ElisionBothSides(t *testing.T) {
 	statuses := make([]string, 30)
 	for i := range statuses {
@@ -564,12 +661,12 @@ func TestApplyWindow_LongLine_ElisionBothSides(t *testing.T) {
 
 	want := []expectedItem{elision()}
 	want = append(want, stops("c15", "c16", "c17", "c18", "c19")...)
-	want = append(want, elision())
+	want = append(want, more(10))
 	assertLine(t, line, "P", want)
 }
 
 // Two close focals (within 2N+1) — windows merge into one visible
-// span, no internal elision.
+// span; trailing siblings render as a (+N) pill.
 func TestApplyWindow_MultiFocal_Contiguous(t *testing.T) {
 	statuses := []string{"available", "claimed", "available", "claimed", "available", "available"}
 	_, parent, children := newWideLine(statuses)
@@ -579,11 +676,12 @@ func TestApplyWindow_MultiFocal_Contiguous(t *testing.T) {
 
 	want := []expectedItem{}
 	want = append(want, stops("c00", "c01", "c02", "c03", "c04")...)
-	want = append(want, elision())
+	want = append(want, more(1))
 	assertLine(t, line, "P", want)
 }
 
-// Two distant focals — two visible windows separated by `…`.
+// Two distant focals — two visible windows separated by an in-gap
+// `…`; trailing summarized as (+N).
 func TestApplyWindow_MultiFocal_GapElided(t *testing.T) {
 	statuses := make([]string, 12)
 	for i := range statuses {
@@ -600,11 +698,12 @@ func TestApplyWindow_MultiFocal_GapElided(t *testing.T) {
 	want = append(want, stops("c00", "c01", "c02")...)
 	want = append(want, elision())
 	want = append(want, stops("c07", "c08", "c09")...)
-	want = append(want, elision())
+	want = append(want, more(2))
 	assertLine(t, line, "P", want)
 }
 
-// Anchor at start — no leading elision (window's left edge clamps to 0).
+// Anchor at start — no leading elision; trailing siblings render as
+// a (+N) pill.
 func TestApplyWindow_AnchorAtStart(t *testing.T) {
 	statuses := []string{"claimed", "available", "available", "available", "available"}
 	_, parent, children := newWideLine(statuses)
@@ -614,7 +713,7 @@ func TestApplyWindow_AnchorAtStart(t *testing.T) {
 
 	want := []expectedItem{}
 	want = append(want, stops("c00", "c01", "c02")...)
-	want = append(want, elision())
+	want = append(want, more(2))
 	assertLine(t, line, "P", want)
 }
 
@@ -641,6 +740,46 @@ func TestApplyWindow_DoneBetweenFocals(t *testing.T) {
 	line := applyWindow(seed, 2)
 
 	assertLine(t, line, "P", stops("c00", "c01", "c02", "c03"))
+}
+
+// Lookahead anchor inside the focal's ±N window — the lookahead
+// drops, the line stays capped at ±N around the focal. Mirrors the
+// ?at=1216 case: a single claimed focal with the next leaf one step
+// ahead and L=1 should produce 5 stops, not 6.
+func TestApplyWindow_LookaheadInsideFocalWindow_Drops(t *testing.T) {
+	statuses := make([]string, 10)
+	for i := range statuses {
+		statuses[i] = "available"
+	}
+	statuses[5] = "claimed"
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeedWithLookahead(parent, children, []int{5}, []int{6})
+
+	line := applyWindow(seed, 2)
+
+	want := []expectedItem{elision()}
+	want = append(want, stops("c03", "c04", "c05", "c06", "c07")...)
+	want = append(want, more(2))
+	assertLine(t, line, "P", want)
+}
+
+// Two real focals close together plus a lookahead inside their union
+// window — the lookahead drops, the windows merge into one span;
+// trailing siblings summarized as (+N).
+func TestApplyWindow_TwoFocalsPlusInsideLookahead(t *testing.T) {
+	statuses := []string{
+		"available", "claimed", "available", "claimed",
+		"available", "available", "available", "available",
+	}
+	_, parent, children := newWideLine(statuses)
+	seed := buildSeedWithLookahead(parent, children, []int{1, 3}, []int{4})
+
+	line := applyWindow(seed, 2)
+
+	want := []expectedItem{}
+	want = append(want, stops("c00", "c01", "c02", "c03", "c04", "c05")...)
+	want = append(want, more(2))
+	assertLine(t, line, "P", want)
 }
 
 // Empty parent — empty Line with anchor set, no items.
@@ -989,6 +1128,82 @@ func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
 			t.Errorf("missing open Branch A→%s in %s", anchor, edgeSummary(got.Edges))
 		}
+	}
+}
+
+// Regression for ?at=1321: Phase 10 had five open children with one
+// preceding sibling already done (Dashboard polish pass) and no
+// claims anywhere on the line, so the focal falls through to
+// globalNext (Empty-state polish at idx 1). Pre-fix the lookahead
+// union was widening the visible window past the focal's ±N — the
+// graph showed all five children plus a trailing `…`. After the
+// Tx8rV fix the line should render the four ±2 stops and a (+1)
+// terminal pill summarizing the single hidden Accessibility-sweep
+// sibling.
+func TestBuildSubway_GlobalNextWithDoneSibling_HonorsCenteringAndCount(t *testing.T) {
+	tasks := []tt{{short: "P", parent: "", status: "available"}}
+	statuses := []string{"done", "available", "available", "available", "available"}
+	for i, s := range statuses {
+		tasks = append(tasks, tt{
+			short:  fmt.Sprintf("c%02d", i),
+			parent: "P",
+			status: s,
+		})
+	}
+	w := newTestWorld(tasks)
+
+	got := buildSubwayWith(w, 1, 2)
+
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
+	}
+	line := got.Lines[0]
+	if line.AnchorShortID != "P" {
+		t.Errorf("anchor: got %q, want P", line.AnchorShortID)
+	}
+	wantItems := []expectedItem{
+		stop("c00"), stop("c01"), stop("c02"), stop("c03"),
+		more(1),
+	}
+	if !equalItems(line.Items, wantItems) {
+		t.Errorf("items: got %s, want %s",
+			summarizeItems(line.Items), summarizeWantItems(wantItems))
+	}
+	// Sanity: focal is c01 (globalNext skips c00 as done).
+	if n, ok := findSubwayNode(got.Nodes, "c01"); !ok {
+		t.Errorf("c01 missing from Nodes")
+	} else if n.State != SubwayNodeTodo {
+		t.Errorf("c01 State: got %d, want Todo (no claims, only globalNext)", n.State)
+	}
+}
+
+// A line with hidden trailing siblings renders a terminal (+N) pill
+// on the topological model. BuildSubway emits a Flow edge from the
+// last visible stop to the synthetic More short ID for that line so
+// the layout/template can draw the connector.
+func TestBuildSubway_TrailingMore_EmitsFlowEdgeToMore(t *testing.T) {
+	tasks := []tt{{short: "P", parent: "", status: "available"}}
+	for i := range 10 {
+		s := "available"
+		if i == 1 {
+			s = "claimed"
+		}
+		tasks = append(tasks, tt{
+			short:  fmt.Sprintf("c%02d", i),
+			parent: "P",
+			status: s,
+		})
+	}
+	w := newTestWorld(tasks)
+
+	// L=0 disables lookahead so the test focuses on focal-only
+	// trailing computation. Focal at c01 with N=2 yields visible
+	// [0..3]; six trailing children become a (+6) pill.
+	got := buildSubwayWith(w, 0, 2)
+
+	moreID := MoreShortID("P")
+	if !hasSubwayEdge(got.Edges, "c03", moreID, SubwayEdgeFlow) {
+		t.Errorf("expected Flow edge c03 → %q, got %s", moreID, edgeSummary(got.Edges))
 	}
 }
 

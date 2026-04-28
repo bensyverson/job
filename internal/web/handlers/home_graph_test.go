@@ -70,6 +70,40 @@ func TestHomeGraph_ClaimedTaskRendersCanvas(t *testing.T) {
 	}
 }
 
+// The graph renders inside an intrinsically-sized inner canvas
+// wrapped by a frame that scales the whole content down via CSS
+// when its parent is narrower than CanvasW. Two pieces have to be
+// in the markup for the scaling to work: a c-graph-frame element
+// carrying --canvas-w/--canvas-h custom properties, and an SVG
+// sized at its intrinsic width/height (not width="100%").
+func TestHomeGraph_ScalableFrameAndIntrinsicSVG(t *testing.T) {
+	deps := newLogDeps(t, setupLogTestDB(t))
+	body := `{
+		"tasks":[
+			{"shortId":"ph3","title":"Phase 3","status":"available","sortOrder":2},
+			{"shortId":"st1","title":"Step 1","status":"done","parentShortId":"ph3","sortOrder":1},
+			{"shortId":"st2","title":"Step 2","status":"claimed","parentShortId":"ph3","sortOrder":2,"claimedBy":"alice"},
+			{"shortId":"st3","title":"Step 3","status":"available","parentShortId":"ph3","sortOrder":3}
+		],
+		"blocks":[]
+	}`
+	w := postHomeGraph(t, deps, body)
+	if w.Code != 200 {
+		t.Fatalf("status: got %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	resp := w.Body.String()
+
+	if !strings.Contains(resp, `c-graph-frame`) {
+		t.Errorf("missing c-graph-frame wrapper; body=%s", resp)
+	}
+	if !strings.Contains(resp, `--canvas-w:`) || !strings.Contains(resp, `--canvas-h:`) {
+		t.Errorf("missing --canvas-w/--canvas-h custom properties; body=%s", resp)
+	}
+	if strings.Contains(resp, `<svg viewBox=`) && strings.Contains(resp, `width="100%"`) {
+		t.Errorf("graph SVG should use intrinsic width (CanvasW px), not width=\"100%%\"; body=%s", resp)
+	}
+}
+
 func TestHomeGraph_BadJSONReturns400(t *testing.T) {
 	deps := newLogDeps(t, setupLogTestDB(t))
 	w := postHomeGraph(t, deps, `{not json`)

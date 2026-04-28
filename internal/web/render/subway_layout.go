@@ -10,10 +10,11 @@ import (
 // SubwayView is the pre-laid-out, ready-to-render form of a
 // signals.Subway. All positions are in CSS pixels; edge PathD
 // strings are complete SVG path "d" attributes. The template
-// iterates Nodes, Edges, and Elisions to emit the multi-line
+// iterates Nodes, Edges, Elisions, and Mores to emit the multi-line
 // subway-system mini-graph (lines as horizontal tracks, an optional
 // fork branching upward and downward, closure markers on blocked
-// ingress edges, and `…` glyphs at elided spans).
+// ingress edges, in-gap dots at elided spans, and `(+N)` terminal
+// pills for trailing siblings).
 type SubwayView struct {
 	CanvasW, CanvasH int
 	Empty            bool
@@ -25,6 +26,7 @@ type SubwayView struct {
 	Nodes    []SubwayNodeView
 	Edges    []SubwayEdgeView
 	Elisions []SubwayElisionView
+	Mores    []SubwayMoreView
 }
 
 // SubwayLineView is the geometric record for one line: the row it
@@ -90,11 +92,25 @@ type SubwayEdgeView struct {
 	ClosureTop  int
 }
 
-// SubwayElisionView is a `…` marker positioned along a line between
-// two non-adjacent visible windows (or between the line anchor and
-// the first visible stop, or after the last visible stop).
+// SubwayElisionView is an in-gap dots marker positioned at the
+// midpoint between two surrounding items on a line — anchor↔first
+// visible stop, or stop↔stop across a gap. It does not consume a
+// column slot. Trailing elisions are not rendered as elisions —
+// they become a SubwayMoreView pill instead.
 type SubwayElisionView struct {
 	Left, Top int
+}
+
+// SubwayMoreView is a terminal `(+N)` pill summarizing the count of
+// trailing siblings hidden after the last visible stop on a line.
+// It consumes a column slot like a regular stop. ShortID is the
+// synthetic ID returned by signals.MoreShortID(line.AnchorShortID)
+// — edges originating from the last stop reach the pill via this
+// ID rather than a real task ID.
+type SubwayMoreView struct {
+	ShortID   string
+	Left, Top int
+	Count     int
 }
 
 // Subway layout geometry. 32px node disc, 160px between column
@@ -173,27 +189,78 @@ func LayoutSubway(s signals.Subway) SubwayView {
 	view := SubwayView{
 		Lines: make([]SubwayLineView, len(s.Lines)),
 	}
+	morePositions := map[string]struct{ Left, Top int }{}
 	maxCol := anchorCol
 	for i, line := range s.Lines {
 		lineRow := i
 		cols[line.AnchorShortID] = anchorCol
+		// rows[anchor] must be set explicitly: when the anchor is
+		// also a stop on a prior line (line 1's parent is a child of
+		// the LCA, which IS line 0's anchor) or a fork ancestor that
+		// happens to share a short ID, an earlier loop pass writes
+		// rows[anchor] to a different row. Without this assignment
+		// the second line's anchor inherits that row and overlaps
+		// the prior anchor.
+		rows[line.AnchorShortID] = lineRow
 		lv := SubwayLineView{AnchorShortID: line.AnchorShortID, Row: lineRow}
+		// prevCol tracks the column of the most recent item that
+		// occupied a slot — the line anchor by default, then each
+		// stop or More pill as we walk Items. It exists so an
+		// in-gap elision (which doesn't take a slot) can be
+		// positioned at the midpoint of the surrounding pair.
+		prevCol := anchorCol
+		pendingElision := false
 		c := anchorCol + 1
+		emplaceElision := func(nextCol int) {
+			prevLeft := subwayMarginLeft + prevCol*subwayColStep
+			nextLeft := subwayMarginLeft + nextCol*subwayColStep
+			view.Elisions = append(view.Elisions, SubwayElisionView{
+				Left: (prevLeft+nextLeft)/2 + subwayNodeRadius,
+				Top:  subwayMarginTop + lineRow*subwayRowStep + subwayNodeRadius,
+			})
+		}
 		for _, item := range line.Items {
-			if item.Kind == signals.LineItemStop {
+			switch item.Kind {
+			case signals.LineItemStop:
 				cols[item.ShortID] = c
 				rows[item.ShortID] = lineRow
 				lv.StopShortIDs = append(lv.StopShortIDs, item.ShortID)
-			} else {
-				view.Elisions = append(view.Elisions, SubwayElisionView{
-					Left: subwayMarginLeft + c*subwayColStep + subwayNodeRadius,
-					Top:  subwayMarginTop + lineRow*subwayRowStep + subwayNodeRadius,
+				if pendingElision {
+					emplaceElision(c)
+					pendingElision = false
+				}
+				prevCol = c
+				if c > maxCol {
+					maxCol = c
+				}
+				c++
+			case signals.LineItemElision:
+				pendingElision = true
+			case signals.LineItemMore:
+				moreID := signals.MoreShortID(line.AnchorShortID)
+				left := subwayMarginLeft + c*subwayColStep
+				top := subwayMarginTop + lineRow*subwayRowStep
+				view.Mores = append(view.Mores, SubwayMoreView{
+					ShortID: moreID,
+					Left:    left,
+					Top:     top,
+					Count:   item.MoreCount,
 				})
+				morePositions[moreID] = struct{ Left, Top int }{Left: left, Top: top}
+				if pendingElision {
+					// applyWindow never emits an elision immediately
+					// before a More (trailing elision is replaced by
+					// More), but tolerate it defensively by placing
+					// the dots at the midpoint anyway.
+					emplaceElision(c)
+					pendingElision = false
+				}
+				prevCol = c
+				if c > maxCol {
+					maxCol = c
+				}
+				c++
 			}
-			if c > maxCol {
-				maxCol = c
-			}
-			c++
 		}
 		view.Lines[i] = lv
 	}
@@ -261,6 +328,17 @@ func LayoutSubway(s signals.Subway) SubwayView {
 	for _, nv := range view.Nodes {
 		nodeViewByShort[nv.ShortID] = nv
 	}
+	// More pills aren't real nodes, but edges originating from the
+	// last visible stop terminate at the synthetic More short ID.
+	// Stand them in here so buildSubwayEdgeView can compute geometry
+	// uniformly.
+	for moreID, pos := range morePositions {
+		nodeViewByShort[moreID] = SubwayNodeView{
+			ShortID: moreID,
+			Left:    pos.Left,
+			Top:     pos.Top,
+		}
+	}
 	for _, e := range s.Edges {
 		from, fromOK := nodeViewByShort[e.FromShortID]
 		to, toOK := nodeViewByShort[e.ToShortID]
@@ -280,13 +358,25 @@ func buildSubwayEdgeView(e signals.SubwayEdge, from, to SubwayNodeView) SubwayEd
 	toCY := to.Top + subwayNodeRadius
 
 	var d string
-	if fromCY == toCY {
+	switch {
+	case fromCX == toCX && fromCY != toCY:
+		// Same column, different row — exit the bottom (or top) of
+		// "from" and enter the top (or bottom) of "to". A vertical
+		// straight line; the previous L/R-anchored Bezier branch
+		// would have produced an S-curve whose arrow ended pointing
+		// backward into the receiving node.
+		y1, y2 := fromCY+subwayNodeRadius, toCY-subwayNodeRadius
+		if fromCY > toCY {
+			y1, y2 = fromCY-subwayNodeRadius, toCY+subwayNodeRadius
+		}
+		d = fmt.Sprintf("M%d %d L%d %d", fromCX, y1, toCX, y2)
+	case fromCY == toCY:
 		x1, x2 := fromCX+subwayNodeRadius, toCX-subwayNodeRadius
 		if fromCX > toCX {
 			x1, x2 = fromCX-subwayNodeRadius, toCX+subwayNodeRadius
 		}
 		d = fmt.Sprintf("M%d %d L%d %d", x1, fromCY, x2, toCY)
-	} else {
+	default:
 		x1 := fromCX + subwayNodeRadius
 		x2 := toCX - subwayNodeRadius
 		if fromCX > toCX {

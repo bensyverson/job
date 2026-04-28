@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -699,6 +700,266 @@ func TestLayoutSubway_Scenario3_ClosureMarkerStillOnIngress(t *testing.T) {
 	gCX, gCY := g.Left+subwayNodeRadius, g.Top+subwayNodeRadius
 	assertBetween(t, "A→G ClosureLeft", e.ClosureLeft, aCX, gCX)
 	assertBetween(t, "A→G ClosureTop", e.ClosureTop, aCY, gCY)
+}
+
+// ------------------------------------------------------------------
+// Elision & More-pill positioning
+//
+// In-gap elision sits in the gap between two surrounding items
+// (anchor↔stop, stop↔stop) without consuming a column slot. The
+// trailing (+N) "More" pill consumes a slot at the end of the line
+// and carries the count of hidden trailing siblings. The connector
+// from the last stop terminates at the More pill — addressed via
+// the synthetic short ID returned by signals.MoreShortID.
+// ------------------------------------------------------------------
+
+// elisionScenarioSubway builds a single-line scenario with a leading
+// elision, a mid-line elision, and a trailing (+N) pill, reflecting
+// the structure applyWindow emits when two distant focals leave a
+// gap and trailing siblings remain hidden.
+//
+//	B  ·  c02 c03  ·  c07 c08 c09  (+5)
+//
+// (`·` denotes the in-gap elision dots.)
+func elisionScenarioSubway() signals.Subway {
+	return signals.Subway{
+		Lines: []signals.Line{{
+			AnchorShortID: "B",
+			Items: []signals.LineItem{
+				{Kind: signals.LineItemElision},
+				stopItem("c02"), stopItem("c03"),
+				{Kind: signals.LineItemElision},
+				stopItem("c07"), stopItem("c08"), stopItem("c09"),
+				{Kind: signals.LineItemMore, MoreCount: 5},
+			},
+		}},
+		Nodes: []signals.SubwayNode{
+			subwayNode("B", signals.SubwayNodeTodo),
+			subwayNode("c02", signals.SubwayNodeTodo),
+			subwayNode("c03", signals.SubwayNodeActive),
+			subwayNode("c07", signals.SubwayNodeActive),
+			subwayNode("c08", signals.SubwayNodeTodo),
+			subwayNode("c09", signals.SubwayNodeTodo),
+		},
+		Edges: []signals.SubwayEdge{
+			{FromShortID: "B", ToShortID: "c02", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "c02", ToShortID: "c03", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "c03", ToShortID: "c07", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "c07", ToShortID: "c08", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "c08", ToShortID: "c09", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "c09", ToShortID: signals.MoreShortID("B"), Kind: signals.SubwayEdgeFlow},
+		},
+	}
+}
+
+// In-gap elisions don't consume column slots: the first visible stop
+// after a leading elision sits one column past the anchor, not two.
+func TestLayoutSubway_LeadingElision_DoesNotConsumeSlot(t *testing.T) {
+	v := LayoutSubway(elisionScenarioSubway())
+	assertNonEmpty(t, v)
+
+	b := assertNodePositioned(t, v, "B")
+	c02 := assertNodePositioned(t, v, "c02")
+	if c02.Left-b.Left != subwayColStep {
+		t.Errorf("c02 should sit one column past B; got Left diff %d, want %d",
+			c02.Left-b.Left, subwayColStep)
+	}
+}
+
+// The leading-elision view sits at the midpoint between the anchor
+// disc center and the first visible stop's disc center, on the
+// anchor's row.
+func TestLayoutSubway_LeadingElision_PositionedBetweenAnchorAndFirstStop(t *testing.T) {
+	v := LayoutSubway(elisionScenarioSubway())
+
+	if len(v.Elisions) < 1 {
+		t.Fatalf("Elisions: got 0, want at least 1 (leading)")
+	}
+	b := assertNodePositioned(t, v, "B")
+	c02 := assertNodePositioned(t, v, "c02")
+	wantLeft := (b.Left + c02.Left) / 2
+	wantLeft += subwayNodeRadius
+	wantTop := b.Top + subwayNodeRadius
+
+	leading := v.Elisions[0]
+	if leading.Left != wantLeft {
+		t.Errorf("leading elision Left: got %d, want %d (midpoint of B↔c02 centers)",
+			leading.Left, wantLeft)
+	}
+	if leading.Top != wantTop {
+		t.Errorf("leading elision Top: got %d, want %d (anchor row center)",
+			leading.Top, wantTop)
+	}
+}
+
+// The mid-line elision sits at the midpoint between the two stops it
+// separates — c03 and c07 in the fixture.
+func TestLayoutSubway_MidLineElision_PositionedBetweenStops(t *testing.T) {
+	v := LayoutSubway(elisionScenarioSubway())
+
+	if len(v.Elisions) < 2 {
+		t.Fatalf("Elisions: got %d, want 2 (leading + mid-line)", len(v.Elisions))
+	}
+	c03 := assertNodePositioned(t, v, "c03")
+	c07 := assertNodePositioned(t, v, "c07")
+	wantLeft := (c03.Left+c07.Left)/2 + subwayNodeRadius
+	wantTop := c03.Top + subwayNodeRadius
+
+	mid := v.Elisions[1]
+	if mid.Left != wantLeft {
+		t.Errorf("mid-line elision Left: got %d, want %d (midpoint of c03↔c07 centers)",
+			mid.Left, wantLeft)
+	}
+	if mid.Top != wantTop {
+		t.Errorf("mid-line elision Top: got %d, want %d", mid.Top, wantTop)
+	}
+}
+
+// The trailing (+N) pill consumes one column slot past the last
+// visible stop and carries the hidden-sibling count.
+func TestLayoutSubway_TrailingMore_TakesSlotAndCarriesCount(t *testing.T) {
+	v := LayoutSubway(elisionScenarioSubway())
+
+	if len(v.Mores) != 1 {
+		t.Fatalf("Mores: got %d, want 1", len(v.Mores))
+	}
+	more := v.Mores[0]
+	if more.Count != 5 {
+		t.Errorf("More count: got %d, want 5", more.Count)
+	}
+	c09 := assertNodePositioned(t, v, "c09")
+	if more.Left-c09.Left != subwayColStep {
+		t.Errorf("More pill should sit one column past c09; got Left diff %d, want %d",
+			more.Left-c09.Left, subwayColStep)
+	}
+	if more.Top != c09.Top {
+		t.Errorf("More pill should share the line's row; got Top %d, want %d",
+			more.Top, c09.Top)
+	}
+}
+
+// The Flow edge from the last visible stop to the trailing More
+// pill is positioned and routed (non-empty PathD).
+func TestLayoutSubway_TrailingMore_EdgeFromLastStopArrives(t *testing.T) {
+	v := LayoutSubway(elisionScenarioSubway())
+
+	moreID := signals.MoreShortID("B")
+	e := assertEdgePresent(t, v, "c09", moreID)
+	if !e.IsFlow {
+		t.Errorf("c09 → %q should be Flow; got IsBranch=%v IsBlocker=%v",
+			moreID, e.IsBranch, e.IsBlocker)
+	}
+}
+
+// Regression for ?at=1288: when line 1's anchor is also a stop on
+// line 0 (line 1's parent is a child of the LCA, which IS line 0's
+// anchor), the layout must place line 1's anchor on line 1's row.
+// Before the fix, the line loop wrote cols[anchor] but never wrote
+// rows[anchor], so line 1's anchor inherited row 0 from the line 0
+// pass — piling its disc on top of line 0's anchor and producing a
+// zero-length, visually-backward edge to its first stop.
+func scenarioLineAnchorIsStopOnPriorLineSubway() signals.Subway {
+	return signals.Subway{
+		Lines: []signals.Line{
+			{
+				AnchorShortID: "A",
+				Items:         []signals.LineItem{stopItem("B"), stopItem("X")},
+			},
+			{
+				AnchorShortID: "B",
+				Items:         []signals.LineItem{stopItem("Y")},
+			},
+		},
+		Forks: []*signals.Fork{{
+			AncestorChain: []string{"A"},
+			LineIndices:   []int{0, 1},
+		}},
+		Nodes: []signals.SubwayNode{
+			subwayNode("A", signals.SubwayNodeTodo),
+			subwayNode("B", signals.SubwayNodeTodo),
+			subwayNode("X", signals.SubwayNodeActive),
+			subwayNode("Y", signals.SubwayNodeActive),
+		},
+		Edges: []signals.SubwayEdge{
+			{FromShortID: "A", ToShortID: "B", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "B", ToShortID: "X", Kind: signals.SubwayEdgeFlow},
+			{FromShortID: "B", ToShortID: "Y", Kind: signals.SubwayEdgeFlow},
+		},
+	}
+}
+
+func TestLayoutSubway_LineAnchorThatIsAlsoStop_RendersOnItsOwnRow(t *testing.T) {
+	v := LayoutSubway(scenarioLineAnchorIsStopOnPriorLineSubway())
+	a := assertNodePositioned(t, v, "A")
+	b := assertNodePositioned(t, v, "B")
+
+	if b.Top == a.Top {
+		t.Errorf("B (line 1 anchor) should not share line 0 anchor's row; both at top=%d", b.Top)
+	}
+	// The line loop assigns rows monotonically — line 1 sits on
+	// line 0's row + one row stride.
+	wantBTop := a.Top + subwayRowStep
+	if b.Top != wantBTop {
+		t.Errorf("B Top: got %d, want %d (one row stride below A)", b.Top, wantBTop)
+	}
+}
+
+// Defensive companion: no two distinct nodes may share the same
+// (Left, Top) coordinates. Today only the line-anchor row bug
+// triggers this; the fence catches future regressions broadly.
+func TestLayoutSubway_NoTwoNodesShareACoordinate(t *testing.T) {
+	v := LayoutSubway(scenarioLineAnchorIsStopOnPriorLineSubway())
+	type pos struct{ Left, Top int }
+	seen := map[pos]string{}
+	for _, n := range v.Nodes {
+		p := pos{n.Left, n.Top}
+		if other, dup := seen[p]; dup {
+			t.Errorf("nodes %q and %q share position (%d, %d)", other, n.ShortID, p.Left, p.Top)
+		}
+		seen[p] = n.ShortID
+	}
+}
+
+// Regression for the second face of ?at=1288: a fork branch from a
+// shared-LCA-line-anchor down to a child line anchor sits at the
+// same column on both rows (the LCA's line and the child's line
+// share anchorCol). Pre-fix the edge fell into the L/R-anchored
+// curve branch with x1=fromCX+r, x2=fromCX-r — drawing an S-shape
+// that exits the "from" node's right side and enters the "to"
+// node's left side, leaving the marker-end arrowhead pointing
+// backward into the child. The fix routes such same-column
+// different-row edges vertically: exit the bottom of "from",
+// enter the top of "to", arrow points down.
+func TestLayoutSubway_SameColumnDifferentRow_RoutedVertically(t *testing.T) {
+	s := scenarioLineAnchorIsStopOnPriorLineSubway()
+	v := LayoutSubway(s)
+
+	a := assertNodePositioned(t, v, "A")
+	b := assertNodePositioned(t, v, "B")
+
+	aCX := a.Left + subwayNodeRadius
+	bCX := b.Left + subwayNodeRadius
+	if aCX != bCX {
+		t.Fatalf("test precondition: expected A and B at same column; got cx %d vs %d", aCX, bCX)
+	}
+
+	e := assertEdgePresent(t, v, "A", "B")
+	// Bad case: path begins at fromCX+radius — horizontal exit from
+	// the right side of "from", which combined with toCX-radius on
+	// the receiving end is the backward S-curve.
+	badPrefix := fmt.Sprintf("M%d ", aCX+subwayNodeRadius)
+	if strings.HasPrefix(e.PathD, badPrefix) {
+		t.Errorf("A→B path uses horizontal-exit S-curve (arrow points backward); got d=%q",
+			e.PathD)
+	}
+	// Good case: vertical routing exits the bottom of "from", so
+	// the path's first M coordinate sits at the shared column
+	// center, not its left/right edge.
+	goodPrefix := fmt.Sprintf("M%d ", aCX)
+	if !strings.HasPrefix(e.PathD, goodPrefix) {
+		t.Errorf("A→B path should begin at column center x=%d (vertical routing); got d=%q",
+			aCX, e.PathD)
+	}
 }
 
 // Closure markers are reserved for edges, not nodes — no node carries

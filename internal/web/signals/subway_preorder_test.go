@@ -52,9 +52,13 @@ func TestSingleFocalLine_WalkReachesRoot_NoLeadingElision(t *testing.T) {
 	assertLine(t, line, "Root", []expectedItem{stop("B"), stop("C")})
 }
 
-// -N doesn't reach the project root → broken-line leading elision
-// sits between leftmost (the project root) and the first content
-// stop in the window.
+// -N doesn't reach the project root → leftmost is preorder[startPos]
+// (the first stop of the visible window), no chrome project-root
+// anchor and no leading elision marker. (Pre-revision: this row
+// anchored on the project root with a leading broken-line elision;
+// single-focal mode no longer carries the LCA chrome since nothing
+// branches off it — invariant 3 only requires LCAs in multi-focal
+// mode where they're branch curve targets.)
 func TestSingleFocalLine_LeadingBrokenElision(t *testing.T) {
 	w := newTestWorld([]tt{
 		{short: "Root", parent: "", status: "available"},
@@ -69,12 +73,9 @@ func TestSingleFocalLine_LeadingBrokenElision(t *testing.T) {
 	line := buildSingleFocalLine(w, focal, 2)
 
 	// Preorder: [Root, B, C, D, E, F]. Focal F at pos 5. N=2.
-	// Window: [3, 5] = {D, E, F}. Pos 3 > 0 → leading broken-line
-	// elision. +N=7 past last (5) → no trailing elision.
-	assertLine(t, line, "Root", []expectedItem{
-		elisionBroken(),
-		stop("D"), stop("E"), stop("F"),
-	})
+	// Window: [3, 5] = {D, E, F}. Leftmost = D; items = {E, F}.
+	// +N=7 past last (5) → no trailing elision.
+	assertLine(t, line, "D", []expectedItem{stop("E"), stop("F")})
 }
 
 // Focal sits at the tree's last preorder position; +N walks past the
@@ -112,11 +113,11 @@ func TestSingleFocalLine_TrailingTerminatingElision(t *testing.T) {
 	line := buildSingleFocalLine(w, focal, 1)
 
 	// Preorder: [Root, A, B, C, D, E]. Focal B at pos 2. N=1.
-	// Window: [1, 3] = {A, B, C}. Pos 1 > 0 → leading broken-line
-	// elision. +N=3 < len-1=5 → trailing terminating elision.
-	assertLine(t, line, "Root", []expectedItem{
-		elisionBroken(),
-		stop("A"), stop("B"), stop("C"),
+	// Window: [1, 3] = {A, B, C}. Leftmost = A; items = {B, C} +
+	// trailing terminating elision (+N=3 < len-1=5). No chrome
+	// project-root anchor.
+	assertLine(t, line, "A", []expectedItem{
+		stop("B"), stop("C"),
 		elisionTerminating(),
 	})
 }
@@ -139,14 +140,40 @@ func TestSingleFocalLine_ParentBoundaryCrossing(t *testing.T) {
 	line := buildSingleFocalLine(w, focal, 2)
 
 	// Preorder: [Root, B, C, D, E, F, G]. Focal F at pos 5. N=2.
-	// Window: [3, 6] = {D, E, F, G}. E (a parent) renders as its
-	// own preorder stop in the row — the window crosses from B's
-	// subtree (D) up over the boundary to E and down into F. Pos 3
-	// > 0 → leading elision. +N=7 past last (6) → no trailing.
-	assertLine(t, line, "Root", []expectedItem{
-		elisionBroken(),
-		stop("D"), stop("E"), stop("F"), stop("G"),
+	// Window: [3, 6] = {D, E, F, G}. Leftmost = D; items =
+	// {E, F, G}. E (a parent) renders as a regular content stop —
+	// the window crosses from B's subtree (D) up over the boundary
+	// to E and down into F. +N=7 past last (6) → no trailing.
+	assertLine(t, line, "D", []expectedItem{
+		stop("E"), stop("F"), stop("G"),
 	})
+}
+
+// Single-focal mode shouldn't add a chrome project root as leftmost
+// when nothing branches off it — the LCA is only structurally
+// needed in multi-focal mode (where it serves as the curve target
+// for sub-rows). When the -N walk doesn't reach the project root,
+// the leftmost is the row's first visible content stop
+// (preorder[focalPos-N]), not the project root, and there's no
+// leading elision marker.
+func TestSingleFocalLine_DeepFocal_LeftmostIsFirstWindowStop(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "Root", parent: "", status: "available"},
+		{short: "B", parent: "Root", status: "available"},
+		{short: "C", parent: "B", status: "available"},
+		{short: "D", parent: "C", status: "available"},
+		{short: "E", parent: "D", status: "available"},
+		{short: "F", parent: "E", status: "claimed"},
+	})
+	focal := mustTask(w, "F")
+
+	line := buildSingleFocalLine(w, focal, 2)
+
+	// Preorder: [Root, B, C, D, E, F]. Focal F at pos 5. N=2.
+	// Window: [3, 5] = {D, E, F}. The leftmost is D (preorder[3]),
+	// not Root — Root would be pure chrome. items lists the
+	// remaining content stops; no leading elision.
+	assertLine(t, line, "D", []expectedItem{stop("E"), stop("F")})
 }
 
 // Reproduces ?at=1288 (focal k9fFC, ±2): row reads
@@ -176,12 +203,11 @@ func TestSingleFocalLine_ReproducesAt1288Shape(t *testing.T) {
 
 	// Preorder: Root, phasePre1..3, 1SYqo, hNTiB, k9fFC, oDKYC,
 	// tpC4u, post1, post2. Focal k9fFC at pos 6. N=2.
-	// Window: [4, 8] = {1SYqo, hNTiB, k9fFC, oDKYC, tpC4u}. Pos 4
-	// > 0 → leading broken-line elision; +N=8 < len-1=10 →
-	// trailing terminating elision.
-	assertLine(t, line, "Root", []expectedItem{
-		elisionBroken(),
-		stop("1SYqo"), stop("hNTiB"), stop("k9fFC"), stop("oDKYC"), stop("tpC4u"),
+	// Window: [4, 8] = {1SYqo, hNTiB, k9fFC, oDKYC, tpC4u}.
+	// Leftmost = 1SYqo; items = {hNTiB, k9fFC, oDKYC, tpC4u} +
+	// trailing terminating elision (+N=8 < len-1=10).
+	assertLine(t, line, "1SYqo", []expectedItem{
+		stop("hNTiB"), stop("k9fFC"), stop("oDKYC"), stop("tpC4u"),
 		elisionTerminating(),
 	})
 }

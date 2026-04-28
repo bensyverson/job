@@ -1393,12 +1393,13 @@ func TestBuildSubway_DeepLCAPath(t *testing.T) {
 // focal preorder window mode (project/2026-04-27-graph-row-
 // merging.md) the row's leftmost is the project root; ±N preorder
 // steps around the focal pull in the relevant ancestors and
-// siblings. Top is now the row anchor (col 0); Mid sits between Top
-// and B in the preorder walk.
+// siblings. Single-focal mode no longer includes a chrome project-
+// root anchor — the row's leftmost is preorder[focalPos-N], the
+// first stop of the visible window.
 //
-//	Top   (project root, becomes the row anchor)
+//	Top   (project root)
 //	└── Mid
-//	    └── B
+//	    └── B   (becomes the row anchor — first stop of -N window)
 //	        ├── X
 //	        └── Y [claimed]
 func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
@@ -1415,8 +1416,8 @@ func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
 	if len(got.Lines) != 1 {
 		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
 	}
-	if got.Lines[0].AnchorShortID != "Top" {
-		t.Errorf("anchor: got %q, want Top (project root)",
+	if got.Lines[0].AnchorShortID != "B" {
+		t.Errorf("anchor: got %q, want B (first stop of preorder window)",
 			got.Lines[0].AnchorShortID)
 	}
 	// Y renders as the active stop.
@@ -1425,14 +1426,18 @@ func TestBuildSubway_MidRowDeepFocal(t *testing.T) {
 	}
 	// Preorder: Top, Mid, B, X, Y. Focal Y at pos 4; N=2 →
 	// window [2, 4] = {B, X, Y}. Mid sits at pos 1, outside the
-	// window, and should not appear.
-	if _, ok := findSubwayNode(got.Nodes, "Mid"); ok {
-		t.Errorf("Mid should not appear (outside preorder window); got %v",
-			subwayNodeShortIDs(got.Nodes))
+	// window, and should not appear. Top is no longer rendered as
+	// a chrome anchor — single-focal mode skips the LCA when
+	// nothing branches off it.
+	for _, sid := range []string{"Top", "Mid"} {
+		if _, ok := findSubwayNode(got.Nodes, sid); ok {
+			t.Errorf("%s should not appear (chrome ancestor dropped in single-focal mode); got %v",
+				sid, subwayNodeShortIDs(got.Nodes))
+		}
 	}
-	// Top is the anchor and is rendered.
-	if _, ok := findSubwayNode(got.Nodes, "Top"); !ok {
-		t.Errorf("Top should appear as the row anchor; got %v",
+	// B is the row anchor.
+	if _, ok := findSubwayNode(got.Nodes, "B"); !ok {
+		t.Errorf("B should appear as the row anchor; got %v",
 			subwayNodeShortIDs(got.Nodes))
 	}
 }

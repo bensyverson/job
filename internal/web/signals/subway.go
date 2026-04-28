@@ -778,17 +778,18 @@ func lcaPair(a, b *graphTask) *graphTask {
 
 // buildSingleFocalLine returns the Line for a single-focal cluster
 // under the new preorder window mode (project/2026-04-27-graph-row-
-// merging.md). The row's leftmost is the project root containing
-// focal; content stops are the focal's ±N preorder neighbors within
-// that project tree.
+// merging.md). The row's leftmost is the first stop of the ±N
+// preorder window around the focal; content stops are the rest of
+// the visible window in preorder.
 //
-// AnchorShortID is the project root's short ID. Items lists the
-// visible content stops in preorder, excluding the project root
-// itself (rendered as the anchor at col 0). Leading broken-line
-// elision (LineItemElisionBroken) sits before the first content stop
-// when the -N walk doesn't reach the project root; trailing
-// terminating elision (LineItemElisionTerminating) sits at the right
-// edge when the +N walk continues past the row's last visible stop.
+// The leftmost is preorder[focalPos-N] when that position lies
+// inside the project tree, or preorder[0] (the project root) when
+// the -N walk reaches all the way back. Single-focal mode
+// deliberately skips adding a chrome LCA — the project root is
+// only structurally needed in multi-focal mode where it serves as
+// the curve target for sub-rows. Trailing terminating elision
+// (LineItemElisionTerminating) sits at the right edge when the +N
+// walk continues past the row's last visible stop.
 //
 // The function never emits LineItemElision (the in-gap dots marker
 // from the legacy parent-rooted line model); trailing siblings
@@ -816,25 +817,12 @@ func buildSingleFocalLine(_ *graphWorld, focal *graphTask, N int) Line {
 	startPos := max(focalPos-N, 0)
 	endPos := min(focalPos+N, len(preorder)-1)
 
-	line := Line{AnchorShortID: root.shortID}
-	// Leading broken-line elision when the -N walk doesn't reach the
-	// project root. The leftmost (anchor) is rendered separately at
-	// col 0; the elision sits between it and the row's first content
-	// stop.
-	if startPos > 0 {
-		line.Items = append(line.Items, LineItem{Kind: LineItemElisionBroken})
-	}
-	// Content stops in preorder. Skip the project root itself when it
-	// falls inside the window (it's already rendered as the anchor;
-	// invariant 2 forbids rendering a node twice).
-	for i := startPos; i <= endPos; i++ {
-		t := preorder[i]
-		if t.id == root.id {
-			continue
-		}
+	line := Line{AnchorShortID: preorder[startPos].shortID}
+	// Content stops are the rest of the window past the leftmost.
+	for i := startPos + 1; i <= endPos; i++ {
 		line.Items = append(line.Items, LineItem{
 			Kind:    LineItemStop,
-			ShortID: t.shortID,
+			ShortID: preorder[i].shortID,
 		})
 	}
 	// Trailing terminating elision when the +N walk continues past

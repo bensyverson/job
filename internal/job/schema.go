@@ -10,7 +10,6 @@ import (
 // "reserved; not yet persisted" note on labels) don't drift with Go-struct quirks.
 const schemaJSON = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/bensyverson/jobs/schema/import.json",
   "title": "job import grammar",
   "description": "Root document for ` + "`" + `job import` + "`" + `. Parses the first fenced YAML block in a Markdown file whose top-level key is ` + "`" + `tasks` + "`" + `.",
   "type": "object",
@@ -18,6 +17,7 @@ const schemaJSON = `{
   "properties": {
     "tasks": {
       "type": "array",
+      "description": "Tasks form a tree. Work happens on leaves: a parent is a container, and it auto-closes when its last child closes — so if a parent has work of its own, model that work as a leaf child rather than putting it on the parent.",
       "items": {
         "type": "object",
         "required": ["title"],
@@ -28,7 +28,7 @@ const schemaJSON = `{
           },
           "desc": {
             "type": "string",
-            "description": "Optional free-text description. YAML block scalars ('|', '>') are supported."
+            "description": "Optional free-text description. Paragraphs separate with a blank line. Assume the reader is an agent with fresh context."
           },
           "labels": {
             "type": "array",

@@ -24,6 +24,7 @@ import {
   clampWindowEndToNow,
   clampWindowStartToFloor,
   classifyWheelAxis,
+  windowForEventId,
 } from "../assets/js/scrubber-cursor.mjs";
 
 // Helper: build an events array with a fixed offset back from `now`.
@@ -369,6 +370,63 @@ test("clampWindowStartToFloor: null floor (no events yet) is a no-op", () => {
   const out = clampWindowStartToFloor(123, 456, null);
   assert.equal(out.windowStartMs, 123);
   assert.equal(out.windowMs, 456);
+});
+
+// --- windowForEventId (cold-load with ?at=N) ---
+
+test("windowForEventId: event inside the default trailing window keeps the default", () => {
+  // Cold-loading ?at=N where N is recent should preserve the standard
+  // 24h view — no point widening the strip.
+  const events = eventsAt(NOW, [3 * 3600]); // 3h ago
+  const out = windowForEventId(1, events, NOW);
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  assert.equal(out.windowMs, ONE_DAY);
+  assert.equal(out.windowStartMs, NOW - ONE_DAY);
+});
+
+test("windowForEventId: event older than the default window widens to include it", () => {
+  // Regression for ?at=1050 cold-load when the event is older than
+  // 24h: the default trailing window leaves the cursor pinned at the
+  // left edge and applyCursor's xFrac→eventId resolution snaps to the
+  // wrong event. Fix is to widen windowMs so the target event lands
+  // inside the visible window with room to scrub forward.
+  const events = eventsAt(NOW, [48 * 3600]); // 48h ago — outside default 24h
+  const out = windowForEventId(1, events, NOW);
+  const eventMs = events[0].created_at * 1000;
+  // Event must lie inside [windowStart, windowStart + windowMs].
+  assert.ok(out.windowStartMs <= eventMs, "windowStart must be at or before the event");
+  assert.ok(out.windowStartMs + out.windowMs >= eventMs, "windowEnd must be at or after the event");
+  // Right edge stays pinned to nowMs so the user can still scrub forward.
+  assert.equal(out.windowStartMs + out.windowMs, NOW);
+  // Window is wider than the default 24h.
+  assert.ok(out.windowMs > 24 * 60 * 60 * 1000);
+});
+
+test("windowForEventId: event id not in the events list returns the default window", () => {
+  // Race: the URL specifies an id we haven't loaded (filter, deletion).
+  // Don't synthesize a window from a non-existent timestamp.
+  const events = eventsAt(NOW, [3 * 3600]);
+  const out = windowForEventId(999, events, NOW);
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  assert.equal(out.windowMs, ONE_DAY);
+  assert.equal(out.windowStartMs, NOW - ONE_DAY);
+});
+
+test("windowForEventId: empty events returns the default window", () => {
+  const out = windowForEventId(1, [], NOW);
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  assert.equal(out.windowMs, ONE_DAY);
+  assert.equal(out.windowStartMs, NOW - ONE_DAY);
+});
+
+test("windowForEventId: combined with eventIdToX, target event lands inside the visible window", () => {
+  // The end-to-end contract that the cold-load fix relies on: after
+  // we've widened the window for an old event, eventIdToX should map
+  // the target id to a strictly-interior xFrac (not clamped to 0 or 1).
+  const events = eventsAt(NOW, [72 * 3600]); // 72h ago
+  const w = windowForEventId(1, events, NOW);
+  const x = eventIdToX(1, events, NOW, w.windowMs, w.windowStartMs);
+  assert.ok(x > 0 && x < 1, `expected interior xFrac, got ${x}`);
 });
 
 // --- classifyWheelAxis ---

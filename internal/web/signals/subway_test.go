@@ -921,12 +921,10 @@ func TestBuildSubway_Scenario3_DoneSiblingBetweenFocals(t *testing.T) {
 	}
 }
 
-// Scenario 4 — D, H claimed (G unblocked). Under the multi-focal
-// tree-map mode (project/2026-04-27-graph-row-merging.md, S2), the
-// focals D and H have LCA=A; the focal-path subgraph is
-// {A, B, D, G, H}. Rows: A topmost (leftmost-only), B sub-row, G
-// sub-row. The legacy "L=2 lookahead to K → J peek line" path is
-// gone — J/K/L are off the focal path.
+// Scenario 4 — D, H claimed (G unblocked). LCA=A; focal-path
+// subgraph = {A, B, D, G, H}. Under the LCA-spine model (oZ5YI), row
+// 0 takes the spine A → B → D and G branches as a sub-row off A.
+// J/K/L are off the focal path.
 func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"C": "done",
@@ -936,34 +934,38 @@ func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 
 	got := buildSubwayWith(w, 2, 2)
 
-	if len(got.Lines) != 3 {
-		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2 (A spine + G sub-row)", len(got.Lines))
 	}
-	// Topmost row anchored on A (leftmost-only); B and G sub-rows
-	// branch off A under the Fork shim.
 	if got.Lines[0].AnchorShortID != "A" {
-		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA on spine)",
 			got.Lines[0].AnchorShortID)
 	}
-	// All sub-rows should branch off A (the cluster LCA); under the
-	// per-row parent edge model (S3d) that's expressed by each non-
-	// top row's ParentShortID rather than Fork.AncestorChain.
-	for i, line := range got.Lines {
-		if i == 0 {
-			continue
-		}
-		if line.ParentShortID != "A" {
-			t.Errorf("Lines[%d].ParentShortID: got %q, want %q",
-				i, line.ParentShortID, "A")
-		}
+	if got.Lines[0].ParentShortID != "" {
+		t.Errorf("Lines[0].ParentShortID: got %q, want empty",
+			got.Lines[0].ParentShortID)
 	}
-	for _, anchor := range []string{"B", "G"} {
-		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
-			t.Errorf("missing open Branch edge A→%s in %s", anchor, edgeSummary(got.Edges))
-		}
+	if got.Lines[1].AnchorShortID != "G" {
+		t.Errorf("Lines[1] anchor: got %q, want G (sub-row off A)",
+			got.Lines[1].AnchorShortID)
 	}
-	// J/K/L are off the focal path under tree-map mode.
-	for _, sid := range []string{"J", "K", "L"} {
+	if got.Lines[1].ParentShortID != "A" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want A",
+			got.Lines[1].ParentShortID)
+	}
+	// G branches off A; B is a stop on row 0, not a sub-row.
+	if !hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranch) {
+		t.Errorf("missing open Branch edge A→G in %s", edgeSummary(got.Edges))
+	}
+	if hasSubwayEdge(got.Edges, "A", "B", SubwayEdgeBranch) {
+		t.Errorf("did not expect Branch edge A→B (B is on the spine): %s",
+			edgeSummary(got.Edges))
+	}
+	// K/L are off the focal path under the spine model. J appears in
+	// row 0's preorder (as a sibling of B at A) but only renders if
+	// the windowing surfaces it; here it's outside the window so it
+	// stays absent from Nodes too.
+	for _, sid := range []string{"K", "L"} {
 		if _, ok := findSubwayNode(got.Nodes, sid); ok {
 			t.Errorf("%s should not appear (off focal path); got %v",
 				sid, subwayNodeShortIDs(got.Nodes))
@@ -971,12 +973,10 @@ func TestBuildSubway_Scenario4_ThreeLines_AllOpen(t *testing.T) {
 	}
 }
 
-// Scenario 5 — D and K claimed; G has no claim. Under the multi-
-// focal tree-map mode (project/2026-04-27-graph-row-merging.md, S2),
-// the focal-path subgraph is {A, B, D, J, K}; rows are A topmost
-// (leftmost-only), B sub-row, J sub-row. G is off the path and
-// stays absent — same outcome as before, but expressed via the
-// new three-row shape.
+// Scenario 5 — D and K claimed; G has no claim. LCA=A; focal-path
+// subgraph = {A, B, D, J, K}. Under the LCA-spine model (oZ5YI), row
+// 0 takes the spine A → B → D and J branches as a sub-row off A. G
+// is off the path and stays absent.
 func TestBuildSubway_Scenario5_GAbsent(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"C": "done",
@@ -986,31 +986,39 @@ func TestBuildSubway_Scenario5_GAbsent(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 3 {
-		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2 (A spine + J sub-row)", len(got.Lines))
 	}
 	if got.Lines[0].AnchorShortID != "A" {
-		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA on spine)",
 			got.Lines[0].AnchorShortID)
 	}
+	if got.Lines[1].AnchorShortID != "J" {
+		t.Errorf("Lines[1] anchor: got %q, want J (sub-row off A)",
+			got.Lines[1].AnchorShortID)
+	}
+	if got.Lines[1].ParentShortID != "A" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want A",
+			got.Lines[1].ParentShortID)
+	}
+	// B appears as a stop on row 0; J as the sub-row anchor.
 	for _, s := range []string{"B", "J"} {
 		if _, ok := findSubwayNode(got.Nodes, s); !ok {
-			t.Errorf("expected anchor %q in Nodes, got %v", s, subwayNodeShortIDs(got.Nodes))
+			t.Errorf("expected %q in Nodes, got %v", s, subwayNodeShortIDs(got.Nodes))
 		}
 	}
 	if _, ok := findSubwayNode(got.Nodes, "G"); ok {
-		t.Errorf("did not expect G in Nodes (no line on G), got %v", subwayNodeShortIDs(got.Nodes))
+		t.Errorf("did not expect G in Nodes (no focal under it), got %v", subwayNodeShortIDs(got.Nodes))
 	}
 	if hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranch) || hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranchClosed) {
 		t.Errorf("did not expect any A→G branch edge: %s", edgeSummary(got.Edges))
 	}
 }
 
-// Scenario 6 — H, K claimed, B's subtree fully done. Under the
-// multi-focal tree-map mode (project/2026-04-27-graph-row-
-// merging.md, S2), the focal-path subgraph is {A, G, H, J, K}; rows
-// are A topmost (leftmost-only), G sub-row, J sub-row. B/C/D/E/F
-// are off the path and stay absent.
+// Scenario 6 — H, K claimed, B's subtree fully done. LCA=A; focal-
+// path subgraph = {A, G, H, J, K}. Under the LCA-spine model (oZ5YI),
+// row 0 takes the spine A → G → H (G is the first in-subgraph child
+// since B's subtree is done) and J branches as a sub-row off A.
 func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"B": "done", "C": "done", "D": "done",
@@ -1021,20 +1029,27 @@ func TestBuildSubway_Scenario6_BSubtreeDropsOut(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 3 {
-		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2 (A spine + J sub-row)", len(got.Lines))
 	}
 	if got.Lines[0].AnchorShortID != "A" {
-		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA on spine)",
 			got.Lines[0].AnchorShortID)
 	}
-	if _, ok := findSubwayNode(got.Nodes, "B"); ok {
-		t.Errorf("did not expect B in Nodes (subtree done), got %v", subwayNodeShortIDs(got.Nodes))
+	if got.Lines[1].AnchorShortID != "J" {
+		t.Errorf("Lines[1] anchor: got %q, want J", got.Lines[1].AnchorShortID)
 	}
-	for _, anchor := range []string{"G", "J"} {
-		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
-			t.Errorf("missing open Branch A→%s in %s", anchor, edgeSummary(got.Edges))
-		}
+	if got.Lines[1].ParentShortID != "A" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want A",
+			got.Lines[1].ParentShortID)
+	}
+	// J branches off A; G is a stop on row 0, not a sub-row.
+	if !hasSubwayEdge(got.Edges, "A", "J", SubwayEdgeBranch) {
+		t.Errorf("missing open Branch A→J in %s", edgeSummary(got.Edges))
+	}
+	if hasSubwayEdge(got.Edges, "A", "G", SubwayEdgeBranch) {
+		t.Errorf("did not expect Branch A→G (G is on the spine): %s",
+			edgeSummary(got.Edges))
 	}
 }
 
@@ -1297,10 +1312,10 @@ func fourPhaseTree(statuses map[string]string) []tt {
 	return base
 }
 
-// 3+ active phases — four claims, one per phase. Under the multi-
-// focal tree-map mode (project/2026-04-27-graph-row-merging.md, S2),
-// the LCA of {C, F, I, L} is A; rows are A topmost (leftmost-only)
-// + four sub-rows (B, E, H, K), each branching off A.
+// 3+ active phases — four claims, one per phase. LCA = A. Under the
+// LCA-spine model (oZ5YI), row 0 takes the spine A → B → C (B is
+// the first phase, the spine continues through it); E, H, K each
+// branch as their own sub-row off A.
 func TestBuildSubway_FourActivePhases(t *testing.T) {
 	w := newTestWorld(fourPhaseTree(map[string]string{
 		"C": "claimed",
@@ -1311,17 +1326,19 @@ func TestBuildSubway_FourActivePhases(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 5 {
-		t.Fatalf("Lines: got %d, want 5 (A topmost + 4 sub-rows)",
+	if len(got.Lines) != 4 {
+		t.Fatalf("Lines: got %d, want 4 (A spine + E,H,K sub-rows)",
 			len(got.Lines))
 	}
 	if got.Lines[0].AnchorShortID != "A" {
-		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA on spine)",
 			got.Lines[0].AnchorShortID)
 	}
-	// All sub-rows should branch off A (the cluster LCA); under the
-	// per-row parent edge model (S3d) that's expressed by each non-
-	// top row's ParentShortID rather than Fork.AncestorChain.
+	if got.Lines[0].ParentShortID != "" {
+		t.Errorf("Lines[0].ParentShortID: got %q, want empty",
+			got.Lines[0].ParentShortID)
+	}
+	// Sub-rows branch off A; B is on the spine.
 	for i, line := range got.Lines {
 		if i == 0 {
 			continue
@@ -1331,10 +1348,14 @@ func TestBuildSubway_FourActivePhases(t *testing.T) {
 				i, line.ParentShortID, "A")
 		}
 	}
-	for _, anchor := range []string{"B", "E", "H", "K"} {
+	for _, anchor := range []string{"E", "H", "K"} {
 		if !hasSubwayEdge(got.Edges, "A", anchor, SubwayEdgeBranch) {
 			t.Errorf("missing open Branch A→%s in %s", anchor, edgeSummary(got.Edges))
 		}
+	}
+	if hasSubwayEdge(got.Edges, "A", "B", SubwayEdgeBranch) {
+		t.Errorf("did not expect Branch A→B (B is on the spine): %s",
+			edgeSummary(got.Edges))
 	}
 }
 
@@ -1381,11 +1402,14 @@ func TestBuildSubway_DeepLCAPath(t *testing.T) {
 	if _, ok := findSubwayNode(got.Nodes, "Root"); ok {
 		t.Errorf("Root should not appear (above LCA); got %v", subwayNodeShortIDs(got.Nodes))
 	}
-	// Branch edges originate at Solo.
-	for _, anchor := range []string{"B", "G"} {
-		if !hasSubwayEdge(got.Edges, "Solo", anchor, SubwayEdgeBranch) {
-			t.Errorf("missing Branch Solo→%s in %s", anchor, edgeSummary(got.Edges))
-		}
+	// Under the LCA-spine model, B continues row 0's spine through
+	// Solo; only G branches as a sub-row off Solo.
+	if !hasSubwayEdge(got.Edges, "Solo", "G", SubwayEdgeBranch) {
+		t.Errorf("missing Branch Solo→G in %s", edgeSummary(got.Edges))
+	}
+	if hasSubwayEdge(got.Edges, "Solo", "B", SubwayEdgeBranch) {
+		t.Errorf("did not expect Branch Solo→B (B is on the spine): %s",
+			edgeSummary(got.Edges))
 	}
 }
 
@@ -1505,10 +1529,9 @@ func TestBuildSubway_CrossProjectClaims_PerClusterRows(t *testing.T) {
 
 // Same-agent multiple claims — two focals owned by the same actor on
 // different lines. The graph is about work, not workers; output
-// should be identical to the multi-agent case. Under the multi-focal
-// tree-map mode (project/2026-04-27-graph-row-merging.md, S2), the
-// LCA of D and K is A; rows are A topmost (leftmost-only) + B sub-
-// row + J sub-row.
+// should be identical to the multi-agent case. Under the LCA-spine
+// model (oZ5YI), the LCA of D and K is A; row 0 is the spine
+// A → B → D and J branches as a sub-row off A.
 func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 	w := newTestWorld(referenceTree(map[string]string{
 		"D": "claimed",
@@ -1519,12 +1542,16 @@ func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 
 	got := buildSubway(w)
 
-	if len(got.Lines) != 3 {
-		t.Fatalf("Lines: got %d, want 3 (A topmost + B + J)", len(got.Lines))
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2 (A spine + J sub-row)", len(got.Lines))
 	}
 	if got.Lines[0].AnchorShortID != "A" {
-		t.Errorf("Lines[0] anchor: got %q, want A (LCA topmost)",
+		t.Errorf("Lines[0] anchor: got %q, want A (LCA on spine)",
 			got.Lines[0].AnchorShortID)
+	}
+	if got.Lines[1].AnchorShortID != "J" {
+		t.Errorf("Lines[1] anchor: got %q, want J (sub-row off A)",
+			got.Lines[1].AnchorShortID)
 	}
 	// Both active stops carry the actor.
 	for _, s := range []string{"D", "K"} {
@@ -1539,15 +1566,152 @@ func TestBuildSubway_SameAgentMultipleClaims(t *testing.T) {
 			t.Errorf("%s actor: got %q, want %q", s, n.Actor, "alice")
 		}
 	}
-	// Each sub-row branches off A regardless of actor identity (the
-	// per-row parent edge is on Line.ParentShortID after S3d).
-	for i, line := range got.Lines {
-		if i == 0 {
-			continue
-		}
-		if line.ParentShortID != "A" {
-			t.Errorf("Lines[%d].ParentShortID: got %q, want %q",
-				i, line.ParentShortID, "A")
-		}
+	if got.Lines[1].ParentShortID != "A" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want A",
+			got.Lines[1].ParentShortID)
+	}
+}
+
+// LCA spine cases — row 0 carries the LCA chain through to a carve-
+// out or leaf, with sibling forks branching as sub-rows in tree-
+// preorder (oZ5YI, project/2026-04-29 conversation). The cluster LCA
+// must never render alone on its row when the cluster has sub-rows.
+
+// Case A — pure carve-out at the LCA. Three focal siblings under a
+// single parent. One row, anchored at the LCA, carve-out emits the
+// focal stops inline. No sub-rows.
+func TestBuildSubway_LCASpine_CaseA_CarveOutAtLCA(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "Setup", parent: "", status: "available"},
+		{short: "A", parent: "Setup", status: "claimed"},
+		{short: "B", parent: "Setup", status: "claimed"},
+		{short: "C", parent: "Setup", status: "claimed"},
+	})
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 1 {
+		t.Fatalf("Lines: got %d, want 1", len(got.Lines))
+	}
+	assertLine(t, got.Lines[0], "Setup", []expectedItem{
+		stop("A"), stop("B"), stop("C"),
+	})
+	if got.Lines[0].ParentShortID != "" {
+		t.Errorf("Lines[0].ParentShortID: got %q, want empty", got.Lines[0].ParentShortID)
+	}
+}
+
+// Case B — fork at the cluster LCA. Spine continues through the first
+// in-subgraph child (P1); the second (P2) branches as a sub-row. Two
+// rows; LCA is row 0's anchor with stops, never alone.
+func TestBuildSubway_LCASpine_CaseB_ForkAtClusterLCA(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "LCA", parent: "", status: "available"},
+		{short: "P1", parent: "LCA", status: "available"},
+		{short: "Setup", parent: "P1", status: "available"},
+		{short: "SA", parent: "Setup", status: "claimed"},
+		{short: "SB", parent: "Setup", status: "claimed"},
+		{short: "SC", parent: "Setup", status: "claimed"},
+		{short: "P2", parent: "LCA", status: "available"},
+		{short: "Content", parent: "P2", status: "available"},
+		{short: "X", parent: "Content", status: "claimed"},
+		{short: "Y", parent: "Content", status: "claimed"},
+		{short: "Z", parent: "Content", status: "claimed"},
+	})
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	assertLine(t, got.Lines[0], "LCA", []expectedItem{
+		stop("P1"), stop("Setup"), stop("SA"), stop("SB"), stop("SC"),
+	})
+	if got.Lines[0].ParentShortID != "" {
+		t.Errorf("Lines[0].ParentShortID: got %q, want empty", got.Lines[0].ParentShortID)
+	}
+	assertLine(t, got.Lines[1], "P2", []expectedItem{
+		stop("Content"), stop("X"), stop("Y"), stop("Z"),
+	})
+	if got.Lines[1].ParentShortID != "LCA" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want LCA", got.Lines[1].ParentShortID)
+	}
+}
+
+// Case C — fork deeper than the cluster LCA. The LCA (P1) has one
+// in-subgraph child until it forks at depth 1. Spine continues through
+// Setup; Imagery branches as a sub-row.
+func TestBuildSubway_LCASpine_CaseC_ForkDeeperThanLCA(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "P1", parent: "", status: "available"},
+		{short: "Setup", parent: "P1", status: "available"},
+		{short: "SA", parent: "Setup", status: "claimed"},
+		{short: "SB", parent: "Setup", status: "claimed"},
+		{short: "Imagery", parent: "P1", status: "available"},
+		{short: "IX", parent: "Imagery", status: "claimed"},
+		{short: "IY", parent: "Imagery", status: "claimed"},
+	})
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 2 {
+		t.Fatalf("Lines: got %d, want 2", len(got.Lines))
+	}
+	assertLine(t, got.Lines[0], "P1", []expectedItem{
+		stop("Setup"), stop("SA"), stop("SB"),
+	})
+	if got.Lines[0].ParentShortID != "" {
+		t.Errorf("Lines[0].ParentShortID: got %q, want empty", got.Lines[0].ParentShortID)
+	}
+	assertLine(t, got.Lines[1], "Imagery", []expectedItem{
+		stop("IX"), stop("IY"),
+	})
+	if got.Lines[1].ParentShortID != "P1" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want P1", got.Lines[1].ParentShortID)
+	}
+}
+
+// Case D — nested forks. DocSite forks (P1, P2) and P1 itself forks
+// (Setup, Imagery). Sub-rows emit in tree-preorder so Imagery (parent
+// P1, deeper on the spine) comes before P2 (parent DocSite).
+func TestBuildSubway_LCASpine_CaseD_NestedForksPreorder(t *testing.T) {
+	w := newTestWorld([]tt{
+		{short: "DS", parent: "", status: "available"},
+		{short: "P1", parent: "DS", status: "available"},
+		{short: "Setup", parent: "P1", status: "available"},
+		{short: "SA", parent: "Setup", status: "claimed"},
+		{short: "SB", parent: "Setup", status: "claimed"},
+		{short: "Imagery", parent: "P1", status: "available"},
+		{short: "IX", parent: "Imagery", status: "claimed"},
+		{short: "IY", parent: "Imagery", status: "claimed"},
+		{short: "P2", parent: "DS", status: "available"},
+		{short: "Content", parent: "P2", status: "available"},
+		{short: "M", parent: "Content", status: "claimed"},
+		{short: "N", parent: "Content", status: "claimed"},
+	})
+
+	got := buildSubway(w)
+
+	if len(got.Lines) != 3 {
+		t.Fatalf("Lines: got %d, want 3", len(got.Lines))
+	}
+	assertLine(t, got.Lines[0], "DS", []expectedItem{
+		stop("P1"), stop("Setup"), stop("SA"), stop("SB"),
+	})
+	if got.Lines[0].ParentShortID != "" {
+		t.Errorf("Lines[0].ParentShortID: got %q, want empty", got.Lines[0].ParentShortID)
+	}
+	assertLine(t, got.Lines[1], "Imagery", []expectedItem{
+		stop("IX"), stop("IY"),
+	})
+	if got.Lines[1].ParentShortID != "P1" {
+		t.Errorf("Lines[1].ParentShortID: got %q, want P1 (deeper sub-row first in preorder)",
+			got.Lines[1].ParentShortID)
+	}
+	assertLine(t, got.Lines[2], "P2", []expectedItem{
+		stop("Content"), stop("M"), stop("N"),
+	})
+	if got.Lines[2].ParentShortID != "DS" {
+		t.Errorf("Lines[2].ParentShortID: got %q, want DS", got.Lines[2].ParentShortID)
 	}
 }

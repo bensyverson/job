@@ -22,10 +22,11 @@
   </div>
 </section>
 <footer class="c-footer" role="contentinfo">
-  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="actors">—</span><span class="c-footer__metric-label">actors</span></span>
-  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="wip">—</span><span class="c-footer__metric-label">WIP</span></span>
-  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="epm">—</span><span class="c-footer__metric-label">events / min</span></span>
-  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="throughput">—</span><span class="c-footer__metric-label">tasks / hr</span></span>
+  <span class="c-footer__metric c-footer__now">Now:</span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="actors">{{.Footer.Actors}}</span><span class="c-footer__metric-label">actors</span></span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="wip">{{.Footer.WIP}}</span><span class="c-footer__metric-label">WIP</span></span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="epm">{{.Footer.EventsPerMin}}</span><span class="c-footer__metric-label">events / min</span></span>
+  <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="throughput">{{.Footer.TasksPerHour}}</span><span class="c-footer__metric-label">tasks / hr</span></span>
   <div class="grow"></div>
   <span class="c-footer__heartbeat" data-heartbeat>
     <span class="c-footer__heartbeat-dot"></span>

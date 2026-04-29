@@ -113,7 +113,7 @@
      Anchor the pill to the start so its dark background hugs the text
      instead of extending across the column. */
   justify-self: start;
-  align-self: center;
+  align-self: start;
   background: var(--color-outline);
   color: var(--color-on-surface-muted);
   padding: 2px 6px;

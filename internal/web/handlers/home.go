@@ -225,7 +225,7 @@ func Home(deps Deps) http.Handler {
 			return
 		}
 
-		chrome, err := newChrome(r.Context(), deps, "home")
+		chrome, err := newChrome(r.Context(), deps, "home", now)
 		if err != nil {
 			InternalError(deps, w, "home initial frame", err)
 			return

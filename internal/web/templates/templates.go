@@ -42,6 +42,22 @@ type Chrome struct {
 	// island" — the layout omits the script tag entirely. Fragment
 	// renders (e.g. /tasks/{id}/peek) leave it nil.
 	InitialFrameJSON template.JS
+	// Footer carries the four always-now metric values rendered in
+	// the footer strip. Stays current under time travel — the
+	// scrubber reshapes the views above the footer, but the footer
+	// is a system status bar showing the present.
+	Footer FooterMetrics
+}
+
+// FooterMetrics holds the four numeric values rendered in the footer
+// strip: distinct holders of currently-live claims, count of open
+// tasks, rolling-60-minute events-per-minute, and done-events-in-the-
+// last-hour. All values reflect "now" — never the time-travel cursor.
+type FooterMetrics struct {
+	Actors       int
+	WIP          int
+	EventsPerMin int
+	TasksPerHour int
 }
 
 // Engine holds one compiled *template.Template per page. Each is a

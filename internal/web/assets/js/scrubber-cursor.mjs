@@ -152,6 +152,41 @@ export function clampWindowStartToFloor(windowStartMs, windowMs, floorMs) {
   return { windowStartMs: floorMs, windowMs };
 }
 
+// windowForEventId picks the visible window for a cold-load with
+// ?at=<eventId>. When the target event sits inside the trailing
+// `defaultWindowMs` ending at `nowMs`, the default window is returned
+// unchanged. When the event is older than the default window, the
+// window is widened so the event lands inside it (right edge pinned
+// to nowMs so the user can still scrub forward to live). Returns the
+// default for unknown or future-dated event ids.
+//
+// Pure: no DOM, no clamping against the history floor — that happens
+// in the UI layer when needed. Exists so cold-loading ?at=N for an
+// event older than 24h doesn't pin the cursor to xFrac=0 and silently
+// re-resolve to a different event.
+export function windowForEventId(
+  eventId,
+  events,
+  nowMs,
+  defaultWindowMs = ONE_DAY_MS,
+) {
+  const defaults = {
+    windowStartMs: nowMs - defaultWindowMs,
+    windowMs: defaultWindowMs,
+  };
+  const event = events.find((e) => e.id === eventId);
+  if (!event) return defaults;
+  const eventMs = event.created_at * 1000;
+  if (eventMs >= nowMs - defaultWindowMs) return defaults;
+  // Widen so the event sits at xFrac ≈ 0.25 with the right edge at
+  // nowMs. The 4/3 multiplier comes from solving
+  //   windowStartMs + 0.25 * windowMs = eventMs
+  //   windowStartMs + windowMs        = nowMs
+  // for windowMs given (nowMs - eventMs).
+  const windowMs = (nowMs - eventMs) * (4 / 3);
+  return { windowStartMs: nowMs - windowMs, windowMs };
+}
+
 // classifyWheelAxis decides whether a wheel event should drive zoom
 // (vertical) or pan (horizontal), with axis-lock + idle-reset so a
 // single trackpad gesture commits to one mode start-to-finish.

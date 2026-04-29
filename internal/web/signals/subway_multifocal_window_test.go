@@ -20,15 +20,15 @@ import (
 // stop.
 // ------------------------------------------------------------------
 
-// Row's structural leftmost is always rendered as the row's
-// anchor (col 0). Each branch off a fork point becomes its own
-// row at the data layer; the layout step (S3) handles visual
-// inlining.
+// At a fork on the spine, the first in-subgraph child continues
+// row 0 as a stop; remaining in-subgraph children become sub-rows
+// anchored on their own leftmost. The cluster LCA is never alone
+// on its row.
 func TestRowWindow_LeftmostAlwaysRendered(t *testing.T) {
 	// Tree:
 	//   Root
-	//   ├── B → C → D [focal]
-	//   └── E → F [focal]
+	//   ├── B → C → D [focal]      (B continues the spine on row 0)
+	//   └── E → F [focal]          (E becomes a sub-row, parent=Root)
 	w := newTestWorld([]tt{
 		{short: "Root", parent: "", status: "available"},
 		{short: "B", parent: "Root", status: "available"},
@@ -41,32 +41,30 @@ func TestRowWindow_LeftmostAlwaysRendered(t *testing.T) {
 
 	rows := buildMultiFocalRows(w, focals, 2)
 
-	// Three rows: top (Root), B's branch, E's branch.
-	for _, want := range []string{"Root", "B", "E"} {
-		idx, ok := findRowByAnchor(rows, want)
-		if !ok {
-			t.Errorf("no row anchored on %q (leftmost must always be rendered): rows=%v",
-				want, rowsSummary(rows))
-			continue
-		}
-		switch want {
-		case "Root":
-			if rows[idx].ParentShortID != "" {
-				t.Errorf("Root (top row) ParentShortID: got %q, want empty",
-					rows[idx].ParentShortID)
-			}
-		case "B", "E":
-			if rows[idx].ParentShortID != "Root" {
-				t.Errorf("%q sub-row ParentShortID: got %q, want %q",
-					want, rows[idx].ParentShortID, "Root")
-			}
-		}
+	if len(rows) != 2 {
+		t.Fatalf("rows: got %d, want 2 (Root spine + E sub-row): %v",
+			len(rows), rowsSummary(rows))
+	}
+	// Row 0: Root spine, B is a stop (not a sub-row anchor).
+	if got := rowSequence(rows[0]); !equalSubwayStrings(got, []string{"Root", "B", "C", "D"}) {
+		t.Errorf("row 0 sequence: got %v, want [Root B C D]", got)
+	}
+	if rows[0].ParentShortID != "" {
+		t.Errorf("row 0 ParentShortID: got %q, want empty", rows[0].ParentShortID)
+	}
+	// Row 1: E sub-row branching off Root.
+	if got := rowSequence(rows[1]); !equalSubwayStrings(got, []string{"E", "F"}) {
+		t.Errorf("row 1 sequence: got %v, want [E F]", got)
+	}
+	if rows[1].ParentShortID != "Root" {
+		t.Errorf("row 1 ParentShortID: got %q, want Root", rows[1].ParentShortID)
 	}
 }
 
-// -N from the row's focal doesn't reach the leftmost's first
-// child → broken-line elision between the leftmost (anchor) and
-// the first content stop in the focal's window.
+// -N from the row's focal doesn't reach the row's leftmost (the
+// LCA on row 0) → broken-line elision between the leftmost and the
+// first content stop in the focal's window. Branch is a stop on the
+// spine, not a separate row anchor.
 func TestRowWindow_LeadingBrokenElision(t *testing.T) {
 	w := newTestWorld([]tt{
 		{short: "Root", parent: "", status: "available"},
@@ -82,24 +80,22 @@ func TestRowWindow_LeadingBrokenElision(t *testing.T) {
 
 	rows := buildMultiFocalRows(w, focals, 2)
 
-	// Branch sub-row: anchor=Branch, items=[…, s2, s3, s4].
-	idx, ok := findRowByAnchor(rows, "Branch")
-	if !ok {
-		t.Fatalf("no sub-row anchored on Branch: rows=%v", rowsSummary(rows))
-	}
-	got := rowSequence(rows[idx])
-	want := []string{"Branch", "…", "s2", "s3", "s4"}
+	// Row 0 is the Root spine through Branch; ±2 around s4 leaves a
+	// gap between Root (anchor) and s2 → leading broken elision.
+	got := rowSequence(rows[0])
+	want := []string{"Root", "…", "s2", "s3", "s4"}
 	if !equalSubwayStrings(got, want) {
-		t.Errorf("Branch row sequence: got %v, want %v", got, want)
+		t.Errorf("row 0 sequence: got %v, want %v", got, want)
 	}
-	if rows[idx].ParentShortID != "Root" {
-		t.Errorf("Branch ParentShortID: got %q, want %q",
-			rows[idx].ParentShortID, "Root")
+	if rows[0].ParentShortID != "" {
+		t.Errorf("row 0 ParentShortID: got %q, want empty", rows[0].ParentShortID)
 	}
 }
 
-// +N from the row's focal continues past the row's branch →
-// terminating ellipsis at the row's right edge.
+// +N from the row's focal continues past the row's last visible
+// preorder position → trailing terminating elision at the right
+// edge. Under the LCA-spine model, Branch lives on row 0 as a stop;
+// the trailing ⋯ marks the off-window non-focal siblings under Branch.
 func TestRowWindow_TrailingTerminatingElision(t *testing.T) {
 	w := newTestWorld([]tt{
 		{short: "Root", parent: "", status: "available"},
@@ -116,21 +112,16 @@ func TestRowWindow_TrailingTerminatingElision(t *testing.T) {
 
 	rows := buildMultiFocalRows(w, focals, 1)
 
-	idx, ok := findRowByAnchor(rows, "Branch")
-	if !ok {
-		t.Fatalf("no sub-row anchored on Branch: rows=%v", rowsSummary(rows))
-	}
-	got := rowSequence(rows[idx])
-	want := []string{"Branch", "s1", "s2", "⋯"}
+	got := rowSequence(rows[0])
+	want := []string{"Root", "Branch", "s1", "s2", "⋯"}
 	if !equalSubwayStrings(got, want) {
-		t.Errorf("Branch row sequence: got %v, want %v", got, want)
+		t.Errorf("row 0 sequence: got %v, want %v", got, want)
 	}
 }
 
-// Branch curve from parent's rendered position lands on each
-// row's leftmost. With two sibling branches under fork point P,
-// each becomes a sub-row whose ParentShortID = P at the data
-// layer.
+// Branch curve from the spine fork lands on the sub-row's leftmost.
+// At fork P, the first child A continues the spine on row 0; the
+// second child B becomes a sub-row anchored at B with ParentShortID=P.
 func TestRowWindow_BranchCurveAnchorsOnLeftmost(t *testing.T) {
 	w := newTestWorld([]tt{
 		{short: "Root", parent: "", status: "available"},
@@ -144,17 +135,21 @@ func TestRowWindow_BranchCurveAnchorsOnLeftmost(t *testing.T) {
 
 	rows := buildMultiFocalRows(w, focals, 2)
 
-	for _, want := range []string{"A", "B"} {
-		idx, ok := findRowByAnchor(rows, want)
-		if !ok {
-			t.Errorf("no sub-row anchored on %q: rows=%v",
-				want, rowsSummary(rows))
-			continue
-		}
-		if rows[idx].ParentShortID != "P" {
-			t.Errorf("%q sub-row ParentShortID: got %q, want %q",
-				want, rows[idx].ParentShortID, "P")
-		}
+	if len(rows) != 2 {
+		t.Fatalf("rows: got %d, want 2 (P spine + B sub-row): %v",
+			len(rows), rowsSummary(rows))
+	}
+	if got := rowSequence(rows[0]); !equalSubwayStrings(got, []string{"P", "A", "AL"}) {
+		t.Errorf("row 0 sequence: got %v, want [P A AL]", got)
+	}
+	if rows[0].ParentShortID != "" {
+		t.Errorf("row 0 ParentShortID: got %q, want empty", rows[0].ParentShortID)
+	}
+	if got := rowSequence(rows[1]); !equalSubwayStrings(got, []string{"B", "BL"}) {
+		t.Errorf("row 1 sequence: got %v, want [B BL]", got)
+	}
+	if rows[1].ParentShortID != "P" {
+		t.Errorf("row 1 ParentShortID: got %q, want P", rows[1].ParentShortID)
 	}
 }
 
@@ -162,15 +157,13 @@ func TestRowWindow_BranchCurveAnchorsOnLeftmost(t *testing.T) {
 // from the design doc:
 //
 //	Parent
-//	├── Branch1 → s1 → s2 → ... → s84 (focal at s80)
-//	└── Branch2 → t1 → t2 → t3 → t4   (focal at t3)
+//	├── Branch1 → s1, s2, … s84 (focal at s80)
+//	└── Branch2 → t1, t2, t3, t4 (focal at t3)
 //
-// Branch1's row has leading broken-line elision (s78, s79 are the
-// only -N=2 steps back from s80, far short of Branch1's first
-// child s1) and trailing terminating elision (s81, s82, … past +N=2
-// out of the row's continued branch). Branch2's row reaches all
-// the way back to Branch2's first child t1 (no leading elision)
-// and stops at t4 (no trailing elision).
+// Under the LCA-spine model, Branch1 continues row 0 as a stop
+// (Parent → Branch1 → … → s78, s79, s80, s81, s82, ⋯) with leading
+// broken and trailing terminating elisions; Branch2 becomes a
+// sub-row reaching all four steps without elision.
 func TestRowWindow_DeepFocalVsShallowFocal_DesignDocExample(t *testing.T) {
 	tasks := []tt{
 		{short: "Parent", parent: "", status: "available"},
@@ -204,36 +197,29 @@ func TestRowWindow_DeepFocalVsShallowFocal_DesignDocExample(t *testing.T) {
 
 	rows := buildMultiFocalRows(w, focals, 2)
 
-	// Branch1 sub-row: anchor=Branch1, parent=Parent, items
-	// reflect the ±2 window around s80 with leading broken and
-	// trailing terminating elisions.
-	idx1, ok := findRowByAnchor(rows, "Branch1")
-	if !ok {
-		t.Fatalf("no sub-row anchored on Branch1: rows=%v", rowsSummary(rows))
+	if len(rows) != 2 {
+		t.Fatalf("rows: got %d, want 2 (Parent spine + Branch2 sub-row): %v",
+			len(rows), rowsSummary(rows))
 	}
-	if rows[idx1].ParentShortID != "Parent" {
-		t.Errorf("Branch1 sub-row ParentShortID: got %q, want %q",
-			rows[idx1].ParentShortID, "Parent")
-	}
-	got1 := rowSequence(rows[idx1])
-	want1 := []string{"Branch1", "…", "s78", "s79", "s80", "s81", "s82", "⋯"}
+	// Row 0: Parent spine through Branch1, ±2 around s80 with
+	// leading broken (gap to s78) and trailing terminating (s81+
+	// past +2).
+	got1 := rowSequence(rows[0])
+	want1 := []string{"Parent", "…", "s78", "s79", "s80", "s81", "s82", "⋯"}
 	if !equalSubwayStrings(got1, want1) {
-		t.Errorf("Branch1 sub-row sequence: got %v, want %v", got1, want1)
+		t.Errorf("row 0 sequence: got %v, want %v", got1, want1)
 	}
-
-	// Branch2 sub-row: Branch2 anchor + all four steps, no elisions
-	// (-N reaches t1, +N reaches t4). ParentShortID = Parent.
-	idx2, ok := findRowByAnchor(rows, "Branch2")
-	if !ok {
-		t.Fatalf("no row for Branch2: rows=%v", rowsSummary(rows))
+	if rows[0].ParentShortID != "" {
+		t.Errorf("row 0 ParentShortID: got %q, want empty", rows[0].ParentShortID)
 	}
-	if rows[idx2].ParentShortID != "Parent" {
-		t.Errorf("Branch2 sub-row ParentShortID: got %q, want %q",
-			rows[idx2].ParentShortID, "Parent")
-	}
-	got2 := rowSequence(rows[idx2])
+	// Row 1: Branch2 sub-row reaches all four steps.
+	got2 := rowSequence(rows[1])
 	want2 := []string{"Branch2", "t1", "t2", "t3", "t4"}
 	if !equalSubwayStrings(got2, want2) {
-		t.Errorf("Branch2 row sequence: got %v, want %v", got2, want2)
+		t.Errorf("row 1 sequence: got %v, want %v", got2, want2)
+	}
+	if rows[1].ParentShortID != "Parent" {
+		t.Errorf("row 1 ParentShortID: got %q, want Parent",
+			rows[1].ParentShortID)
 	}
 }

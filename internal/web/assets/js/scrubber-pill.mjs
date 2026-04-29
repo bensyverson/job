@@ -34,6 +34,7 @@ import {
   clampWindowEndToNow,
   clampWindowStartToFloor,
   classifyWheelAxis,
+  windowForEventId,
 } from "./scrubber-cursor.mjs";
 
 const PAGE_SCRUBBING_CLASS = "page--scrubbing";
@@ -350,6 +351,15 @@ export async function enterScrubbing(doc = document, { atEventId = null } = {}) 
   windowStartMs = null;
   windowMs = ONE_DAY_MS;
   await ensureInitialized(doc);
+  // When cold-loading with ?at=N for an event older than the default
+  // 24h window, widen the window so the event lands inside it.
+  // Otherwise eventIdToX clamps xFrac to 0 and applyCursor's xFrac→
+  // eventId fallback resolves to the wrong event.
+  if (atEventId != null && events.length > 0) {
+    const w = windowForEventId(atEventId, events, nowMs, ONE_DAY_MS);
+    windowStartMs = w.windowStartMs;
+    windowMs = w.windowMs;
+  }
   rerenderViewport(doc);
   const page = findPageRoot(doc);
   page.classList.add(PAGE_SCRUBBING_CLASS);
@@ -361,7 +371,10 @@ export async function enterScrubbing(doc = document, { atEventId = null } = {}) 
   if (atEventId != null && events.length > 0) {
     const xFrac = eventIdToX(atEventId, events, nowMs, windowMs, effectiveWindowStartMs());
     setCursor(doc, xFrac);
-    await applyCursor(doc, xFrac, { updateURL: false });
+    // Pin the id so applyCursor doesn't re-resolve xFrac→eventId and
+    // silently land on a different event when the cursor sits at the
+    // window's edge.
+    await applyCursor(doc, xFrac, { updateURL: false, pinnedId: atEventId });
   } else {
     setCursor(doc, 1);
     if (events.length > 0) {

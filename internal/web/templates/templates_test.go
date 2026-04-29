@@ -238,6 +238,52 @@ func TestEngine_Render_FooterHasMetricsAndScrubberPill(t *testing.T) {
 	mustContain(t, out, `class="c-footer__heartbeat"`)
 }
 
+// The footer metric strip prefixes the four metrics with a "Now —"
+// label. The strip is always-present (always-current), so the label
+// renders unconditionally rather than only when the scrubber is open.
+func TestEngine_Render_FooterMetricsRenderValuesWithNowLabel(t *testing.T) {
+	e := newEngine(t)
+	data := homeTemplateData{Chrome: templates.Chrome{
+		ActiveTab: "home",
+		Footer: templates.FooterMetrics{
+			Actors:       3,
+			WIP:          14,
+			EventsPerMin: 5,
+			TasksPerHour: 22,
+		},
+	}}
+	var buf bytes.Buffer
+	if err := e.Render(&buf, "home", data); err != nil {
+		t.Fatalf("Render home: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "Now") {
+		t.Errorf("footer should include the 'Now' label\n---\n%s", out)
+	}
+	// Each metric value renders as a number (not "—") inside its
+	// data-metric slot.
+	for _, want := range []struct{ slot, val string }{
+		{"actors", "3"},
+		{"wip", "14"},
+		{"epm", "5"},
+		{"throughput", "22"},
+	} {
+		needle := `data-metric="` + want.slot + `">` + want.val + `<`
+		if !strings.Contains(out, needle) {
+			t.Errorf("footer metric %q should render value %q; needle %q not found",
+				want.slot, want.val, needle)
+		}
+	}
+	// And the placeholder em-dash is gone from the metric slots.
+	for _, slot := range []string{"actors", "wip", "epm", "throughput"} {
+		emDashHole := `data-metric="` + slot + `">—<`
+		if strings.Contains(out, emDashHole) {
+			t.Errorf("footer metric %q still renders the em-dash placeholder", slot)
+		}
+	}
+}
+
 // The scrubber chrome ships rendered in the page but visually hidden
 // by default. The strip stays in the DOM so the slide-up CSS
 // transition has something to animate; aria-hidden + inert keep AT

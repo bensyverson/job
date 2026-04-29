@@ -1,7 +1,7 @@
 BINARY := job
 PKG    := ./cmd/job
 
-.PHONY: build install run test test-js fmt fix vet clean help
+.PHONY: build install run test test-js fmt fix vet clean help docs docs-build
 
 build:
 	go build -o $(BINARY) $(PKG)
@@ -34,6 +34,15 @@ vet:
 clean:
 	rm -f $(BINARY)
 
+# Serve the documentation site locally on http://localhost:1313/.
+# Requires `hugo` (extended). `brew install hugo` if missing.
+docs:
+	cd docs && hugo serve
+
+# Build the docs site to docs/public/.
+docs-build:
+	cd docs && hugo --minify
+
 help:
 	@echo "Targets:"
 	@echo "  build    - compile ./$(BINARY) from $(PKG)"
@@ -45,3 +54,5 @@ help:
 	@echo "  fix      - go fix ./..."
 	@echo "  vet      - go vet ./..."
 	@echo "  clean    - remove the local binary"
+	@echo "  docs       - serve docs/ on localhost:1313 (requires hugo)"
+	@echo "  docs-build - build docs/ to docs/public/"

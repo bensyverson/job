@@ -1,0 +1,39 @@
+baseURL: https://bensyverson.com/documentation/Jobs/
+title: Jobs
+languageCode: en-us
+
+module:
+  imports:
+    - path: github.com/imfing/hextra
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    noClasses: false
+
+enableRobotsTXT: true
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: GitHub
+      url: https://github.com/bensyverson/jobs
+      weight: 2
+
+params:
+  description: A hierarchical task tracker for the CLI, designed for agents and observed by humans.
+
+  navbar:
+    displayTitle: true
+    displayLogo: false
+
+  footer:
+    displayCopyright: false
+    displayPoweredBy: true
+
+  editURL:
+    enable: false

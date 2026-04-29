@@ -110,7 +110,7 @@ func ActorSingle(deps Deps) http.Handler {
 			return
 		}
 
-		chrome, err := newChrome(r.Context(), deps, "actors")
+		chrome, err := newChrome(r.Context(), deps, "actors", now)
 		if err != nil {
 			InternalError(deps, w, "actor single initial frame", err)
 			return

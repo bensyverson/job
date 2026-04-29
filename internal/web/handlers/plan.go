@@ -181,7 +181,7 @@ func Plan(deps Deps) http.Handler {
 		addLabelURLs := buildAddLabelURLs(roots, labels, selected, show)
 		planRoots := buildPlanNodes(roots, labels, blockers, notes, actors, titlesByShortID, addLabelURLs, now, 0)
 
-		chrome, err := newChrome(r.Context(), deps, "plan")
+		chrome, err := newChrome(r.Context(), deps, "plan", now)
 		if err != nil {
 			InternalError(deps, w, "plan initial frame", err)
 			return

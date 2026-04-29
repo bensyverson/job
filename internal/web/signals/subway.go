@@ -927,14 +927,18 @@ func buildMultiFocalRows(w *graphWorld, focals []*graphTask, N int) []Line {
 		focalSet[f.id] = true
 	}
 
+	// LIFO stack so sub-rows emit in tree-preorder. buildOneRow
+	// returns sub-rows in chain-encounter order (shallow forks first);
+	// pushing them and popping from the end visits deeper sub-forks
+	// before their shallower siblings, matching tree preorder.
 	var rows []Line
-	queue := []buildOneRowResult{{leftmost: lca, parentShort: ""}}
-	for len(queue) > 0 {
-		rt := queue[0]
-		queue = queue[1:]
+	stack := []buildOneRowResult{{leftmost: lca, parentShort: ""}}
+	for len(stack) > 0 {
+		rt := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 		row, subRows := buildOneRow(w, rt.leftmost, rt.parentShort, subgraph, focalSet, N)
 		rows = append(rows, row)
-		queue = append(queue, subRows...)
+		stack = append(stack, subRows...)
 	}
 	return rows
 }
@@ -992,30 +996,30 @@ func buildOneRow(
 			}
 			break
 		}
-		// No carve-out at this node. If only one in-subgraph child,
-		// continue the chain. If ≥2, this is a real fork — every
-		// in-subgraph child becomes its own sub-row branching off
-		// cur. The data layer doesn't inline; the layout step
-		// (project/2026-04-27-graph-row-merging.md, S3) chooses
-		// which sub-row to render inline with the parent visually.
-		if len(inSubKids) == 1 {
-			next := inSubKids[0]
-			chainIDs[next.id] = true
-			cur = next
-			continue
-		}
-		for _, c := range inSubKids {
+		// No carve-out at this node. The spine takes the first in-
+		// subgraph child; remaining in-subgraph children (if any)
+		// become sub-rows branching off cur. The chain continues
+		// through the spine child so row 0 carries the LCA chain
+		// down to a carve-out or leaf, rather than stranding the
+		// LCA on its own row.
+		next := inSubKids[0]
+		for _, c := range inSubKids[1:] {
 			excluded[c.id] = true
 			subRows = append(subRows, buildOneRowResult{
 				leftmost: c, parentShort: cur.shortID,
 			})
 		}
-		break
+		chainIDs[next.id] = true
+		cur = next
 	}
 
-	// Preorder walk of leftmost's subtree, skipping subtrees rooted
-	// at excluded sub-row leftmosts. The leftmost itself sits at
-	// position 0 (anchor); content stops are positions 1..len-1.
+	// Preorder walk of the row's contents. Chain nodes (the spine
+	// plus any carve-out parent at its tail) descend into their
+	// direct children so non-focal siblings render inline and
+	// off-window siblings trigger leading/trailing elisions. Off-
+	// chain children themselves don't recurse — their own subtrees
+	// belong to a different cluster (or to a sub-row already carved
+	// off as a separate Line) and are out of scope for this row.
 	var rowPreorder []*graphTask
 	var visit func(t *graphTask)
 	visit = func(t *graphTask) {
@@ -1023,6 +1027,9 @@ func buildOneRow(
 			return
 		}
 		rowPreorder = append(rowPreorder, t)
+		if !chainIDs[t.id] {
+			return
+		}
 		for _, c := range t.children {
 			visit(c)
 		}

@@ -447,6 +447,60 @@ func TestImport_DryRun_ShowsBlockedByEdges_MD(t *testing.T) {
 	}
 }
 
+func TestImport_DryRun_RendersIndentedTree_MD(t *testing.T) {
+	dbFile := setupCLI(t)
+	planPath := filepath.Join(filepath.Dir(dbFile), "plan.md")
+	body := "```yaml\ntasks:\n" +
+		"  - title: Root\n" +
+		"    children:\n" +
+		"      - title: Child A\n" +
+		"      - title: Child B\n" +
+		"        blockedBy: [Child A]\n" +
+		"        children:\n" +
+		"          - title: Grandchild\n" +
+		"```\n"
+	if err := os.WriteFile(planPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "import", planPath, "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d:\n%s", len(lines), stdout)
+	}
+	// Root: no leading indent, checkbox shape.
+	if !strings.HasPrefix(lines[0], "- [ ] ") {
+		t.Errorf("root line should start with `- [ ] `: %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "Root") {
+		t.Errorf("root line missing title: %q", lines[0])
+	}
+	// Children: two-space indent.
+	for _, i := range []int{1, 2} {
+		if !strings.HasPrefix(lines[i], "  - [ ] ") {
+			t.Errorf("child line %d should start with two-space indented checkbox: %q", i, lines[i])
+		}
+	}
+	// Child B carries the blocker on Child A — must remain on the indented line.
+	if !strings.Contains(lines[2], "Child B") {
+		t.Fatalf("line 2 should be Child B: %q", lines[2])
+	}
+	if !strings.Contains(lines[2], "blocked on <new-2>") {
+		t.Errorf("Child B should still mention 'blocked on <new-2>': %q", lines[2])
+	}
+	// Grandchild: four-space indent.
+	if !strings.HasPrefix(lines[3], "    - [ ] ") {
+		t.Errorf("grandchild line should start with four-space indented checkbox: %q", lines[3])
+	}
+	if !strings.Contains(lines[3], "Grandchild") {
+		t.Errorf("line 3 missing Grandchild: %q", lines[3])
+	}
+}
+
 func TestImport_DryRun_ExistingDBTask_BlockedByRealID(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)

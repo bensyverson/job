@@ -166,7 +166,7 @@ func Log(deps Deps) http.Handler {
 		}
 		labels := topLabelsByFreq(labelFreqs, filters.Label, 10)
 
-		chrome, err := newChrome(r.Context(), deps, "log")
+		chrome, err := newChrome(r.Context(), deps, "log", time.Now())
 		if err != nil {
 			InternalError(deps, w, "log initial frame", err)
 			return

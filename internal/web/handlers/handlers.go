@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"html/template"
 	"net/http"
+	"time"
 
 	"github.com/bensyverson/jobs/internal/web/broadcast"
 	"github.com/bensyverson/jobs/internal/web/initial"
@@ -37,16 +38,22 @@ func renderPage(deps Deps, w http.ResponseWriter, page string, data any) {
 
 // newChrome builds a Chrome bag for a layout-rendering page. Loads
 // the JSON island from the DB so the time-travel scrubber's JS can
-// hydrate without an extra fetch. Fragment endpoints that don't use
-// the layout (e.g. /tasks/{id}/peek) construct a Chrome literal
-// directly without calling this — they don't need the island.
-func newChrome(ctx context.Context, deps Deps, activeTab string) (templates.Chrome, error) {
+// hydrate without an extra fetch, and the always-now footer metric
+// values from current state. Fragment endpoints that don't use the
+// layout (e.g. /tasks/{id}/peek) construct a Chrome literal directly
+// without calling this — they don't need the island or the footer.
+func newChrome(ctx context.Context, deps Deps, activeTab string, now time.Time) (templates.Chrome, error) {
 	raw, err := initial.LoadJSON(ctx, deps.DB)
+	if err != nil {
+		return templates.Chrome{}, err
+	}
+	metrics, err := LoadFooterMetrics(ctx, deps.DB, now)
 	if err != nil {
 		return templates.Chrome{}, err
 	}
 	return templates.Chrome{
 		ActiveTab:        activeTab,
 		InitialFrameJSON: template.JS(raw),
+		Footer:           metrics,
 	}, nil
 }

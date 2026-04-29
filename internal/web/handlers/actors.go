@@ -98,7 +98,7 @@ func Actors(deps Deps) http.Handler {
 			InternalError(deps, w, "actors columns", err)
 			return
 		}
-		chrome, err := newChrome(r.Context(), deps, "actors")
+		chrome, err := newChrome(r.Context(), deps, "actors", now)
 		if err != nil {
 			InternalError(deps, w, "actors initial frame", err)
 			return

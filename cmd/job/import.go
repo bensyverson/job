@@ -44,6 +44,28 @@ func newImportCmd() *cobra.Command {
 				return nil
 			}
 
+			if res.DryRun {
+				// Indented checklist so parent/child shape and blocker edges
+				// are both visible at a glance — the flat form hid parenting.
+				depth := make(map[string]int, len(res.Tasks))
+				for _, t := range res.Tasks {
+					if strings.HasPrefix(t.Parent, "<new-") {
+						depth[t.ID] = depth[t.Parent] + 1
+					} else {
+						depth[t.ID] = 0
+					}
+				}
+				for _, t := range res.Tasks {
+					indent := strings.Repeat("  ", depth[t.ID])
+					line := fmt.Sprintf("%s- [ ] `%s` %s", indent, t.ID, t.Title)
+					if len(t.BlockedBy) > 0 {
+						line += fmt.Sprintf(" (blocked on %s)", strings.Join(t.BlockedBy, ", "))
+					}
+					fmt.Fprintln(cmd.OutOrStdout(), line)
+				}
+				return nil
+			}
+
 			for _, t := range res.Tasks {
 				if len(t.BlockedBy) > 0 {
 					fmt.Fprintf(cmd.OutOrStdout(), "%s  %s (blocked on %s)\n",

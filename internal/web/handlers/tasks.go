@@ -185,7 +185,7 @@ func loadTaskPageData(deps Deps, w http.ResponseWriter, r *http.Request) (TaskPa
 		return TaskPageData{}, false
 	}
 
-	chrome, err := newChrome(r.Context(), deps, "")
+	chrome, err := newChrome(r.Context(), deps, "", time.Now())
 	if err != nil {
 		InternalError(deps, w, "task initial frame", err)
 		return TaskPageData{}, false

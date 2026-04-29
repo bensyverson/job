@@ -125,10 +125,10 @@ QUICKSTART
      Plans can indicate labels and blockers. See the full schema using 'job schema'
 
   4. Work:     job claim --next            (grab the next available leaf)
-               job claim abc12 2h          (long-running claim — overrides 30m default)
+               job claim <id> 2h          (long-running claim — overrides 30m default)
                job note <id> -m "progress"
                job done <id> -m "completion notes"
-               job done <id> -m "notes" --claim-next  (closes <id> with a note and opens the next available leaf)
+               job done <id> -m "notes" --claim-next  (closes <id> with a note and opens the next available leaf in one move)
 
   5. Observe:  job ls                      (actionable tasks in tree view)
                job ls all                  (include all tasks)

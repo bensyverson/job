@@ -115,16 +115,15 @@ func TestSetCriterionState_NotFound(t *testing.T) {
 	}
 }
 
-func TestImport_WithCriteria_BareStringsAndMappings(t *testing.T) {
+func TestImport_WithCriteria_BareStrings(t *testing.T) {
 	db := SetupTestDB(t)
 	body := "```yaml\n" +
 		"tasks:\n" +
 		"  - title: Verification gate\n" +
 		"    criteria:\n" +
 		"      - Tests pass\n" +
-		"      - label: Docs updated\n" +
-		"        state: skipped\n" +
-		"      - label: Manual smoke test\n" +
+		"      - Docs updated\n" +
+		"      - Manual smoke test\n" +
 		"```\n"
 
 	path := filepath.Join(t.TempDir(), "plan.md")
@@ -146,32 +145,29 @@ func TestImport_WithCriteria_BareStringsAndMappings(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("criteria: got %d, want 3", len(got))
 	}
-	if got[0].Label != "Tests pass" || got[0].State != CriterionPending {
-		t.Errorf("criterion[0] = %+v", got[0])
-	}
-	if got[1].Label != "Docs updated" || got[1].State != CriterionSkipped {
-		t.Errorf("criterion[1] = %+v", got[1])
-	}
-	if got[2].Label != "Manual smoke test" || got[2].State != CriterionPending {
-		t.Errorf("criterion[2] = %+v", got[2])
+	wantLabels := []string{"Tests pass", "Docs updated", "Manual smoke test"}
+	for i, c := range got {
+		if c.Label != wantLabels[i] || c.State != CriterionPending {
+			t.Errorf("criterion[%d] = %+v, want label=%q pending", i, c, wantLabels[i])
+		}
 	}
 }
 
-func TestImport_WithCriteria_RejectsInvalidState(t *testing.T) {
+func TestImport_WithCriteria_RejectsMappingForm(t *testing.T) {
 	db := SetupTestDB(t)
 	body := "```yaml\n" +
 		"tasks:\n" +
 		"  - title: Gate\n" +
 		"    criteria:\n" +
-		"      - label: Bad\n" +
-		"        state: bogus\n" +
+		"      - label: Tests pass\n" +
+		"        state: passed\n" +
 		"```\n"
 	path := filepath.Join(t.TempDir(), "plan.md")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := RunImport(db, path, "", false, "alice"); err == nil {
-		t.Fatal("expected import error on bogus state")
+		t.Fatal("expected import error: criteria entries must be bare strings")
 	}
 }
 

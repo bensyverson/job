@@ -46,25 +46,8 @@ const schemaJSON = `{
           },
           "criteria": {
             "type": "array",
-            "items": {
-              "oneOf": [
-                { "type": "string", "description": "Bare label form — defaults state to 'pending'." },
-                {
-                  "type": "object",
-                  "required": ["label"],
-                  "properties": {
-                    "label": { "type": "string" },
-                    "state": {
-                      "type": "string",
-                      "enum": ["pending", "passed", "skipped", "failed"],
-                      "description": "Defaults to 'pending' if omitted."
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              ]
-            },
-            "description": "Optional list of acceptance criteria. Renders as a checklist in 'job show' and is queryable by state. State transitions land via 'job done --criterion label=passed' or 'job edit --set-criterion label=passed'."
+            "items": { "type": "string" },
+            "description": "Optional list of acceptance-criterion labels. All criteria are created in the 'pending' state; transitions land later via 'job done --criterion label=passed' or 'job edit --set-criterion label=passed'."
           },
           "children": {
             "type": "array",

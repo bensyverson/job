@@ -76,9 +76,10 @@ func TestRenderInfoMarkdown_UnwrapsDescription(t *testing.T) {
 	var buf bytes.Buffer
 	RenderInfoMarkdown(&buf, info)
 	got := buf.String()
-	// The whole description should now appear on a single Description: line
-	// (no embedded newlines).
-	if !strings.Contains(got, "Description:  line one of description line two line three with words") {
+	// The whole description body should appear on one logical line (no
+	// embedded newlines from the author's hard-wrapping). Layout puts
+	// "Description:" on its own line followed by indented body.
+	if !strings.Contains(got, "Description:\n  line one of description line two line three with words") {
 		t.Errorf("description not unwrapped:\n%s", got)
 	}
 }

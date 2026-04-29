@@ -78,16 +78,17 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newNoteCmd())
 	cmd.AddCommand(newCancelCmd())
 	cmd.AddCommand(newMoveCmd())
+	cmd.AddCommand(newSplitCmd())
 	cmd.AddCommand(newInfoCmd())
 	cmd.AddCommand(newBlockCmd())
 	cmd.AddCommand(newUnblockCmd())
 	cmd.AddCommand(newClaimCmd())
 	cmd.AddCommand(newHeartbeatCmd())
 	cmd.AddCommand(newReleaseCmd())
+	cmd.AddCommand(newUnclaimCmd())
 	cmd.AddCommand(newLabelCmd())
 	cmd.AddCommand(newIdentityCmd())
 	cmd.AddCommand(newNextCmd())
-	cmd.AddCommand(newClaimNextCmd())
 	cmd.AddCommand(newLogCmd())
 	cmd.AddCommand(newTailCmd())
 	cmd.AddCommand(newImportCmd())
@@ -123,7 +124,8 @@ QUICKSTART
 
      Plans can indicate labels and blockers. See the full schema using 'job schema'
 
-  4. Work:     job claim-next              (grab the next available leaf)
+  4. Work:     job claim --next            (grab the next available leaf)
+               job claim abc12 2h          (long-running claim — overrides 30m default)
                job note <id> -m "progress"
                job done <id> -m "completion notes"
                job done <id> -m "notes" --claim-next  (closes <id> with a note and opens the next available leaf)
@@ -151,7 +153,7 @@ VERBS (grouped by role)
   Setup:        init, identity, schema
   Planning:     add, import, edit, block, move, label
     Reserved label:  "decision" → surfaces as "Decision:" in status until done/canceled
-  Execution:    claim, claim-next, release, note, done, reopen, cancel, heartbeat
+  Execution:    claim, claim --next, release/unclaim, note, done, reopen, cancel, heartbeat
   Observation:  ls, show, log, status, next, next all, tail
   Web UI:       serve (read-only dashboard, binds 127.0.0.1:7823 by default)
 
@@ -314,6 +316,9 @@ type doneAckOptions struct {
 	// emitted after the ack. The Claimed line already names the same
 	// next-work; a separate Next line would duplicate it.
 	suppressNext bool
+	// actor, when set, is appended to single-result done lines as
+	// "as=<actor>" so misattributed writes surface at the moment of action.
+	actor string
 }
 
 func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCtx *job.DoneContext, opts doneAckOptions) []AckLine {
@@ -327,14 +332,18 @@ func buildDoneAckLines(closed []*job.ClosedResult, alreadyDone []string, finalCt
 		lines = append(lines, AckLine(fmt.Sprintf("  note: %d chars · %q", count, preview)))
 	}
 
+	asTag := ""
+	if opts.actor != "" {
+		asTag = " as=" + opts.actor
+	}
 	single := len(closed) == 1 && len(alreadyDone) == 0 && len(closed[0].CascadeClosed) == 0
 	if single {
 		c := closed[0]
-		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q", c.ShortID, c.Title)))
+		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q%s", c.ShortID, c.Title, asTag)))
 		appendNoteEcho(c.Note)
 	} else if len(closed) == 1 && len(closed[0].CascadeClosed) > 0 && len(alreadyDone) == 0 {
 		c := closed[0]
-		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q (and %d subtasks)", c.ShortID, c.Title, len(c.CascadeClosed))))
+		lines = append(lines, AckLine(fmt.Sprintf("Done: %s %q (and %d subtasks)%s", c.ShortID, c.Title, len(c.CascadeClosed), asTag)))
 		appendNoteEcho(c.Note)
 	} else if len(closed) > 0 {
 		lines = append(lines, AckLine(fmt.Sprintf("Closed %d tasks:", len(closed))))

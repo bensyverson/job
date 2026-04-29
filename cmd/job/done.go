@@ -14,15 +14,14 @@ func newDoneCmd() *cobra.Command {
 	var resultStr string
 	var format string
 	var claimNext bool
+	var setCriterion []string
+	var quiet bool
 	cmd := &cobra.Command{
 		Use:   "done <id> [<id>...]",
 		Short: "Mark one or more tasks as done",
 		Long: `Mark one or more tasks as done, atomically. Use --cascade to close a task and all open descendants in one call. Use -m to record a completion note, and --result for structured JSON output. Idempotent: already-done tasks are reported, not re-recorded.
 
-Tip: pass --claim-next to atomically close this task and claim the next
-available leaf, collapsing the close-then-advance flow into one call. The
-ack ends with the same briefing that 'job claim' / 'job show' produces,
-so you don't need a follow-up 'show' on the new claim.`,
+Tip: pass --claim-next to atomically close this task and claim the next available leaf, collapsing the close-then-advance flow into one call. The ack ends with the same briefing that 'job claim' / 'job show' produces, so you don't need a follow-up 'show' on the new claim.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -59,6 +58,41 @@ so you don't need a follow-up 'show' on the new claim.`,
 					return fmt.Errorf("--result: invalid JSON: %s", resultStr)
 				}
 				resultRaw = json.RawMessage(resultStr)
+			}
+
+			// Apply --criterion updates before close so the soft pending check
+			// reflects the operator's just-recorded state changes.
+			for _, kv := range setCriterion {
+				label, state, perr := parseCriterionAssignment(kv)
+				if perr != nil {
+					return perr
+				}
+				// Apply to the first arg by default. When closing multiple ids,
+				// require an explicit "id:label=state" form to disambiguate.
+				targetID := args[0]
+				labelOnly := label
+				if colon := strings.Index(label, ":"); colon > 0 && len(args) > 1 {
+					targetID = label[:colon]
+					labelOnly = label[colon+1:]
+				}
+				if _, err := job.RunSetCriterion(db, targetID, labelOnly, state, actor); err != nil {
+					return err
+				}
+			}
+
+			// Soft pending warning: count pending criteria across all closed
+			// targets and surface a single line so the operator notices but
+			// the close still proceeds.
+			pendingByID := map[string]int{}
+			for _, id := range args {
+				task, _ := job.GetTaskByShortID(db, id)
+				if task == nil {
+					continue
+				}
+				n, _ := job.CountPendingCriteria(db, task.ID)
+				if n > 0 {
+					pendingByID[id] = n
+				}
 			}
 
 			closed, alreadyDone, err := job.RunDone(db, args, cascade, note, resultRaw, actor)
@@ -129,14 +163,20 @@ so you don't need a follow-up 'show' on the new claim.`,
 			// fallback ("you didn't get anything, try this instead").
 			renderDoneAckWithOptions(cmd.OutOrStdout(), closed, alreadyDone, ctx, doneAckOptions{
 				suppressNext: claimed != nil,
+				actor:        actor,
 			})
 
 			if claimed != nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s)\n",
-					claimed.ShortID, claimed.Title, job.FormatDuration(job.DefaultClaimTTLSeconds))
-				renderClaimBriefing(cmd.OutOrStdout(), db, claimed.ShortID)
+				fmt.Fprintf(cmd.OutOrStdout(), "Claimed: %s %q (expires in %s) as=%s\n",
+					claimed.ShortID, claimed.Title, job.FormatDuration(job.DefaultClaimTTLSeconds), actor)
+				if !quiet {
+					renderClaimBriefing(cmd.OutOrStdout(), db, claimed.ShortID)
+				}
 			} else if claimRaceTaken != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "Next leaf unavailable: %s\n", claimRaceTaken)
+			}
+			for id, n := range pendingByID {
+				fmt.Fprintf(cmd.OutOrStdout(), "  Note: %s closed with %d pending criteria.\n", id, n)
 			}
 			return nil
 		},
@@ -146,5 +186,7 @@ so you don't need a follow-up 'show' on the new claim.`,
 	cmd.Flags().StringVar(&resultStr, "result", "", "structured JSON result recorded on the done event")
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
 	cmd.Flags().BoolVar(&claimNext, "claim-next", false, "after closing, atomically claim the next available leaf")
+	cmd.Flags().StringArrayVar(&setCriterion, "criterion", nil, "update an acceptance criterion before close, format \"label=passed\" (repeatable; for multi-id closes use \"id:label=state\")")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress the trailing show briefing on a follow-on --claim-next claim")
 	return cmd
 }

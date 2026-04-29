@@ -75,7 +75,7 @@ func TestRenderInfoMarkdown_ManyChildren_FallbackCount(t *testing.T) {
 	if !strings.Contains(got, "Children:     11") {
 		t.Errorf("expected fallback count line `Children:     11 ...`:\n%s", got)
 	}
-	if !strings.Contains(got, "use 'job ls") {
+	if !strings.Contains(got, "`job ls") {
 		t.Errorf("expected fallback hint to point at `job ls <id>`:\n%s", got)
 	}
 	// Must not list individual children when over the cap.

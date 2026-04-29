@@ -10,10 +10,12 @@ func newAddCmd() *cobra.Command {
 	var desc string
 	var before string
 	var labels []string
+	var criteria []string
+	var parentFlag string
 	cmd := &cobra.Command{
 		Use:   "add [parent] <title>",
 		Short: "Add a new task",
-		Long:  "Add a new task. If parent is provided, the task is added as a child. Use --desc for a description and --before to insert before a specific sibling.",
+		Long:  "Add a new task. If parent is provided, the task is added as a child. Use --desc for a description, --before to insert before a specific sibling, and --criterion (repeatable) to attach acceptance criteria.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -34,6 +36,25 @@ func newAddCmd() *cobra.Command {
 			} else {
 				title = args[0]
 			}
+			if parentFlag != "" {
+				if parentShortID != "" && parentShortID != parentFlag {
+					return fmt.Errorf("add: --parent %q conflicts with positional parent %q", parentFlag, parentShortID)
+				}
+				parentShortID = parentFlag
+			}
+
+			// Capture pre-add child count so we can emit the auto-close
+			// cascade hint (LACgS) when adding into a parent that already
+			// has children.
+			var priorChildCount int
+			if parentShortID != "" {
+				if pp, _ := job.GetTaskByShortID(db, parentShortID); pp != nil {
+					_ = db.QueryRow(
+						"SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND deleted_at IS NULL",
+						pp.ID,
+					).Scan(&priorChildCount)
+				}
+			}
 
 			res, err := job.RunAdd(db, parentShortID, title, desc, before, labels, actor)
 			if err != nil {
@@ -44,11 +65,27 @@ func newAddCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Released: %s (prior claim by %s auto-released — parent now has open children)\n",
 					res.AutoReleasedParent, res.AutoReleasedByActor)
 			}
+			if parentShortID != "" && priorChildCount > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"  %s now has %d children; complete them all to auto-close the parent.\n",
+					parentShortID, priorChildCount+1)
+			}
+			if len(criteria) > 0 {
+				items := make([]job.Criterion, 0, len(criteria))
+				for _, label := range criteria {
+					items = append(items, job.Criterion{Label: label})
+				}
+				if _, err := job.RunAddCriteria(db, res.ShortID, items, actor); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&desc, "desc", "d", "", "task description")
 	cmd.Flags().StringVarP(&before, "before", "b", "", "insert before this sibling task ID")
 	cmd.Flags().StringArrayVarP(&labels, "label", "l", nil, "label to attach (repeatable)")
+	cmd.Flags().StringArrayVar(&criteria, "criterion", nil, "acceptance criterion to attach, defaults to pending state (repeatable)")
+	cmd.Flags().StringVar(&parentFlag, "parent", "", "parent task ID (alias for the positional parent argument)")
 	return cmd
 }

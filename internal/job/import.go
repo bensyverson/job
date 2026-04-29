@@ -31,6 +31,7 @@ type parsedTask struct {
 	Labels    []string
 	Ref       string
 	BlockedBy []string
+	Criteria  []Criterion
 	Children  []*parsedTask
 
 	// pathLabel is the YAML path like "tasks[1].children[0]"; filled during validation.
@@ -39,15 +40,22 @@ type parsedTask struct {
 	flatIndex int
 }
 
+// rawCriterion is the YAML shape for a single acceptance criterion entry.
+type rawCriterion struct {
+	Label string `yaml:"label"`
+	State string `yaml:"state"`
+}
+
 // Raw YAML shape: we decode into a loose structure first so we can enforce
 // additionalProperties=false and emit precise path-based errors.
 type rawTask struct {
-	Title     string     `yaml:"title"`
-	Desc      string     `yaml:"desc"`
-	Labels    []string   `yaml:"labels"`
-	Ref       string     `yaml:"ref"`
-	BlockedBy []string   `yaml:"blockedBy"`
-	Children  []*rawTask `yaml:"children"`
+	Title     string         `yaml:"title"`
+	Desc      string         `yaml:"desc"`
+	Labels    []string       `yaml:"labels"`
+	Ref       string         `yaml:"ref"`
+	BlockedBy []string       `yaml:"blockedBy"`
+	Criteria  []rawCriterion `yaml:"criteria"`
+	Children  []*rawTask     `yaml:"children"`
 
 	// Set when a title key was present in the YAML at all (even empty).
 	titlePresent bool
@@ -81,6 +89,10 @@ func (r *rawTask) UnmarshalYAML(n *yaml.Node) error {
 			}
 		case "blockedBy":
 			if err := v.Decode(&r.BlockedBy); err != nil {
+				return err
+			}
+		case "criteria":
+			if err := decodeCriteria(v, &r.Criteria); err != nil {
 				return err
 			}
 		case "children":
@@ -350,6 +362,19 @@ func RunImport(db *sql.DB, filePath, parentShortID string, dryRun bool, actor st
 			}
 		}
 
+		if len(node.Criteria) > 0 {
+			inserted, err := insertCriteria(tx, id, node.Criteria)
+			if err != nil {
+				return err
+			}
+			detail := map[string]any{
+				"criteria": criteriaEventDetail(inserted),
+			}
+			if err := recordEvent(tx, id, "criteria_added", actor, detail); err != nil {
+				return err
+			}
+		}
+
 		result.Tasks = append(result.Tasks, ImportedTask{
 			ID:     sid,
 			Title:  node.Title,
@@ -473,12 +498,17 @@ func buildParsedTree(rawList []*rawTask) ([]*parsedTask, []*parsedTask, error) {
 			if lerr != nil {
 				return nil, lerr
 			}
+			criteria, cerr := validateImportCriteria(path, r.Criteria)
+			if cerr != nil {
+				return nil, cerr
+			}
 			p := &parsedTask{
 				Title:     r.Title,
 				Desc:      r.Desc,
 				Labels:    labels,
 				Ref:       r.Ref,
 				BlockedBy: r.BlockedBy,
+				Criteria:  criteria,
 				pathLabel: path,
 				flatIndex: len(flat),
 			}
@@ -518,6 +548,60 @@ func validateImportLabels(path string, raw []string) ([]string, error) {
 		out = append(out, name)
 	}
 	return out, nil
+}
+
+// validateImportCriteria normalizes raw acceptance-criteria entries from
+// YAML, defaulting state to pending and validating the state vocabulary.
+func validateImportCriteria(path string, raw []rawCriterion) ([]Criterion, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]Criterion, 0, len(raw))
+	for i, c := range raw {
+		label, err := validateCriterionLabel(c.Label)
+		if err != nil {
+			return nil, fmt.Errorf("%s: criteria[%d]: %s", path, i, err.Error())
+		}
+		state := CriterionPending
+		if c.State != "" {
+			s, err := ValidateCriterionState(c.State)
+			if err != nil {
+				return nil, fmt.Errorf("%s: criteria[%d]: %s", path, i, err.Error())
+			}
+			state = s
+		}
+		out = append(out, Criterion{Label: label, State: state, SortOrder: i})
+	}
+	return out, nil
+}
+
+// decodeCriteria accepts YAML in two shapes:
+//
+//	criteria: [Tests pass, Docs updated]                    # bare strings → all pending
+//	criteria: [{label: Tests pass, state: passed}, ...]     # explicit state per entry
+func decodeCriteria(n *yaml.Node, dst *[]rawCriterion) error {
+	if n.Kind != yaml.SequenceNode {
+		return fmt.Errorf("criteria must be a list")
+	}
+	for _, item := range n.Content {
+		switch item.Kind {
+		case yaml.ScalarNode:
+			var s string
+			if err := item.Decode(&s); err != nil {
+				return err
+			}
+			*dst = append(*dst, rawCriterion{Label: s})
+		case yaml.MappingNode:
+			var c rawCriterion
+			if err := item.Decode(&c); err != nil {
+				return err
+			}
+			*dst = append(*dst, c)
+		default:
+			return fmt.Errorf("criteria entries must be strings or {label,state} maps")
+		}
+	}
+	return nil
 }
 
 // validateRefs ensures refs are unique across the import.

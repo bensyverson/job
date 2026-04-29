@@ -209,29 +209,28 @@ func RenderAncestorBrief(w io.Writer, t *Task) {
 }
 
 func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
+	// Header: structural metadata first so the eye can land on identity,
+	// status, and shape without scrolling past a long description.
 	fmt.Fprintf(w, "ID:           %s\n", info.Task.ShortID)
 	fmt.Fprintf(w, "Title:        %s\n", info.Task.Title)
-	if info.Task.Description != "" {
-		fmt.Fprintf(w, "Description:  %s\n", unwrapProse(info.Task.Description))
-	}
 	fmt.Fprintf(w, "Status:       %s\n", info.Task.Status)
 	if info.Task.Status == "claimed" {
 		fmt.Fprintf(w, "Claim:        %s\n", formatClaimExpires(info.Task.ClaimedBy, info.Task.ClaimExpiresAt))
-	}
-	if len(info.Labels) > 0 {
-		fmt.Fprintf(w, "Labels:       %s\n", strings.Join(info.Labels, ", "))
 	}
 	if info.Parent != nil {
 		fmt.Fprintf(w, "Parent:       %s (%s)\n", info.Parent.ShortID, info.Parent.Title)
 	} else {
 		fmt.Fprintf(w, "Parent:       (root)\n")
 	}
+	if len(info.Labels) > 0 {
+		fmt.Fprintf(w, "Labels:       %s\n", strings.Join(info.Labels, ", "))
+	}
 	if len(info.Children) > 0 {
 		// Above the cap: the inline list would crowd the briefing, so
 		// collapse to a single count line that names the canonical drill-
 		// down command. Mirrors the cap rule documented in `show --help`.
 		if len(info.Children) > childInlineCap {
-			fmt.Fprintf(w, "Children:     %d (use 'job ls %s' to see all)\n", len(info.Children), info.Task.ShortID)
+			fmt.Fprintf(w, "Children:     %d total — list truncated. Run `job ls %s` to see all.\n", len(info.Children), info.Task.ShortID)
 		} else {
 			fmt.Fprintln(w, "Children:")
 			for _, c := range info.Children {
@@ -253,9 +252,30 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 		for _, b := range info.Blockers {
 			ids = append(ids, b.ShortID)
 		}
-		fmt.Fprintf(w, "Blocking:     %s\n", strings.Join(ids, ", "))
+		fmt.Fprintf(w, "Blocked by:   %s\n", strings.Join(ids, ", "))
+	}
+	if len(info.Blocked) > 0 {
+		var ids []string
+		for _, b := range info.Blocked {
+			ids = append(ids, b.ShortID)
+		}
+		fmt.Fprintf(w, "Blocks:       %s\n", strings.Join(ids, ", "))
 	}
 	fmt.Fprintf(w, "Created:      %s\n", formatTimestamp(info.Task.CreatedAt))
+
+	// Body: description, criteria, then notes. Now that the header sits
+	// above this block, a long description doesn't push structural
+	// metadata off the first screen.
+	if info.Task.Description != "" {
+		fmt.Fprintf(w, "\nDescription:\n  %s\n", unwrapProse(info.Task.Description))
+	}
+
+	if len(info.Criteria) > 0 {
+		fmt.Fprintln(w, "Criteria:")
+		for _, c := range info.Criteria {
+			fmt.Fprintf(w, "  %s %s\n", criterionGlyph(c.State), c.Label)
+		}
+	}
 
 	if len(info.Notes) > 0 {
 		fmt.Fprintln(w, "Notes:")
@@ -270,6 +290,20 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 			}
 			fmt.Fprintf(w, "    %s\n", unwrapProse(n.Text))
 		}
+	}
+}
+
+// criterionGlyph returns the checkbox-style glyph for a criterion state.
+func criterionGlyph(state CriterionState) string {
+	switch state {
+	case CriterionPassed:
+		return "[x]"
+	case CriterionFailed:
+		return "[!]"
+	case CriterionSkipped:
+		return "[-]"
+	default:
+		return "[ ]"
 	}
 }
 
@@ -613,6 +647,58 @@ func FormatEventDescription(eventType, detailJSON string) string {
 			}
 		}
 		return fmt.Sprintf("moved %s %s", direction, relativeTo)
+	case "criteria_added":
+		count := 0
+		if detail != nil {
+			if list, ok := detail["criteria"].([]any); ok {
+				count = len(list)
+			}
+		}
+		return fmt.Sprintf("criteria added (%d)", count)
+	case "criterion_state":
+		label := ""
+		state := ""
+		if detail != nil {
+			if v, ok := detail["label"].(string); ok {
+				label = v
+			}
+			if v, ok := detail["state"].(string); ok {
+				state = v
+			}
+		}
+		return fmt.Sprintf("criterion %q → %s", label, state)
+	case "reparented":
+		newParent := ""
+		priorParent := ""
+		direction := ""
+		relativeTo := ""
+		if detail != nil {
+			if v, ok := detail["new_parent_id"].(string); ok {
+				newParent = v
+			}
+			if v, ok := detail["prior_parent_id"].(string); ok {
+				priorParent = v
+			}
+			if v, ok := detail["direction"].(string); ok {
+				direction = v
+			}
+			if v, ok := detail["relative_to"].(string); ok {
+				relativeTo = v
+			}
+		}
+		dest := newParent
+		if dest == "" {
+			dest = "(root)"
+		}
+		from := priorParent
+		if from == "" {
+			from = "(root)"
+		}
+		base := fmt.Sprintf("reparented from %s to %s", from, dest)
+		if direction != "" {
+			base = fmt.Sprintf("%s (%s %s)", base, direction, relativeTo)
+		}
+		return base
 	case "removed":
 		parts := []string{"removed"}
 		if detail != nil {
@@ -776,14 +862,25 @@ type eventJSON struct {
 }
 
 func RenderCancelAck(w io.Writer, canceled []*CanceledResult, alreadyCanceled []string, reason string) {
+	RenderCancelAckAs(w, canceled, alreadyCanceled, reason, "")
+}
+
+// RenderCancelAckAs renders the cancel ack and, when actor is non-empty,
+// appends "as=<actor>" to the leading single-result line so misattributed
+// writes surface at the moment of action.
+func RenderCancelAckAs(w io.Writer, canceled []*CanceledResult, alreadyCanceled []string, reason, actor string) {
+	asTag := ""
+	if actor != "" {
+		asTag = " as=" + actor
+	}
 	single := len(canceled) == 1 && len(alreadyCanceled) == 0 && len(canceled[0].CascadeCanceled) == 0
 
 	if single {
 		c := canceled[0]
-		fmt.Fprintf(w, "Canceled: %s %q\n", c.ShortID, c.Title)
+		fmt.Fprintf(w, "Canceled: %s %q%s\n", c.ShortID, c.Title, asTag)
 	} else if len(canceled) == 1 && len(canceled[0].CascadeCanceled) > 0 && len(alreadyCanceled) == 0 {
 		c := canceled[0]
-		fmt.Fprintf(w, "Canceled: %s %q (and %d subtasks)\n", c.ShortID, c.Title, len(c.CascadeCanceled))
+		fmt.Fprintf(w, "Canceled: %s %q (and %d subtasks)%s\n", c.ShortID, c.Title, len(c.CascadeCanceled), asTag)
 	} else if len(canceled) > 0 {
 		fmt.Fprintf(w, "Canceled %d tasks:\n", len(canceled))
 		for _, c := range canceled {

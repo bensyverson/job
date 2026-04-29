@@ -67,6 +67,11 @@ func FilterEvents(events []EventEntry, filter EventFilter) []EventEntry {
 // or the global event log across every top-level tree when shortID is "".
 // The empty form powers `job log` / `job log all`.
 func RunLog(db *sql.DB, shortID string, since *int64) ([]EventEntry, error) {
+	return RunLogFiltered(db, shortID, since, "")
+}
+
+// RunLogFiltered is RunLog plus an optional actor filter.
+func RunLogFiltered(db *sql.DB, shortID string, since *int64, actor string) ([]EventEntry, error) {
 	if shortID != "" {
 		task, err := GetTaskByShortID(db, shortID)
 		if err != nil {
@@ -77,10 +82,22 @@ func RunLog(db *sql.DB, shortID string, since *int64) ([]EventEntry, error) {
 		}
 	}
 
+	var extras []string
+	var args []any
 	if since != nil {
-		return getEventsForTaskTreeSince(db, shortID, *since)
+		extras = append(extras, "AND e.created_at >= ?")
+		args = append(args, *since)
 	}
-	return GetEventsForTaskTree(db, shortID)
+	if actor != "" {
+		extras = append(extras, "AND e.actor = ?")
+		args = append(args, actor)
+	}
+	var extra strings.Builder
+	for _, e := range extras {
+		extra.WriteString(" " + e)
+	}
+	query, qargs := buildTreeEventsQuery(shortID, extra.String(), args)
+	return queryEventEntries(db, query, qargs)
 }
 
 // RunTailUntilClose wraps RunTail with a watch-set that drains as watched

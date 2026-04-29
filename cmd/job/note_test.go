@@ -111,15 +111,21 @@ func TestNote_Result(t *testing.T) {
 	}
 }
 
-func TestNote_Positional_Gone(t *testing.T) {
+func TestNote_Positional_Accepted(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	id := job.MustAdd(t, db, "", "job.Task")
 	db.Close()
 
-	_, _, err := runCLI(t, dbFile, "--as", "alice", "note", id, "some text")
-	if err == nil {
-		t.Fatal("expected error: positional text no longer accepted")
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "note", id, "some text")
+	if err != nil {
+		t.Fatalf("expected positional text to be accepted, got error: %v", err)
+	}
+	if !strings.Contains(stdout, "Noted:") {
+		t.Errorf("stdout missing Noted ack: %q", stdout)
+	}
+	if !strings.Contains(stdout, "some text") {
+		t.Errorf("stdout missing note preview: %q", stdout)
 	}
 }
 
@@ -131,9 +137,9 @@ func TestNote_MissingFlag_Error(t *testing.T) {
 
 	_, _, err := runCLI(t, dbFile, "--as", "alice", "note", id)
 	if err == nil {
-		t.Fatal("expected error when neither -m nor - given")
+		t.Fatal("expected error when no text given (positional, -m, or stdin)")
 	}
-	if !strings.Contains(err.Error(), "requires -m") {
+	if !strings.Contains(err.Error(), "requires text") {
 		t.Errorf("err: %v", err)
 	}
 }

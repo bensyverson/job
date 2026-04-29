@@ -22,7 +22,7 @@ func TestClaim_Md_Shape_EchoesTitleAndDefaultTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	wantFirst := "Claimed: " + id + " \"Write the thing\" (expires in 30m)\n"
+	wantFirst := "Claimed: " + id + " \"Write the thing\" (expires in 30m) as=alice\n"
 	if firstLine(stdout) != wantFirst {
 		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}
@@ -38,7 +38,7 @@ func TestClaim_Md_Shape_WithExplicitDuration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	wantFirst := "Claimed: " + id + " \"Long task\" (expires in 2h)\n"
+	wantFirst := "Claimed: " + id + " \"Long task\" (expires in 2h) as=alice\n"
 	if firstLine(stdout) != wantFirst {
 		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}
@@ -57,7 +57,7 @@ func TestClaim_Md_Shape_ForceOverrideEchoesTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alice claim --force: %v", err)
 	}
-	wantFirst := "Claimed: " + id + " \"Contended task\" (overrode previous claim by bob, expires in 30m)\n"
+	wantFirst := "Claimed: " + id + " \"Contended task\" (overrode previous claim by bob, expires in 30m) as=alice\n"
 	if firstLine(stdout) != wantFirst {
 		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}

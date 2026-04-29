@@ -212,7 +212,7 @@ func TestNext_ExcludesParentsWithOpenChildren(t *testing.T) {
 	}
 }
 
-// `claim-next` should claim a leaf, never a parent with open children.
+// `claim --next` should claim a leaf, never a parent with open children.
 func TestClaimNext_PrefersLeafOverParent(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
@@ -220,9 +220,9 @@ func TestClaimNext_PrefersLeafOverParent(t *testing.T) {
 	c1 := job.MustAdd(t, db, parent, "Child 1")
 	db.Close()
 
-	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "claim-next")
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "claim", "--next")
 	if err != nil {
-		t.Fatalf("claim-next: %v", err)
+		t.Fatalf("claim --next: %v", err)
 	}
 	// The first line is the scriptable ack ("Claimed: <id> ...") and
 	// names which task got claimed. Full stdout also contains the
@@ -231,10 +231,10 @@ func TestClaimNext_PrefersLeafOverParent(t *testing.T) {
 	// wrong check after briefing was added.
 	first := firstLine(stdout)
 	if strings.Contains(first, parent) {
-		t.Errorf("claim-next should not claim parent (first line names the claim target):\n%s", first)
+		t.Errorf("claim --next should not claim parent (first line names the claim target):\n%s", first)
 	}
 	if !strings.Contains(first, c1) {
-		t.Errorf("claim-next should claim leaf %s:\n%s", c1, first)
+		t.Errorf("claim --next should claim leaf %s:\n%s", c1, first)
 	}
 }
 

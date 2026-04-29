@@ -892,6 +892,292 @@ func TestRunMove_NotFound(t *testing.T) {
 	}
 }
 
+// --- Reparent ---
+
+func TestRunReparent_MovesUnderNewParent(t *testing.T) {
+	db := SetupTestDB(t)
+	oldParent := MustAdd(t, db, "", "Old parent")
+	child := MustAdd(t, db, oldParent, "Child")
+	newParent := MustAdd(t, db, "", "New parent")
+
+	if err := RunReparent(db, child, newParent, "", "", TestActor); err != nil {
+		t.Fatalf("RunReparent: %v", err)
+	}
+
+	got := MustGet(t, db, child)
+	newP := MustGet(t, db, newParent)
+	if got.ParentID == nil || *got.ParentID != newP.ID {
+		t.Errorf("child parent = %v, want %d", got.ParentID, newP.ID)
+	}
+}
+
+func TestRunReparent_PlacesAtEndOfNewParent(t *testing.T) {
+	db := SetupTestDB(t)
+	source := MustAdd(t, db, "", "Source")
+	movee := MustAdd(t, db, source, "Movee")
+
+	dest := MustAdd(t, db, "", "Dest")
+	first := MustAdd(t, db, dest, "First")
+	second := MustAdd(t, db, dest, "Second")
+
+	if err := RunReparent(db, movee, dest, "", "", TestActor); err != nil {
+		t.Fatalf("RunReparent: %v", err)
+	}
+
+	got := MustGet(t, db, movee)
+	t1 := MustGet(t, db, first)
+	t2 := MustGet(t, db, second)
+	if got.SortOrder <= t1.SortOrder || got.SortOrder <= t2.SortOrder {
+		t.Errorf("movee sort_order = %d; should be > first(%d) and second(%d)",
+			got.SortOrder, t1.SortOrder, t2.SortOrder)
+	}
+}
+
+func TestRunReparent_ToRoot(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent")
+	child := MustAdd(t, db, parent, "Child")
+
+	if err := RunReparent(db, child, "", "", "", TestActor); err != nil {
+		t.Fatalf("RunReparent to root: %v", err)
+	}
+
+	got := MustGet(t, db, child)
+	if got.ParentID != nil {
+		t.Errorf("child parent_id = %v, want nil (root)", *got.ParentID)
+	}
+}
+
+func TestRunReparent_BeforeSiblingInNewParent(t *testing.T) {
+	db := SetupTestDB(t)
+	source := MustAdd(t, db, "", "Source")
+	movee := MustAdd(t, db, source, "Movee")
+	dest := MustAdd(t, db, "", "Dest")
+	first := MustAdd(t, db, dest, "First")
+	second := MustAdd(t, db, dest, "Second")
+
+	if err := RunReparent(db, movee, dest, "before", second, TestActor); err != nil {
+		t.Fatalf("RunReparent: %v", err)
+	}
+
+	got := MustGet(t, db, movee)
+	tFirst := MustGet(t, db, first)
+	tSecond := MustGet(t, db, second)
+	if !(got.SortOrder > tFirst.SortOrder && got.SortOrder < tSecond.SortOrder) {
+		t.Errorf("movee sort_order = %d; expected between first(%d) and second(%d)",
+			got.SortOrder, tFirst.SortOrder, tSecond.SortOrder)
+	}
+}
+
+func TestRunReparent_AfterSiblingInNewParent(t *testing.T) {
+	db := SetupTestDB(t)
+	source := MustAdd(t, db, "", "Source")
+	movee := MustAdd(t, db, source, "Movee")
+	dest := MustAdd(t, db, "", "Dest")
+	first := MustAdd(t, db, dest, "First")
+	second := MustAdd(t, db, dest, "Second")
+
+	if err := RunReparent(db, movee, dest, "after", first, TestActor); err != nil {
+		t.Fatalf("RunReparent: %v", err)
+	}
+
+	got := MustGet(t, db, movee)
+	tFirst := MustGet(t, db, first)
+	tSecond := MustGet(t, db, second)
+	if !(got.SortOrder > tFirst.SortOrder && got.SortOrder < tSecond.SortOrder) {
+		t.Errorf("movee sort_order = %d; expected between first(%d) and second(%d)",
+			got.SortOrder, tFirst.SortOrder, tSecond.SortOrder)
+	}
+}
+
+func TestRunReparent_PreventsCycleSelf(t *testing.T) {
+	db := SetupTestDB(t)
+	id := MustAdd(t, db, "", "Task")
+
+	err := RunReparent(db, id, id, "", "", TestActor)
+	if err == nil {
+		t.Fatal("expected error when reparenting under self")
+	}
+}
+
+func TestRunReparent_PreventsCycleDescendant(t *testing.T) {
+	db := SetupTestDB(t)
+	root := MustAdd(t, db, "", "Root")
+	mid := MustAdd(t, db, root, "Mid")
+	leaf := MustAdd(t, db, mid, "Leaf")
+
+	if err := RunReparent(db, root, leaf, "", "", TestActor); err == nil {
+		t.Fatal("expected error when reparenting under own descendant")
+	}
+}
+
+func TestRunReparent_RecordsEventWithPriorParent(t *testing.T) {
+	db := SetupTestDB(t)
+	oldParent := MustAdd(t, db, "", "Old")
+	child := MustAdd(t, db, oldParent, "Child")
+	newParent := MustAdd(t, db, "", "New")
+
+	task := MustGet(t, db, child)
+	if err := RunReparent(db, child, newParent, "", "", TestActor); err != nil {
+		t.Fatalf("RunReparent: %v", err)
+	}
+
+	detail, err := GetLatestEventDetail(db, task.ID, "reparented")
+	if err != nil {
+		t.Fatalf("GetLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected reparented event")
+	}
+	if detail["prior_parent_id"] != oldParent {
+		t.Errorf("prior_parent_id: got %v, want %s", detail["prior_parent_id"], oldParent)
+	}
+	if detail["new_parent_id"] != newParent {
+		t.Errorf("new_parent_id: got %v, want %s", detail["new_parent_id"], newParent)
+	}
+}
+
+func TestRunReparent_RecordsPriorRootParent(t *testing.T) {
+	db := SetupTestDB(t)
+	child := MustAdd(t, db, "", "RootChild")
+	newParent := MustAdd(t, db, "", "New")
+
+	task := MustGet(t, db, child)
+	if err := RunReparent(db, child, newParent, "", "", TestActor); err != nil {
+		t.Fatalf("RunReparent: %v", err)
+	}
+
+	detail, err := GetLatestEventDetail(db, task.ID, "reparented")
+	if err != nil {
+		t.Fatalf("GetLatestEventDetail: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("expected reparented event")
+	}
+	if detail["prior_parent_id"] != "" {
+		t.Errorf("prior_parent_id: got %v, want empty (root)", detail["prior_parent_id"])
+	}
+	if detail["new_parent_id"] != newParent {
+		t.Errorf("new_parent_id: got %v, want %s", detail["new_parent_id"], newParent)
+	}
+}
+
+func TestRunReparent_TaskNotFound(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent")
+	if err := RunReparent(db, "noExs", parent, "", "", TestActor); err == nil {
+		t.Fatal("expected error for non-existent task")
+	}
+}
+
+func TestRunReparent_NewParentNotFound(t *testing.T) {
+	db := SetupTestDB(t)
+	id := MustAdd(t, db, "", "Task")
+	if err := RunReparent(db, id, "noExs", "", "", TestActor); err == nil {
+		t.Fatal("expected error for non-existent new parent")
+	}
+}
+
+// --- Split ---
+
+func TestRunSplit_AddsChildrenToLeaf(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent leaf")
+
+	res, err := RunSplit(db, parent, []string{"Child A", "Child B", "Child C"}, TestActor)
+	if err != nil {
+		t.Fatalf("RunSplit: %v", err)
+	}
+	if len(res.ChildShortIDs) != 3 {
+		t.Fatalf("expected 3 children, got %d", len(res.ChildShortIDs))
+	}
+	parentTask := MustGet(t, db, parent)
+	for i, cid := range res.ChildShortIDs {
+		c := MustGet(t, db, cid)
+		if c.ParentID == nil || *c.ParentID != parentTask.ID {
+			t.Errorf("child %d (%s) parent_id mismatch", i, cid)
+		}
+	}
+}
+
+func TestRunSplit_OrdersChildrenInInputOrder(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent")
+
+	res, err := RunSplit(db, parent, []string{"First", "Second", "Third"}, TestActor)
+	if err != nil {
+		t.Fatalf("RunSplit: %v", err)
+	}
+	first := MustGet(t, db, res.ChildShortIDs[0])
+	second := MustGet(t, db, res.ChildShortIDs[1])
+	third := MustGet(t, db, res.ChildShortIDs[2])
+	if !(first.SortOrder < second.SortOrder && second.SortOrder < third.SortOrder) {
+		t.Errorf("sort order not preserved: %d %d %d", first.SortOrder, second.SortOrder, third.SortOrder)
+	}
+	if first.Title != "First" || second.Title != "Second" || third.Title != "Third" {
+		t.Errorf("titles mismatch: %q %q %q", first.Title, second.Title, third.Title)
+	}
+}
+
+func TestRunSplit_RequiresLeaf(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent")
+	MustAdd(t, db, parent, "Existing child")
+
+	_, err := RunSplit(db, parent, []string{"New child"}, TestActor)
+	if err == nil {
+		t.Fatal("expected error when splitting a non-leaf task")
+	}
+}
+
+func TestRunSplit_NoTitles(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent")
+	_, err := RunSplit(db, parent, nil, TestActor)
+	if err == nil {
+		t.Fatal("expected error when called with zero titles")
+	}
+}
+
+func TestRunSplit_ParentNotFound(t *testing.T) {
+	db := SetupTestDB(t)
+	_, err := RunSplit(db, "noExs", []string{"A"}, TestActor)
+	if err == nil {
+		t.Fatal("expected error for non-existent parent")
+	}
+}
+
+func TestRunSplit_ReleasesClaimedParent(t *testing.T) {
+	db := SetupTestDB(t)
+	parent := MustAdd(t, db, "", "Parent")
+	MustClaim(t, db, parent, "30m")
+
+	res, err := RunSplit(db, parent, []string{"A", "B"}, TestActor)
+	if err != nil {
+		t.Fatalf("RunSplit: %v", err)
+	}
+	if res.AutoReleasedParent != parent {
+		t.Errorf("AutoReleasedParent = %q, want %q", res.AutoReleasedParent, parent)
+	}
+
+	got := MustGet(t, db, parent)
+	if got.Status != "available" {
+		t.Errorf("parent status = %q, want available (claim auto-released)", got.Status)
+	}
+}
+
+func TestRunReparent_SiblingNotInNewParent(t *testing.T) {
+	db := SetupTestDB(t)
+	movee := MustAdd(t, db, "", "Movee")
+	dest := MustAdd(t, db, "", "Dest")
+	other := MustAdd(t, db, "", "Other root sibling")
+
+	err := RunReparent(db, movee, dest, "before", other, TestActor)
+	if err == nil {
+		t.Fatal("expected error when sibling is not in new parent")
+	}
+}
+
 // --- Block ---
 
 func TestRunBlock_CreatesRelationship(t *testing.T) {

@@ -265,3 +265,38 @@ func GetBlockers(db *sql.DB, shortID string) ([]*Task, error) {
 	}
 	return blockers, rows.Err()
 }
+
+// GetBlocked returns the tasks that this task is blocking — i.e. the tasks
+// that depend on this one. Filters out closed (done/canceled) blocked tasks
+// since they're no longer waiting on anything.
+func GetBlocked(db *sql.DB, shortID string) ([]*Task, error) {
+	task, err := GetTaskByShortID(db, shortID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, fmt.Errorf("task %q not found", shortID)
+	}
+
+	rows, err := db.Query(`
+		SELECT t.id, t.short_id, t.parent_id, t.title, t.description, t.status, t.sort_order,
+		       t.claimed_by, t.claim_expires_at, t.completion_note, t.created_at, t.updated_at, t.deleted_at
+		FROM blocks b
+		JOIN tasks t ON t.id = b.blocked_id
+		WHERE b.blocker_id = ? AND t.status NOT IN ('done', 'canceled') AND t.deleted_at IS NULL
+	`, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Task
+	for rows.Next() {
+		t, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

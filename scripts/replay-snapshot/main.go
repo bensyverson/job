@@ -315,6 +315,13 @@ func applyEventReplay(f *frame, taskShort, eventType, actor string, detail map[s
 				t.sortOrder = int(so)
 			}
 		}
+	case "reparented":
+		if t, ok := f.tasks[taskShort]; ok {
+			t.parentShortID = getString("new_parent_id")
+			if so, ok := detail["new_sort_order"].(float64); ok {
+				t.sortOrder = int(so)
+			}
+		}
 	case "edited":
 		if t, ok := f.tasks[taskShort]; ok {
 			if title := getString("new_title"); title != "" {

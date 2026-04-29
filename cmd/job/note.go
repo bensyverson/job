@@ -14,9 +14,9 @@ func newNoteCmd() *cobra.Command {
 	var message string
 	var resultStr string
 	cmd := &cobra.Command{
-		Use:   "note <id>",
+		Use:   "note <id> [text]",
 		Short: "Append a note to a task's description",
-		Long:  "Append text to a task's description, prefixed with a timestamp. Pass the body via -m or read from stdin with `-`. Use --result to attach a structured JSON blob to the event without touching the description.",
+		Long:  "Append text to a task's description, prefixed with a timestamp. Pass the body positionally, via -m, or read from stdin with `-`. Use --result to attach a structured JSON blob to the event without touching the description.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -32,16 +32,24 @@ func newNoteCmd() *cobra.Command {
 
 			shortID := args[0]
 			stdinForm := len(args) == 2 && args[1] == "-"
-			if len(args) == 2 && !stdinForm {
-				return fmt.Errorf("note: unexpected argument %q (use -m \"<text>\" or stdin via -)", args[1])
-			}
+			positionalForm := len(args) == 2 && !stdinForm
 
 			hasMessage := cmd.Flags().Changed("message")
-			if !hasMessage && !stdinForm {
-				return fmt.Errorf("note requires -m \"<text>\" or stdin via -")
+			provided := 0
+			if hasMessage {
+				provided++
 			}
-			if hasMessage && stdinForm {
-				return fmt.Errorf("note -m and stdin form are mutually exclusive")
+			if stdinForm {
+				provided++
+			}
+			if positionalForm {
+				provided++
+			}
+			if provided == 0 {
+				return fmt.Errorf("note requires text — pass it positionally, via -m \"<text>\", or via stdin (-)")
+			}
+			if provided > 1 {
+				return fmt.Errorf("note: positional text, -m, and stdin form are mutually exclusive")
 			}
 
 			text := message
@@ -51,6 +59,8 @@ func newNoteCmd() *cobra.Command {
 					return rerr
 				}
 				text = strings.TrimRight(string(b), "\n\r")
+			} else if positionalForm {
+				text = args[1]
 			} else if hasMessage {
 				resolved, rerr := resolveMessage(message, cmd.InOrStdin())
 				if rerr != nil {

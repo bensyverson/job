@@ -102,7 +102,7 @@ func TestWriteRequiresAs(t *testing.T) {
 		{"unblock", []string{"unblock", id, "from", other}},
 		{"claim", []string{"claim", id}},
 		{"release", []string{"release", id}},
-		{"claim-next", []string{"claim-next"}},
+		{"claim --next", []string{"claim", "--next"}},
 		{"heartbeat", []string{"heartbeat", id}},
 		{"label add", []string{"label", "add", id, "foo"}},
 		{"label remove", []string{"label", "remove", id, "foo"}},
@@ -156,9 +156,9 @@ func TestClaimNextRequiresAsEvenWhenReadPartSucceeds(t *testing.T) {
 	}
 	db.Close()
 
-	_, _, err := runCLI(t, dbFile, "claim-next")
+	_, _, err := runCLI(t, dbFile, "claim", "--next")
 	if err == nil {
-		t.Fatal("expected claim-next without --as to error")
+		t.Fatal("expected claim --next without --as to error")
 	}
 	if err.Error() != wantIdentityRequired {
 		t.Errorf("got %q, want %q", err.Error(), wantIdentityRequired)
@@ -537,7 +537,7 @@ func TestList_Grep_CaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestList_Grep_NoMatch_Empty(t *testing.T) {
+func TestList_Grep_NoMatch_PrintsEmptyState(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	job.MustAdd(t, db, "", "Some task")
@@ -547,8 +547,14 @@ func TestList_Grep_NoMatch_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list --grep: %v", err)
 	}
-	if strings.TrimSpace(stdout) != "" {
-		t.Errorf("expected empty output, got:\n%s", stdout)
+	if !strings.Contains(stdout, "No tasks match") {
+		t.Errorf("expected empty-state message, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "zzznomatch") {
+		t.Errorf("expected pattern echoed in message, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "--all") {
+		t.Errorf("expected --all suggestion, got:\n%s", stdout)
 	}
 }
 
@@ -1063,7 +1069,7 @@ func TestHelp_MentionsCurrentVerbs(t *testing.T) {
 	// works but is intentionally absent from help output.
 	wantVerbs := []string{
 		"init", "schema", "add", "import", "edit", "block",
-		"move", "claim", "claim-next", "release", "note", "done", "reopen",
+		"move", "claim", "release", "note", "done", "reopen",
 		"cancel", "ls", "show", "log", "status", "next", "tail",
 		"heartbeat", "label",
 	}
@@ -1123,7 +1129,7 @@ func TestHelp_Snapshot(t *testing.T) {
 		"OUTPUT",
 		"ORCHESTRATION",
 		"job import plan.md",
-		"claim-next",
+		"claim --next",
 		"--format=json",
 	} {
 		if !strings.Contains(out, mustHave) {

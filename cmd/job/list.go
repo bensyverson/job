@@ -13,6 +13,8 @@ func newListCmd() *cobra.Command {
 	var claimedBy string
 	var grepPattern string
 	var allFlag bool
+	var statusFilter string
+	var openFlag bool
 	cmd := &cobra.Command{
 		Use:     "ls [parent]",
 		Aliases: []string{"list", "tree"},
@@ -49,6 +51,20 @@ Use --format=json for machine-readable output.`,
 			if mine && claimedBy != "" {
 				return fmt.Errorf("cannot use both --mine and --claimed-by")
 			}
+			if openFlag && statusFilter != "" && statusFilter != "open" {
+				return fmt.Errorf("cannot use --open with --status=%s", statusFilter)
+			}
+			effectiveStatus := statusFilter
+			if openFlag {
+				effectiveStatus = "open"
+			}
+			if effectiveStatus != "" {
+				normalized, verr := job.ValidateStatusFilter(effectiveStatus)
+				if verr != nil {
+					return verr
+				}
+				effectiveStatus = normalized
+			}
 
 			var claimedByFilter string
 			if mine {
@@ -70,6 +86,7 @@ Use --format=json for machine-readable output.`,
 				Label:          labelFilter,
 				ClaimedByActor: claimedByFilter,
 				GrepPattern:    grepPattern,
+				Status:         effectiveStatus,
 			})
 			if err != nil {
 				return err
@@ -90,6 +107,7 @@ Use --format=json for machine-readable output.`,
 			} else {
 				if len(nodes) == 0 {
 					if grepPattern != "" {
+						fmt.Fprintf(cmd.OutOrStdout(), "No tasks match `%s`. Try --all to include blocked / done / canceled.\n", grepPattern)
 						return nil
 					}
 					if claimedByFilter != "" {
@@ -112,6 +130,16 @@ Use --format=json for machine-readable output.`,
 					return err
 				}
 				job.RenderMarkdownList(cmd.OutOrStdout(), nodes, blockers, labels, 0)
+
+				// Sparse-results hint: when an unscoped, unfiltered ls returns
+				// fewer than 5 nodes, append a one-liner so first-time users
+				// understand the actionable-only default and how to broaden.
+				unscopedUnfiltered := parentShortID == "" && !showAll &&
+					labelFilter == "" && claimedByFilter == "" && grepPattern == "" &&
+					effectiveStatus == ""
+				if unscopedUnfiltered && countTopNodes(nodes) < 5 {
+					fmt.Fprintln(cmd.OutOrStdout(), "Showing actionable tasks only. Use --all to include blocked / done / canceled tasks.")
+				}
 			}
 			return nil
 		},
@@ -122,5 +150,14 @@ Use --format=json for machine-readable output.`,
 	cmd.Flags().StringVar(&claimedBy, "claimed-by", "", "show only tasks claimed by this agent")
 	cmd.Flags().StringVar(&grepPattern, "grep", "", "case-insensitive substring filter on title")
 	cmd.Flags().BoolVar(&allFlag, "all", false, "include done, claimed, and blocked tasks")
+	cmd.Flags().StringVar(&statusFilter, "status", "", "filter to one status (available|claimed|done|canceled|open)")
+	cmd.Flags().BoolVar(&openFlag, "open", false, "shortcut for --status=open (anything not done or canceled)")
 	return cmd
+}
+
+// countTopNodes counts only the top-level returned nodes — children are
+// not double-counted, since the sparse-results hint is about how few roots
+// the user sees on screen.
+func countTopNodes(nodes []*job.TaskNode) int {
+	return len(nodes)
 }

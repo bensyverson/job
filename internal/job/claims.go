@@ -4,7 +4,47 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 )
+
+// openLeavesUnder returns up to `limit` short IDs of open (status not in
+// done/canceled, deleted_at NULL) leaves under taskID — leaves being tasks
+// that themselves have no open children. Used by RunClaim's parent-rejection
+// error to inline a few claimable candidates.
+func openLeavesUnder(tx dbtx, taskID int64, limit int) ([]string, error) {
+	rows, err := tx.Query(`
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM tasks WHERE parent_id = ? AND deleted_at IS NULL
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+			WHERE t.deleted_at IS NULL
+		)
+		SELECT t.short_id FROM tasks t
+		WHERE t.id IN (SELECT id FROM subtree)
+		  AND t.status NOT IN ('done', 'canceled')
+		  AND NOT EXISTS (
+			  SELECT 1 FROM tasks c
+			  WHERE c.parent_id = t.id
+			    AND c.status NOT IN ('done', 'canceled')
+			    AND c.deleted_at IS NULL
+		  )
+		ORDER BY t.sort_order
+		LIMIT ?
+	`, taskID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
 
 const DefaultClaimTTLSeconds int64 = 1800
 
@@ -251,6 +291,13 @@ func RunClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 		return err
 	}
 	if openChildren > 0 {
+		leaves, lerr := openLeavesUnder(tx, task.ID, 5)
+		if lerr == nil && len(leaves) > 0 {
+			return fmt.Errorf(
+				"task %s has %d open children; claim a leaf instead. Open leaves: %s. (Run 'next %s all' for the full frontier.)",
+				shortID, openChildren, strings.Join(leaves, ", "), shortID,
+			)
+		}
 		return fmt.Errorf(
 			"task %s has %d open children; claim a leaf instead, or run 'next %s all' to see them",
 			shortID, openChildren, shortID,

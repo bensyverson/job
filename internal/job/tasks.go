@@ -184,6 +184,10 @@ type ListFilter struct {
 	ClaimedByActor string
 	Label          string
 	GrepPattern    string
+	// Status filters to a single task.status value, or to "open" — a meta-
+	// filter that means "any status except done and canceled". When non-empty,
+	// it implicitly overrides the actionable-only default (ShowAll behavior).
+	Status string
 }
 
 func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {
@@ -215,10 +219,13 @@ func RunListFiltered(db *sql.DB, f ListFilter) ([]*TaskNode, error) {
 		return nil, err
 	}
 
-	effectiveShowAll := f.ShowAll || f.ClaimedByActor != ""
+	effectiveShowAll := f.ShowAll || f.ClaimedByActor != "" || f.Status != ""
 	filtered := filterTree(tree, effectiveShowAll, blockedIDs)
 	if f.ClaimedByActor != "" {
 		filtered = filterByClaimedActor(filtered, f.ClaimedByActor)
+	}
+	if f.Status != "" {
+		filtered = filterByStatus(filtered, f.Status)
 	}
 	if f.Label != "" {
 		labeledIDs, err := taskIDsWithLabel(db, f.Label)
@@ -231,6 +238,37 @@ func RunListFiltered(db *sql.DB, f ListFilter) ([]*TaskNode, error) {
 		filtered = filterByGrep(filtered, f.GrepPattern)
 	}
 	return filtered, nil
+}
+
+// ValidateStatusFilter accepts the short status vocabulary the CLI exposes
+// for filtering, returning a normalized form. "open" is a meta-status that
+// matches any status except done and canceled.
+func ValidateStatusFilter(raw string) (string, error) {
+	switch raw {
+	case "available", "claimed", "done", "canceled", "open":
+		return raw, nil
+	default:
+		return "", fmt.Errorf("invalid --status %q (want available|claimed|done|canceled|open)", raw)
+	}
+}
+
+// filterByStatus retains nodes whose status matches, OR whose subtree contains
+// a match. "open" matches everything except done and canceled.
+func filterByStatus(nodes []*TaskNode, status string) []*TaskNode {
+	matches := func(s string) bool {
+		if status == "open" {
+			return s != "done" && s != "canceled"
+		}
+		return s == status
+	}
+	var out []*TaskNode
+	for _, n := range nodes {
+		filteredChildren := filterByStatus(n.Children, status)
+		if matches(n.Task.Status) || len(filteredChildren) > 0 {
+			out = append(out, &TaskNode{Task: n.Task, Children: filteredChildren})
+		}
+	}
+	return out
 }
 
 // filterByGrep retains only nodes whose title contains pattern (case-insensitive).
@@ -920,6 +958,242 @@ func RunMove(db *sql.DB, shortID, direction, relativeToShortID, actor string) er
 	return tx.Commit()
 }
 
+// SplitResult carries the outcome of RunSplit.
+type SplitResult struct {
+	ParentShortID       string
+	ChildShortIDs       []string
+	AutoReleasedParent  string
+	AutoReleasedByActor string
+}
+
+// RunSplit takes a leaf task and creates N new children under it from the
+// supplied titles. Errors if the parent already has children. The leaf-frontier
+// rule fires the moment the first child is added, so a claimed parent
+// auto-releases — that release is reported in the result.
+func RunSplit(db *sql.DB, parentShortID string, titles []string, actor string) (*SplitResult, error) {
+	if parentShortID == "" {
+		return nil, fmt.Errorf("split requires a parent task ID")
+	}
+	if len(titles) == 0 {
+		return nil, fmt.Errorf("split requires at least one child title")
+	}
+
+	parent, err := GetTaskByShortID(db, parentShortID)
+	if err != nil {
+		return nil, err
+	}
+	if parent == nil {
+		return nil, fmt.Errorf("task %q not found", parentShortID)
+	}
+
+	existing, err := getChildren(db, parent.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(existing) > 0 {
+		return nil, fmt.Errorf("cannot split %s: it already has %d child(ren); split only operates on leaves", parentShortID, len(existing))
+	}
+
+	res := &SplitResult{ParentShortID: parentShortID}
+	for _, title := range titles {
+		add, err := RunAdd(db, parentShortID, title, "", "", nil, actor)
+		if err != nil {
+			return res, fmt.Errorf("split: adding %q: %w", title, err)
+		}
+		res.ChildShortIDs = append(res.ChildShortIDs, add.ShortID)
+		if add.AutoReleasedParent != "" && res.AutoReleasedParent == "" {
+			res.AutoReleasedParent = add.AutoReleasedParent
+			res.AutoReleasedByActor = add.AutoReleasedByActor
+		}
+	}
+	return res, nil
+}
+
+// RunReparent moves a task to a new parent. If newParentShortID is empty,
+// the task is moved to the root. If direction and relativeToShortID are
+// supplied, the task is positioned before or after that sibling within the
+// new parent; otherwise it is appended at the end.
+func RunReparent(db *sql.DB, shortID, newParentShortID, direction, relativeToShortID, actor string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := expireStaleClaimsInTx(tx, actor); err != nil {
+		return err
+	}
+	if err := checkClaimOwnership(tx, shortID, actor); err != nil {
+		return err
+	}
+
+	task, err := GetTaskByShortID(tx, shortID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return fmt.Errorf("task %q not found", shortID)
+	}
+
+	var newParentID *int64
+	var newParentShortOut string
+	if newParentShortID != "" {
+		newParent, err := GetTaskByShortID(tx, newParentShortID)
+		if err != nil {
+			return err
+		}
+		if newParent == nil {
+			return fmt.Errorf("task %q not found", newParentShortID)
+		}
+		if newParent.ID == task.ID {
+			return fmt.Errorf("cannot reparent %s under itself", shortID)
+		}
+		descendants, err := findAllDescendants(tx, task.ID)
+		if err != nil {
+			return err
+		}
+		for _, d := range descendants {
+			if d.ID == newParent.ID {
+				return fmt.Errorf("cannot reparent %s under its own descendant %s", shortID, newParentShortID)
+			}
+		}
+		newParentID = &newParent.ID
+		newParentShortOut = newParent.ShortID
+	}
+
+	priorParentShort := ""
+	if task.ParentID != nil {
+		priorParent, err := getTaskByID(tx, *task.ParentID)
+		if err != nil {
+			return err
+		}
+		if priorParent != nil {
+			priorParentShort = priorParent.ShortID
+		}
+	}
+
+	var newSortOrder int
+	if direction == "" {
+		var maxSort sql.NullInt64
+		if newParentID == nil {
+			err = tx.QueryRow("SELECT MAX(sort_order) FROM tasks WHERE parent_id IS NULL AND deleted_at IS NULL AND id != ?", task.ID).Scan(&maxSort)
+		} else {
+			err = tx.QueryRow("SELECT MAX(sort_order) FROM tasks WHERE parent_id = ? AND deleted_at IS NULL AND id != ?", *newParentID, task.ID).Scan(&maxSort)
+		}
+		if err != nil {
+			return err
+		}
+		if maxSort.Valid {
+			newSortOrder = int(maxSort.Int64) + 1
+		}
+	} else {
+		if direction != "before" && direction != "after" {
+			return fmt.Errorf("direction must be 'before' or 'after', got %q", direction)
+		}
+		relative, err := GetTaskByShortID(tx, relativeToShortID)
+		if err != nil {
+			return err
+		}
+		if relative == nil {
+			return fmt.Errorf("task %q not found", relativeToShortID)
+		}
+		if (relative.ParentID == nil) != (newParentID == nil) {
+			return fmt.Errorf("%s is not a child of the new parent", relativeToShortID)
+		}
+		if relative.ParentID != nil && newParentID != nil && *relative.ParentID != *newParentID {
+			return fmt.Errorf("%s is not a child of the new parent", relativeToShortID)
+		}
+		if direction == "before" {
+			newSortOrder = relative.SortOrder
+		} else {
+			newSortOrder = relative.SortOrder + 1
+		}
+		var parentFilter string
+		var args []any
+		if newParentID == nil {
+			parentFilter = "parent_id IS NULL"
+		} else {
+			parentFilter = "parent_id = ?"
+			args = append(args, *newParentID)
+		}
+		var threshold int
+		if direction == "before" {
+			threshold = relative.SortOrder
+			args = append(args, threshold, task.ID)
+			if _, err := tx.Exec(
+				"UPDATE tasks SET sort_order = sort_order + 1 WHERE "+parentFilter+" AND sort_order >= ? AND id != ? AND deleted_at IS NULL",
+				args...,
+			); err != nil {
+				return err
+			}
+		} else {
+			threshold = relative.SortOrder
+			args = append(args, threshold, task.ID)
+			if _, err := tx.Exec(
+				"UPDATE tasks SET sort_order = sort_order + 1 WHERE "+parentFilter+" AND sort_order > ? AND id != ? AND deleted_at IS NULL",
+				args...,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	now := CurrentNowFunc().Unix()
+	if _, err := tx.Exec(
+		"UPDATE tasks SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?",
+		newParentID, newSortOrder, now, task.ID,
+	); err != nil {
+		return err
+	}
+
+	detail := map[string]any{
+		"prior_parent_id": priorParentShort,
+		"new_parent_id":   newParentShortOut,
+		"old_sort_order":  task.SortOrder,
+		"new_sort_order":  newSortOrder,
+	}
+	if direction != "" {
+		detail["direction"] = direction
+		detail["relative_to"] = relativeToShortID
+	}
+	if err := recordEvent(tx, task.ID, "reparented", actor, detail); err != nil {
+		return err
+	}
+
+	if newParentID != nil {
+		newParent, err := getTaskByID(tx, *newParentID)
+		if err != nil {
+			return err
+		}
+		if newParent != nil && newParent.Status == "claimed" {
+			prior := ""
+			if newParent.ClaimedBy != nil {
+				prior = *newParent.ClaimedBy
+			}
+			var priorExpires int64
+			if newParent.ClaimExpiresAt != nil {
+				priorExpires = *newParent.ClaimExpiresAt
+			}
+			if _, err := tx.Exec(
+				"UPDATE tasks SET status = 'available', claimed_by = NULL, claim_expires_at = NULL, updated_at = ? WHERE id = ?",
+				now, newParent.ID,
+			); err != nil {
+				return err
+			}
+			if err := recordEvent(tx, newParent.ID, "released", actor, map[string]any{
+				"auto_released":      true,
+				"triggered_by_child": task.ShortID,
+				"was_claimed_by":     prior,
+				"was_expires_at":     priorExpires,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
 type DoneContext struct {
 	ClosedID           string
 	ClosedTitle        string
@@ -1141,7 +1415,7 @@ func findNextClaimableLeafHierarchical(db *sql.DB, closed *Task) (*Task, *Task, 
 	}
 }
 
-func getTaskByID(db *sql.DB, id int64) (*Task, error) {
+func getTaskByID(db dbtx, id int64) (*Task, error) {
 	row := db.QueryRow(`
 		SELECT id, short_id, parent_id, title, description, status, sort_order,
 		       claimed_by, claim_expires_at, completion_note, created_at, updated_at, deleted_at
@@ -1324,8 +1598,10 @@ type TaskInfo struct {
 	ChildBlockers map[string][]string // child short-ID → blocker short-IDs
 	ChildLabels   map[int64][]string  // child task ID → labels (for `RenderMarkdownList` reuse)
 	Blockers      []*Task
+	Blocked       []*Task // tasks this task is blocking (outbound)
 	Labels        []string
 	Notes         []NoteEntry
+	Criteria      []Criterion
 }
 
 // NoteEntry is a single rendered note pulled from the event stream.
@@ -1383,12 +1659,22 @@ func RunInfo(db *sql.DB, shortID string) (*TaskInfo, error) {
 		return nil, err
 	}
 
+	blocked, err := GetBlocked(db, shortID)
+	if err != nil {
+		return nil, err
+	}
+
 	labels, err := GetLabels(db, task.ID)
 	if err != nil {
 		return nil, err
 	}
 
 	notes, err := getNotesForTask(db, task.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	criteria, err := GetCriteria(db, task.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1423,8 +1709,10 @@ func RunInfo(db *sql.DB, shortID string) (*TaskInfo, error) {
 		ChildBlockers: childBlockers,
 		ChildLabels:   childLabels,
 		Blockers:      blockers,
+		Blocked:       blocked,
 		Labels:        labels,
 		Notes:         notes,
+		Criteria:      criteria,
 	}, nil
 }
 

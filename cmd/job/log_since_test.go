@@ -68,8 +68,8 @@ func TestLogSince_InvalidRFC3339_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "invalid RFC3339 timestamp") {
-		t.Errorf("err: %v", err)
+	if !strings.Contains(err.Error(), "RFC3339") || !strings.Contains(err.Error(), "duration") {
+		t.Errorf("err should mention both RFC3339 and duration accepted forms: %v", err)
 	}
 }
 

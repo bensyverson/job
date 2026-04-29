@@ -292,7 +292,7 @@ func TestCancel_Md_Single_Shape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	want := "Canceled: " + id + " \"Write red tests\"\n  reason: 16 chars · \"no longer needed\"\n"
+	want := "Canceled: " + id + " \"Write red tests\" as=alice\n  reason: 16 chars · \"no longer needed\"\n"
 	if stdout != want {
 		t.Errorf("got %q, want %q", stdout, want)
 	}

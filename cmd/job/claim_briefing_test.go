@@ -30,7 +30,7 @@ func TestClaim_PrintsBriefingAfterAck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	wantFirst := "Claimed: " + id + " \"Write the thing\" (expires in 30m)\n"
+	wantFirst := "Claimed: " + id + " \"Write the thing\" (expires in 30m) as=alice\n"
 	if firstLine(stdout) != wantFirst {
 		t.Errorf("first-line ack mismatch:\n got %q\nwant %q", firstLine(stdout), wantFirst)
 	}
@@ -40,28 +40,27 @@ func TestClaim_PrintsBriefingAfterAck(t *testing.T) {
 	if !strings.Contains(stdout, "Title:        Write the thing") {
 		t.Errorf("briefing missing `Title:` line:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "Description:  A non-empty description.") {
-		t.Errorf("briefing missing `Description:` line:\n%s", stdout)
+	if !strings.Contains(stdout, "Description:\n  A non-empty description.") {
+		t.Errorf("briefing missing `Description:` block:\n%s", stdout)
 	}
 }
 
 func TestClaim_JsonNotAffected(t *testing.T) {
-	// `claim` has no --format flag, so JSON output isn't a concern for it
-	// today; this test guards `claim-next --format=json` (which has the
-	// flag) from accidentally inheriting the briefing.
+	// `claim --next --format=json` should emit JSON only — neither the
+	// markdown ack nor the briefing.
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	job.MustAdd(t, db, "", "Write the thing")
 	db.Close()
 
-	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "claim-next", "--format=json")
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "claim", "--next", "--format=json")
 	if err != nil {
-		t.Fatalf("claim-next --format=json: %v", err)
+		t.Fatalf("claim --next --format=json: %v", err)
 	}
 	if strings.Contains(stdout, "Claimed:") {
 		t.Errorf("JSON output should not contain the markdown ack:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "ID:") {
+	if strings.Contains(stdout, "ID:           ") {
 		t.Errorf("JSON output should not contain the markdown briefing:\n%s", stdout)
 	}
 }
@@ -72,15 +71,15 @@ func TestClaimNext_PrintsBriefingAfterAck(t *testing.T) {
 	id := job.MustAddDesc(t, db, "", "Take this", "What you need to know.")
 	db.Close()
 
-	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "claim-next")
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "claim", "--next")
 	if err != nil {
-		t.Fatalf("claim-next: %v", err)
+		t.Fatalf("claim --next: %v", err)
 	}
-	if !strings.HasPrefix(stdout, "Claimed: "+id+" \"Take this\" (expires in 30m)\n") {
+	if !strings.HasPrefix(stdout, "Claimed: "+id+" \"Take this\" (expires in 30m) as=alice\n") {
 		t.Errorf("first line of stdout should be the scriptable Claimed: ack, got:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "ID:           "+id) {
-		t.Errorf("briefing missing for claim-next:\n%s", stdout)
+		t.Errorf("briefing missing for claim --next:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "Title:        Take this") {
 		t.Errorf("briefing missing `Title:` line:\n%s", stdout)

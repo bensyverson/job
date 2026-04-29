@@ -10,10 +10,11 @@ import (
 func newLogCmd() *cobra.Command {
 	var format string
 	var since string
+	var actor string
 	cmd := &cobra.Command{
 		Use:   "log [id|all]",
 		Short: "Show event history for a task and its descendants (or all trees)",
-		Long:  "Show event history for a task and its descendants. With no positional arg (or the literal 'all'), streams events from every top-level task in the database. Filters (--since) compose with the chosen scope.",
+		Long:  "Show event history for a task and its descendants. With no positional arg (or the literal 'all'), streams events from every top-level task in the database. Filters (--since, --actor) compose with the chosen scope.\n\n--since accepts either an RFC3339 timestamp (`2026-04-28T10:00:00Z`) or a relative duration (`5m`, `2h`, `1d`). Use --actor to scope to events emitted by a specific identity (e.g. \"what did alice just close?\").",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()
@@ -24,12 +25,15 @@ func newLogCmd() *cobra.Command {
 
 			var sincePtr *int64
 			if since != "" {
-				ts, perr := time.Parse(time.RFC3339, since)
-				if perr != nil {
-					return fmt.Errorf("--since: invalid RFC3339 timestamp: %s", since)
+				if ts, perr := time.Parse(time.RFC3339, since); perr == nil {
+					u := ts.Unix()
+					sincePtr = &u
+				} else if seconds, derr := job.ParseDuration(since); derr == nil {
+					u := time.Now().Unix() - seconds
+					sincePtr = &u
+				} else {
+					return fmt.Errorf("--since: expected RFC3339 timestamp or duration (e.g. 5m, 2h), got %q", since)
 				}
-				u := ts.Unix()
-				sincePtr = &u
 			}
 
 			shortID := ""
@@ -37,7 +41,7 @@ func newLogCmd() *cobra.Command {
 				shortID = args[0]
 			}
 
-			events, err := job.RunLog(db, shortID, sincePtr)
+			events, err := job.RunLogFiltered(db, shortID, sincePtr, actor)
 			if err != nil {
 				return err
 			}
@@ -56,6 +60,7 @@ func newLogCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
-	cmd.Flags().StringVarP(&since, "since", "s", "", "only events at or after this RFC3339 timestamp")
+	cmd.Flags().StringVarP(&since, "since", "s", "", "only events at or after this RFC3339 timestamp or relative duration (e.g. 5m, 2h)")
+	cmd.Flags().StringVar(&actor, "actor", "", "only events emitted by this actor (named differently from the global --as flag, which is the writer identity)")
 	return cmd
 }

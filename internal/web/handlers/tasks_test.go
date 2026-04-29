@@ -208,9 +208,9 @@ func TestTask_CriteriaSection_OmittedWhenZero(t *testing.T) {
 
 // TestTask_HistoryClustersCriterionStateUnderClose drives the rendering
 // path end-to-end: when a close swept up trailing criterion_state events,
-// the History section emits the parent done as a normal row and the swept
-// criteria as a sub-list (`c-history-cluster`) — not as N+1 interleaved
-// rows above the close.
+// the History section emits the parent done as a single row that names
+// the criteria roll-up in a parenthetical — not a sub-list, and not
+// N+1 interleaved rows above the close.
 func TestTask_HistoryClustersCriterionStateUnderClose(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "criteria-heavy task", nil, nil)
@@ -237,22 +237,142 @@ func TestTask_HistoryClustersCriterionStateUnderClose(t *testing.T) {
 	deps := newLogDeps(t, db)
 	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
 
-	// The cluster ul exists.
-	mustContain(t, body, `c-history-cluster`)
-	// Cluster rows render the criterion verb without trailing " by".
-	mustContain(t, body, `marked &#34;alpha&#34; passed</li>`)
-	mustContain(t, body, `marked &#34;beta&#34; passed</li>`)
-
-	// The History section (between >History< and the next h2/section)
-	// should not surface the snake_case event type for criterion_state.
+	// The cluster sub-list is gone — rolled into the done row.
+	if strings.Contains(body, `c-history-cluster`) {
+		t.Errorf("History should no longer render a c-history-cluster sub-list:\n%s", body)
+	}
+	// Per-criterion rows must not surface in History either.
 	hi := strings.Index(body, ">History<")
 	if hi < 0 {
 		t.Fatalf("History section not found")
 	}
 	historyRegion := body[hi:]
-	if strings.Contains(historyRegion, `marked &#34;alpha&#34; passed by`) {
-		t.Errorf("clustered cs row should not render with trailing ' by':\n%s", historyRegion)
+	if strings.Contains(historyRegion, `marked &#34;alpha&#34; passed`) {
+		t.Errorf("clustered criterion_state row should not appear in History:\n%s", historyRegion)
 	}
+	if strings.Contains(historyRegion, `marked &#34;beta&#34; passed`) {
+		t.Errorf("clustered criterion_state row should not appear in History:\n%s", historyRegion)
+	}
+	// The done row carries the parenthetical roll-up.
+	mustContain(t, body, `(2 criteria marked passed)`)
+}
+
+// TestTask_HistoryClusterSummary_MixedStates covers the case where a
+// single close touches criteria with different terminal states. The
+// roll-up should list each non-zero state by count.
+func TestTask_HistoryClusterSummary_MixedStates(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "mixed close", nil, nil)
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "a"}, {Label: "b"}, {Label: "c"}, {Label: "d"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "a", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("set a: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "b", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("set b: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "c", job.CriterionFailed, "alice"); err != nil {
+		t.Fatalf("set c: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "d", job.CriterionSkipped, "alice"); err != nil {
+		t.Fatalf("set d: %v", err)
+	}
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", true, ""); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
+
+	mustContain(t, body, `(2 passed, 1 failed, 1 skipped)`)
+}
+
+// TestTask_HistoryClusterSummary_SingleCriterion_Singular checks the
+// pluralization rule: 1 criterion, not "1 criteria".
+func TestTask_HistoryClusterSummary_SingleCriterion_Singular(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "single close", nil, nil)
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "lonely"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "lonely", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, "passed"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
+
+	mustContain(t, body, `(1 criterion marked passed)`)
+}
+
+// TestTask_CriteriaSection_RendersSVGIcons asserts that the Criteria
+// section uses inline SVG icons (one per state) rather than ASCII
+// glyphs like [x] or [ ].
+func TestTask_CriteriaSection_RendersSVGIcons(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "icon coverage", nil, nil)
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "p"}, {Label: "s"}, {Label: "f"}, {Label: "x"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "p", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("set p: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "s", job.CriterionSkipped, "alice"); err != nil {
+		t.Fatalf("set s: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "f", job.CriterionFailed, "alice"); err != nil {
+		t.Fatalf("set f: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
+
+	// Criteria section must render an SVG icon for every state, not ASCII glyphs.
+	mustContainAll(t, body,
+		`c-criterion__icon c-criterion__icon--passed`,
+		`c-criterion__icon c-criterion__icon--skipped`,
+		`c-criterion__icon c-criterion__icon--failed`,
+		`c-criterion__icon c-criterion__icon--pending`,
+	)
+	// ASCII glyphs should be gone from the criterion rendering.
+	for _, ascii := range []string{"[x]", "[-]", "[!]", "[ ]"} {
+		if strings.Contains(body, ascii) {
+			t.Errorf("criterion glyph %q should be replaced by SVG, found in body", ascii)
+		}
+	}
+}
+
+// TestTask_NarrativeFieldsDoNotUsePre asserts that Description and
+// Completion note render in a non-<pre> block so newlines are preserved
+// (via white-space:pre-wrap CSS) but the body font is used and content
+// soft-wraps.
+func TestTask_NarrativeFieldsDoNotUsePre(t *testing.T) {
+	db := setupLogTestDB(t)
+	desc := "first paragraph\n\n- bullet one\n- bullet two"
+	id := mustAddWithDesc(t, db, "alice", "with desc", desc, nil, nil)
+	if _, _, err := job.RunDone(db, []string{id}, false, "wrap up\nsecond line", nil, "alice", false, ""); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
+
+	if strings.Contains(body, `<pre class="c-note">`) {
+		t.Errorf("Description / Completion note must not use <pre>; got body:\n%s", body)
+	}
+	// The description paragraph break and bullet markers must still be in the body.
+	mustContain(t, body, "first paragraph")
+	mustContain(t, body, "- bullet one")
 }
 
 func TestTask_HistoryRendersCriteriaAddedAndCriterionStateAsHumanVerbs(t *testing.T) {

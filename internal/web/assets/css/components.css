@@ -1756,20 +1756,65 @@ peek-sheet[data-state="open"] .c-peek-sheet {
   color: var(--color-on-surface-muted);
 }
 
-/* ---------- Notes (render as code blocks per DESIGN.md) ---------- */
+/* ---------- Notes (Description / Completion note narrative blocks) ---------- */
 
+/* Renders agent / human narrative — paragraphs separated by newlines,
+   ad-hoc markdown-style lists indented by leading "- ". We respect the
+   newlines via white-space: pre-wrap but use the body font (not mono)
+   and cap the measure so long lines stay readable. */
 .c-note {
   background: var(--color-surface);
   border: 1px solid var(--color-outline);
   border-radius: var(--radius-md);
   padding: var(--space-md);
-  font-family: var(--font-mono);
-  font-size: var(--font-data-md-size);
-  line-height: var(--font-data-md-line-height);
+  font-size: var(--font-body-md-size);
+  line-height: var(--font-body-md-line-height);
   color: var(--color-on-surface);
   white-space: pre-wrap;
-  overflow-x: auto;
+  overflow-wrap: anywhere;
+  max-width: 38em;
   margin: 0;
+}
+
+/* Progress note bodies share the narrative-prose treatment — preserve
+   newlines, cap the measure for readable line lengths. */
+.c-progress-note__body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 38em;
+  margin: 0;
+}
+
+/* ---------- Criterion icons ---------- */
+
+/* Inline SVGs replace the older [x]/[ ]/[-]/[!] ASCII glyphs. The disc
+   shapes use fill="currentColor"; the per-state color rule below sets
+   the SVG color. Pending uses an outline-only circle. */
+.c-criterion__icon {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  display: inline-block;
+  vertical-align: -0.15em;
+}
+.c-criterion[data-criterion-state="passed"] .c-criterion__icon {
+  color: var(--color-status-active);
+}
+.c-criterion[data-criterion-state="failed"] .c-criterion__icon {
+  color: var(--color-signal-alert);
+}
+.c-criterion[data-criterion-state="skipped"] .c-criterion__icon {
+  color: var(--color-status-done);
+}
+.c-criterion[data-criterion-state="pending"] .c-criterion__icon {
+  color: var(--color-on-surface-dim);
+}
+
+/* Cap the criterion label measure too — long criterion text was
+   stretching the row to viewport width. */
+.c-criterion__label {
+  max-width: 38em;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- Graph node ---------- */

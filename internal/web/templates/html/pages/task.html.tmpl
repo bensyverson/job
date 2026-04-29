@@ -82,14 +82,7 @@
 {{if .Description}}
 <section class="c-section">
   <h2 class="c-section__label t-label-caps">Description</h2>
-  <pre class="c-note">{{.Description}}</pre>
-</section>
-{{end}}
-
-{{if .CompletionNote}}
-<section class="c-section">
-  <h2 class="c-section__label t-label-caps">Completion note</h2>
-  <pre class="c-note">{{.CompletionNote}}</pre>
+  <div class="c-note">{{.Description}}</div>
 </section>
 {{end}}
 
@@ -111,6 +104,13 @@
 </section>
 {{end}}
 
+{{if .CompletionNote}}
+<section class="c-section">
+  <h2 class="c-section__label t-label-caps">Completion note</h2>
+  <div class="c-note">{{.CompletionNote}}</div>
+</section>
+{{end}}
+
 <section class="c-section">
   <h2 class="c-section__label t-label-caps">History</h2>
   <div class="stack stack-gap-sm">
@@ -121,24 +121,13 @@
         <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
           <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
         </a>
-        <span class="t-body-sm">{{.Verb}} <strong>{{.Actor}}</strong></span>
+        <span class="t-body-sm">{{.Verb}} <strong>{{.Actor}}</strong>{{if .ClusterSummary}} <span class="c-history-summary t-dim">({{.ClusterSummary}})</span>{{end}}</span>
         {{else}}
         <span class="c-avatar c-avatar-sm" aria-hidden="true"></span>
-        <span class="t-body-sm t-muted">{{.Verb}}</span>
+        <span class="t-body-sm t-muted">{{.Verb}}{{if .ClusterSummary}} <span class="c-history-summary t-dim">({{.ClusterSummary}})</span>{{end}}</span>
         {{end}}
         <time class="t-dim t-data-id" style="margin-left: auto" datetime="{{.ISOTime}}">{{.RelTime}} ago</time>
       </div>
-      {{- /* When a done row swept up trailing criterion_state events
-           in the same close, render them as a sub-list so the
-           timeline reads as one act ("done by alice — also marked
-           a, b, c passed") instead of N+1 interleaved rows. */ -}}
-      {{if .Cluster}}
-      <ul class="c-history-cluster t-body-sm t-dim" data-cluster="criterion_state">
-        {{range .Cluster}}
-        <li class="c-history-cluster__row">{{.Verb}}</li>
-        {{end}}
-      </ul>
-      {{end}}
     </div>
     {{else}}
     <span class="t-muted t-body-sm">No events yet.</span>
@@ -147,28 +136,38 @@
 </section>
 {{end}}
 
-{{- /* Inline partial: one criterion row. Renders the four-state
-     glyph, the label, and (for non-pending) a quiet trailing state
-     badge so screen readers and color-blind users get the state
-     without relying on the glyph alone. Glyph vocabulary mirrors the
-     CLI's criterionGlyph: pending [ ], passed [x], skipped [-],
-     failed [!]. The data-criterion-state attribute carries the raw
-     state for CSS targeting and tests. */ -}}
+{{- /* Inline partial: one criterion row. Renders an inline SVG icon
+     for each of the four states (passed disc+check, pending outline
+     circle, skipped disc+dash, failed disc+×), the label, and a quiet
+     trailing state badge for screen-readers / color-blind users.
+     The data-criterion-state attribute carries the raw state for CSS
+     coloring (via currentColor on the icon) and tests. */ -}}
 {{define "criterion-row"}}
   {{- $s := .State -}}
   <li class="c-criterion" data-criterion-state="{{$s}}">
-    <span class="c-criterion__glyph" aria-hidden="true">
-      {{- if eq $s "passed" -}}[x]
-      {{- else if eq $s "skipped" -}}[-]
-      {{- else if eq $s "failed" -}}[!]
-      {{- else -}}[ ]
-      {{- end -}}
-    </span>
+    {{template "criterion-icon" $s}}
     <span class="c-criterion__label">{{.Label}}</span>
     {{- if .StateBadge -}}
     <span class="c-criterion__badge c-criterion__badge--{{$s}}">{{.StateBadge}}</span>
     {{- end -}}
   </li>
+{{end}}
+
+{{- /* Inline SVG glyph for one criterion state. Disc shapes carry
+     fill="currentColor" so the per-state CSS rule (matched by
+     data-criterion-state on the parent) controls the color. The
+     pending state is an outline-only circle; the others overlay a
+     mark in the surface color so it stays legible on the disc. */ -}}
+{{define "criterion-icon"}}
+  {{- if eq . "passed" -}}
+    <svg class="c-criterion__icon c-criterion__icon--passed" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.5l2 2 4-4" fill="none" stroke="#0b1113" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  {{- else if eq . "skipped" -}}
+    <svg class="c-criterion__icon c-criterion__icon--skipped" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.5 8h7" stroke="#0b1113" stroke-width="1.6" stroke-linecap="round"/></svg>
+  {{- else if eq . "failed" -}}
+    <svg class="c-criterion__icon c-criterion__icon--failed" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#0b1113" stroke-width="1.6" stroke-linecap="round"/></svg>
+  {{- else -}}
+    <svg class="c-criterion__icon c-criterion__icon--pending" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+  {{- end -}}
 {{end}}
 
 {{- /* Inline partial: one Progress notes row. Mirrors the History

@@ -78,21 +78,19 @@ type TaskLabel struct {
 // own Progress notes / Completion note sections above, so History
 // stays a terse audit trail.
 //
-// Cluster carries criterion_state events that the close swept up: when
-// a contiguous trailing run of criterion_state events on the same task
-// ends in a done event, those entries hang off the done row instead of
-// flooding the timeline as N+1 separate rows. The structural rule (no
-// time-window) is what the 2026-04-29 spike picked, since every
-// criteria-heavy close in the live data records its criteria in the
-// same second as the done.
+// ClusterSummary carries the parenthetical roll-up for criterion_state
+// events that the close swept up: a contiguous trailing run of
+// criterion_state events on the same task collapses onto the done row
+// as ` (8 criteria marked passed)` (or ` (5 passed, 2 failed)` when
+// mixed) instead of flooding the timeline as N+1 separate rows.
 type TaskHistoryEntry struct {
-	EventType string
-	Actor     string
-	Verb      string
-	RelTime   string
-	ISOTime   string
-	ActorURL  string
-	Cluster   []TaskHistoryEntry
+	EventType      string
+	Actor          string
+	Verb           string
+	RelTime        string
+	ISOTime        string
+	ActorURL       string
+	ClusterSummary string
 }
 
 // Task renders /tasks/<id>. See vision §3.5. The full-page view
@@ -359,18 +357,12 @@ func buildHistory(events []job.EventEntry) []TaskHistoryEntry {
 		if len(clusterIdx) == 0 {
 			continue
 		}
-		cluster := make([]TaskHistoryEntry, len(clusterIdx))
-		for k, cidx := range clusterIdx {
-			entry := rendered[cidx]
-			// Strip the trailing " by" only when the entry is
-			// promoted into a cluster: in the cluster the row
-			// reads as `marked "alpha" passed`, with the parent
-			// done row carrying the actor for the whole batch.
-			entry.Verb = strings.TrimSuffix(entry.Verb, " by")
-			cluster[k] = entry
+		states := make([]string, 0, len(clusterIdx))
+		for _, cidx := range clusterIdx {
+			states = append(states, criterionStateOf(events[cidx].Detail))
 			swept[cidx] = true
 		}
-		rendered[idx].Cluster = cluster
+		rendered[idx].ClusterSummary = clusterSummary(states)
 	}
 
 	out := make([]TaskHistoryEntry, 0, len(rendered)-len(swept))
@@ -465,6 +457,79 @@ func criterionStateVerb(detailJSON string) string {
 		return "marked a criterion"
 	}
 	return fmt.Sprintf("marked %q %s", label, state)
+}
+
+// criterionStateOf extracts the "state" field from a criterion_state
+// event's detail JSON. Returns the empty string if the payload is
+// missing, malformed, or has no state — callers must tolerate this
+// since the cluster summary keeps counting other states regardless.
+func criterionStateOf(detailJSON string) string {
+	if detailJSON == "" {
+		return ""
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+		return ""
+	}
+	if v, ok := detail["state"].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// clusterSummary renders the parenthetical roll-up shown after the
+// "done by <actor>" verb when criterion_state events were swept up
+// into the close. Two shapes:
+//
+//   - Uniform: every criterion went to the same state — read as
+//     "{N} criteri{a|on} marked {state}" (e.g. "8 criteria marked
+//     passed", "1 criterion marked passed").
+//   - Mixed: states differ — read as "{x} passed, {y} failed,
+//     {z} skipped" with zero-count states omitted, in the canonical
+//     order passed → failed → skipped → pending.
+func clusterSummary(states []string) string {
+	if len(states) == 0 {
+		return ""
+	}
+	counts := map[string]int{}
+	for _, s := range states {
+		counts[s]++
+	}
+	// Drop empties; if every state was empty, fall back to a
+	// count-only phrase rather than printing an awkward "N criteria
+	// marked ".
+	delete(counts, "")
+	if len(counts) == 0 {
+		noun := "criteria"
+		if len(states) == 1 {
+			noun = "criterion"
+		}
+		return fmt.Sprintf("%d %s", len(states), noun)
+	}
+	if len(counts) == 1 {
+		var only string
+		for k := range counts {
+			only = k
+		}
+		noun := "criteria"
+		if counts[only] == 1 {
+			noun = "criterion"
+		}
+		return fmt.Sprintf("%d %s marked %s", counts[only], noun, only)
+	}
+	order := []string{"passed", "failed", "skipped", "pending"}
+	parts := make([]string, 0, len(counts))
+	for _, s := range order {
+		if counts[s] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", counts[s], s))
+			delete(counts, s)
+		}
+	}
+	// Anything we didn't recognize (forward-compat) lands at the end.
+	for s, n := range counts {
+		parts = append(parts, fmt.Sprintf("%d %s", n, s))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // DisplayStatus maps the DB's raw status column into the four visual

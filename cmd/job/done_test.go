@@ -1023,3 +1023,270 @@ func TestDone_Md_NoteEcho_Multi_PerItem(t *testing.T) {
 		t.Errorf("want 2 note previews, got %d:\n%s", count, stdout)
 	}
 }
+
+// TestDone_StrictDefault_RefusesPending pins the CLI surface for the
+// strict-default close gate: a plain `job done <id>` against a task with
+// pending criteria exits non-zero with the greppable "cannot close: N
+// pending criteria" prefix and names the override flag.
+func TestDone_StrictDefault_RefusesPending(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "first criterion"}, {Label: "second criterion"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "done", id)
+	if err == nil {
+		t.Fatal("expected strict-default refusal at the CLI")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "cannot close: 2 pending criteria") {
+		t.Errorf("missing greppable prefix:\n%s", msg)
+	}
+	if !strings.Contains(msg, "first criterion") || !strings.Contains(msg, "second criterion") {
+		t.Errorf("error should list pending labels:\n%s", msg)
+	}
+	if !strings.Contains(msg, "--force-close-with-pending") {
+		t.Errorf("error should name the override flag:\n%s", msg)
+	}
+
+	// And the task remained open: the strict gate is a true refusal, not a
+	// warn-and-close.
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	if task.Status == "done" {
+		t.Errorf("task should not have closed under strict-default; status=%q", task.Status)
+	}
+}
+
+// TestDone_AllPassed_MarksAllPendingPassed pins the headline shorthand:
+// `job done <id> --all-passed` marks every pending criterion passed before
+// closing, and the close succeeds without strict-default refusal.
+func TestDone_AllPassed_MarksAllPendingPassed(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "alpha"}, {Label: "beta"}, {Label: "gamma"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--all-passed")
+	if err != nil {
+		t.Fatalf("done --all-passed: %v", err)
+	}
+	if !strings.Contains(stdout, "Marked 3 criteria passed before closing") {
+		t.Errorf("missing audit line:\n%s", stdout)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	if task.Status != "done" {
+		t.Errorf("status: got %q, want done", task.Status)
+	}
+	cs, err := job.GetCriteria(db, task.ID)
+	if err != nil {
+		t.Fatalf("GetCriteria: %v", err)
+	}
+	for _, c := range cs {
+		if c.State != job.CriterionPassed {
+			t.Errorf("criterion %q: got %q, want passed", c.Label, c.State)
+		}
+	}
+	detail, _ := job.GetLatestEventDetail(db, task.ID, "done")
+	if detail["criteria_bulk_state"] != "passed" {
+		t.Errorf("done event criteria_bulk_state: got %v, want \"passed\"", detail["criteria_bulk_state"])
+	}
+}
+
+// TestDone_AllSkipped_MarksAllPendingSkipped covers the --all=<state> form
+// with skipped, the second-most-common close shape (criteria that don't
+// apply rather than tasks accomplished).
+func TestDone_AllSkipped_MarksAllPendingSkipped(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "p"}, {Label: "q"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--all=skipped")
+	if err != nil {
+		t.Fatalf("done --all=skipped: %v", err)
+	}
+	if !strings.Contains(stdout, "Marked 2 criteria skipped before closing") {
+		t.Errorf("missing audit line:\n%s", stdout)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	cs, _ := job.GetCriteria(db, task.ID)
+	for _, c := range cs {
+		if c.State != job.CriterionSkipped {
+			t.Errorf("criterion %q: got %q, want skipped", c.Label, c.State)
+		}
+	}
+}
+
+// TestDone_AllPassed_SkipsAlreadyMarked enforces the no-spurious-events
+// criterion: if a criterion was already marked (e.g. failed earlier in the
+// session), the bulk shorthand must leave it alone, both in DB state and in
+// the event log.
+func TestDone_AllPassed_SkipsAlreadyMarked(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "p1"}, {Label: "p2"}, {Label: "p3"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "p2", job.CriterionFailed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--all-passed")
+	if err != nil {
+		t.Fatalf("done --all-passed: %v", err)
+	}
+	if !strings.Contains(stdout, "Marked 2 criteria passed before closing") {
+		t.Errorf("audit line should report 2 (the still-pending count), not 3:\n%s", stdout)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	cs, _ := job.GetCriteria(db, task.ID)
+	for _, c := range cs {
+		switch c.Label {
+		case "p2":
+			if c.State != job.CriterionFailed {
+				t.Errorf("p2 should remain failed; got %q", c.State)
+			}
+		default:
+			if c.State != job.CriterionPassed {
+				t.Errorf("%s: got %q, want passed", c.Label, c.State)
+			}
+		}
+	}
+}
+
+// TestDone_AllPassed_PerRowOverrideWins composes the bulk flag with an
+// explicit --criterion override. The bulk default applies broadly; the
+// explicit row wins on its own label.
+func TestDone_AllPassed_PerRowOverrideWins(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "a"}, {Label: "b"}, {Label: "c"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--all-passed", "--criterion", "b=skipped"); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	cs, _ := job.GetCriteria(db, task.ID)
+	for _, c := range cs {
+		switch c.Label {
+		case "b":
+			if c.State != job.CriterionSkipped {
+				t.Errorf("explicit override should win; b=%q, want skipped", c.State)
+			}
+		default:
+			if c.State != job.CriterionPassed {
+				t.Errorf("%s: got %q, want passed", c.Label, c.State)
+			}
+		}
+	}
+}
+
+// TestDone_AllPassed_NoAuditLineWhenNothingTouched guards against a
+// noisy/empty audit line when every criterion was already marked at claim
+// time and the bulk flag has nothing to do.
+func TestDone_AllPassed_NoAuditLineWhenNothingTouched(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{{Label: "only"}}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "only", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+	db.Close()
+
+	stdout, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--all-passed")
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if strings.Contains(stdout, "Marked 0 criteria") {
+		t.Errorf("audit line should be omitted when nothing was touched:\n%s", stdout)
+	}
+}
+
+// TestDone_AllInvalidState_Errors confirms the --all=<state> parser rejects
+// states other than the legal vocabulary so a typo doesn't silently leave
+// every criterion in some unintended state.
+func TestDone_AllInvalidState_Errors(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{{Label: "x"}}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	db.Close()
+
+	_, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--all=bogus")
+	if err == nil {
+		t.Fatal("expected error for invalid --all state")
+	}
+}
+
+// TestDone_ForceCloseWithPending_ClosesAndRecordsWaiver pins the CLI
+// override path: --force-close-with-pending closes the task and the
+// unmarked labels survive on the done event so a reviewer can see what
+// was deferred.
+func TestDone_ForceCloseWithPending_ClosesAndRecordsWaiver(t *testing.T) {
+	dbFile := setupCLI(t)
+	db := openTestDB(t, dbFile)
+	id := job.MustAdd(t, db, "", "Task")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "deferred-A"}, {Label: "deferred-B"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	db.Close()
+
+	if _, _, err := runCLI(t, dbFile, "--as", "alice", "done", id, "--force-close-with-pending"); err != nil {
+		t.Fatalf("force-close should succeed: %v", err)
+	}
+
+	db = openTestDB(t, dbFile)
+	task := job.MustGet(t, db, id)
+	if task.Status != "done" {
+		t.Errorf("status: got %q, want done", task.Status)
+	}
+	detail, err := job.GetLatestEventDetail(db, task.ID, "done")
+	if err != nil {
+		t.Fatalf("GetLatestEventDetail: %v", err)
+	}
+	waived, ok := detail["criteria_waived"].([]any)
+	if !ok || len(waived) != 2 {
+		t.Fatalf("criteria_waived: got %v, want a 2-element list", detail["criteria_waived"])
+	}
+}

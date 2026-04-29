@@ -11,7 +11,7 @@ func TestReopen_Plain_DoesNotTouchDescendants(t *testing.T) {
 	db := openTestDB(t, dbFile)
 	p := job.MustAdd(t, db, "", "P")
 	c := job.MustAdd(t, db, p, "C")
-	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	db.Close()
@@ -42,7 +42,7 @@ func TestReopen_Cascade_ReopensAllDone(t *testing.T) {
 	p := job.MustAdd(t, db, "", "P")
 	c := job.MustAdd(t, db, p, "C")
 	gc := job.MustAdd(t, db, c, "GC")
-	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	db.Close()
@@ -113,7 +113,7 @@ func TestReopen_EventShape_Cascade(t *testing.T) {
 	db := openTestDB(t, dbFile)
 	p := job.MustAdd(t, db, "", "P")
 	c := job.MustAdd(t, db, p, "C")
-	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	db.Close()
@@ -189,7 +189,7 @@ func TestReopen_Cascade_NoAutoClaim(t *testing.T) {
 	db := openTestDB(t, dbFile)
 	p := job.MustAdd(t, db, "", "Parent")
 	c := job.MustAdd(t, db, p, "Child")
-	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{p}, true, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	db.Close()

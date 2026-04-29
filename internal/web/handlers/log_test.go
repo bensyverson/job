@@ -283,7 +283,7 @@ func TestLog_RowsCarryNoInlineNoteBodies(t *testing.T) {
 	if err := job.RunNote(db, id, "LOG_NOTE_BODY_PROGRESS", nil, "alice"); err != nil {
 		t.Fatalf("RunNote: %v", err)
 	}
-	if _, _, err := job.RunDone(db, []string{id}, false, "LOG_NOTE_BODY_DONE", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "LOG_NOTE_BODY_DONE", nil, "alice", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 

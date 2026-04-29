@@ -16,6 +16,9 @@ func newDoneCmd() *cobra.Command {
 	var claimNext bool
 	var setCriterion []string
 	var quiet bool
+	var forceCloseWithPending bool
+	var allPassed bool
+	var allState string
 	cmd := &cobra.Command{
 		Use:   "done <id> [<id>...]",
 		Short: "Mark one or more tasks as done",
@@ -61,7 +64,10 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 			}
 
 			// Apply --criterion updates before close so the soft pending check
-			// reflects the operator's just-recorded state changes.
+			// reflects the operator's just-recorded state changes. Also remember
+			// (target, label) pairs the operator marked explicitly so the
+			// --all-passed / --all=<state> bulk pass below leaves them alone.
+			explicit := make(map[string]map[string]bool)
 			for _, kv := range setCriterion {
 				label, state, perr := parseCriterionAssignment(kv)
 				if perr != nil {
@@ -78,6 +84,63 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 				if _, err := job.RunSetCriterion(db, targetID, labelOnly, state, actor); err != nil {
 					return err
 				}
+				if explicit[targetID] == nil {
+					explicit[targetID] = make(map[string]bool)
+				}
+				explicit[targetID][labelOnly] = true
+			}
+
+			// Resolve --all-passed / --all=<state> into a single bulk state.
+			// --all-passed is the spelled-out shorthand for the dominant close
+			// shape; --all=<state> covers the rarer skipped/failed/passed
+			// override.
+			bulkCriteriaState := ""
+			if allPassed && allState != "" {
+				return fmt.Errorf("--all-passed and --all are mutually exclusive")
+			}
+			if allPassed {
+				bulkCriteriaState = string(job.CriterionPassed)
+			} else if allState != "" {
+				validated, verr := job.ValidateCriterionState(allState)
+				if verr != nil {
+					return fmt.Errorf("--all: %w", verr)
+				}
+				if validated == job.CriterionPending {
+					return fmt.Errorf("--all: cannot bulk-mark criteria as pending — use --criterion to undo individual rows")
+				}
+				bulkCriteriaState = string(validated)
+			}
+
+			// Apply the bulk state to every still-pending criterion that the
+			// operator did not name explicitly. Tracked per-target so the close
+			// ack can echo the per-target count back as an audit line.
+			bulkTouched := make(map[string]int)
+			if bulkCriteriaState != "" {
+				for _, id := range args {
+					task, terr := job.GetTaskByShortID(db, id)
+					if terr != nil {
+						return terr
+					}
+					if task == nil {
+						return fmt.Errorf("task %q not found", id)
+					}
+					criteria, gerr := job.GetCriteria(db, task.ID)
+					if gerr != nil {
+						return gerr
+					}
+					for _, c := range criteria {
+						if c.State != job.CriterionPending {
+							continue
+						}
+						if explicit[id][c.Label] {
+							continue
+						}
+						if _, err := job.RunSetCriterion(db, id, c.Label, job.CriterionState(bulkCriteriaState), actor); err != nil {
+							return err
+						}
+						bulkTouched[id]++
+					}
+				}
 			}
 
 			// Soft pending warning: count pending criteria across all closed
@@ -85,7 +148,7 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 			// notices but the close still proceeds.
 			pendingByID, _ := job.PendingCriteriaByShortID(db, args)
 
-			closed, alreadyDone, err := job.RunDone(db, args, cascade, note, resultRaw, actor)
+			closed, alreadyDone, err := job.RunDone(db, args, cascade, note, resultRaw, actor, forceCloseWithPending, bulkCriteriaState)
 			if err != nil {
 				return err
 			}
@@ -165,6 +228,21 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 					fmt.Fprintf(cmd.OutOrStdout(), "  Note: %s closed with %d pending criteria.\n", id, n)
 				}
 			}
+			// Audit line for the bulk shorthand: report the count actually
+			// touched per target, so a `--all-passed` against an 8-criterion
+			// task surfaces "Marked 8 criteria passed before closing." while
+			// a no-op (everything already marked) stays silent.
+			for _, id := range args {
+				n := bulkTouched[id]
+				if n == 0 {
+					continue
+				}
+				noun := "criteria"
+				if n == 1 {
+					noun = "criterion"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "  Marked %d %s %s before closing.\n", n, noun, bulkCriteriaState)
+			}
 			return nil
 		},
 	}
@@ -175,5 +253,8 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 	cmd.Flags().BoolVar(&claimNext, "claim-next", false, "after closing, atomically claim the next available leaf")
 	cmd.Flags().StringArrayVar(&setCriterion, "criterion", nil, "update an acceptance criterion before close, format \"label=passed\" (repeatable; for multi-id closes use \"id:label=state\")")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress the trailing show briefing on a follow-on --claim-next claim")
+	cmd.Flags().BoolVar(&forceCloseWithPending, "force-close-with-pending", false, "close the task even when criteria remain pending; the unmarked labels are recorded as a waiver on the done event")
+	cmd.Flags().BoolVar(&allPassed, "all-passed", false, "mark every still-pending criterion as passed before closing (shorthand for --all=passed)")
+	cmd.Flags().StringVar(&allState, "all", "", "mark every still-pending criterion with the named state before closing (passed|skipped|failed)")
 	return cmd
 }

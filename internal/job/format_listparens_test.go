@@ -12,7 +12,7 @@ import (
 func TestRenderMarkdownList_DoneTask_NoNoteBody(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Done task")
-	if _, _, err := RunDone(db, []string{id}, false, "this is a long completion note that should not appear in list parentheticals", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{id}, false, "this is a long completion note that should not appear in list parentheticals", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 
@@ -34,7 +34,7 @@ func TestRenderMarkdownList_DoneTask_NoNoteBody(t *testing.T) {
 func TestRenderMarkdownList_DoneTask_PreservesLabels(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Done task")
-	if _, _, err := RunDone(db, []string{id}, false, "long body here", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{id}, false, "long body here", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	taskRow := MustGet(t, db, id)
@@ -61,7 +61,7 @@ func TestRenderMarkdownList_DoneTask_PreservesLabels(t *testing.T) {
 func TestRenderMarkdownList_DoneTask_NoLabelsNoLabels_EmptyParens(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Done task")
-	if _, _, err := RunDone(db, []string{id}, false, "completion text", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{id}, false, "completion text", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 

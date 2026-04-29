@@ -82,6 +82,13 @@ func OpenDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// Backfill server-generated short_ids for any criterion rows that
+	// pre-date migration 0005. New rows are minted at insertCriteria time;
+	// this catches the snapshot existing on disk when the migration runs.
+	if err := backfillCriteriaShortIDs(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -108,6 +115,72 @@ func generateShortID(tx dbtx) (string, error) {
 			return sid, nil
 		}
 	}
+}
+
+// generateCriterionShortID mints a 3-char base62 short ID unique across
+// task_criteria. Criteria are far less numerous than tasks (one task can
+// carry a handful), and the report's example pinned 3-char shape; 62^3
+// (≈238k) leaves enough headroom that collisions are negligible, and the
+// rejection-sample loop stays predictable when they happen.
+func generateCriterionShortID(tx dbtx) (string, error) {
+	for {
+		id := make([]byte, 3)
+		for i := range id {
+			n, err := rand.Int(rand.Reader, big.NewInt(62))
+			if err != nil {
+				return "", fmt.Errorf("generate criterion ID: %w", err)
+			}
+			id[i] = base62Chars[n.Int64()]
+		}
+		sid := string(id)
+		var exists bool
+		if err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM task_criteria WHERE short_id = ?)", sid).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return sid, nil
+		}
+	}
+}
+
+// backfillCriteriaShortIDs walks any criterion rows that still carry a
+// NULL short_id (i.e. were inserted before migration 0005 added the
+// column) and mints one for each. New rows go through insertCriteria,
+// which mints inline; this only fills the snapshot present on disk at
+// migration time.
+func backfillCriteriaShortIDs(db *sql.DB) error {
+	rows, err := db.Query("SELECT id FROM task_criteria WHERE short_id IS NULL")
+	if err != nil {
+		return fmt.Errorf("backfill criteria short_ids: query: %w", err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		sid, err := generateCriterionShortID(tx)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec("UPDATE task_criteria SET short_id = ? WHERE id = ?", sid, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func recordEvent(tx dbtx, taskID int64, eventType, actor string, detail any) error {

@@ -664,6 +664,94 @@ test("applyEvent criterion_state: mutates the matching row by label", () => {
   assert.equal(before.tasks.get("ABC12").criteria[1].state, "pending");
 });
 
+test("applyEvent criteria_added: stamps short_id when provided", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [{ shortId: "ABC12", title: "T", status: "available", sortOrder: 0 }],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 25,
+    task_id: "ABC12",
+    actor: "alice",
+    event_type: "criteria_added",
+    detail: {
+      criteria: [
+        { short_id: "x7e", label: "alpha", state: "pending" },
+        { short_id: "InT", label: "beta", state: "pending" },
+      ],
+    },
+  });
+  assert.deepStrictEqual(after.tasks.get("ABC12").criteria, [
+    { short_id: "x7e", label: "alpha", state: "pending" },
+    { short_id: "InT", label: "beta", state: "pending" },
+  ]);
+});
+
+test("applyEvent criterion_state: matches by short_id when present", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        status: "available",
+        sortOrder: 0,
+        criteria: [
+          { short_id: "x7e", label: "alpha", state: "pending" },
+          { short_id: "InT", label: "beta", state: "pending" },
+        ],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  // Even if the label rotted (label is now "alpha-renamed" in the event),
+  // short_id-keyed matching still hits the right row.
+  const after = applyEvent(before, {
+    id: 26,
+    task_id: "ABC12",
+    actor: "alice",
+    event_type: "criterion_state",
+    detail: {
+      short_id: "x7e",
+      label: "alpha-renamed",
+      state: "passed",
+      prior: "pending",
+    },
+  });
+  assert.equal(after.tasks.get("ABC12").criteria[0].state, "passed");
+  assert.equal(after.tasks.get("ABC12").criteria[1].state, "pending");
+});
+
+test("applyEvent criterion_state: legacy label-keyed event still folds", () => {
+  // Pre-migration events have no short_id on the detail; they must keep
+  // working via label fallback or the existing event log breaks.
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        status: "available",
+        sortOrder: 0,
+        criteria: [{ label: "alpha", state: "pending" }],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 27,
+    task_id: "ABC12",
+    actor: "alice",
+    event_type: "criterion_state",
+    detail: { label: "alpha", state: "passed", prior: "pending" },
+  });
+  assert.equal(after.tasks.get("ABC12").criteria[0].state, "passed");
+});
+
 test("applyEvent criterion_state: unknown label is a no-op", () => {
   const before = initialFrame({
     headEventId: 0,

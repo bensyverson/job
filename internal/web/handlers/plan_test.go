@@ -113,7 +113,7 @@ func TestPlan_StatusPillsReflectTaskState(t *testing.T) {
 	mustClaim(t, db, activeID, "claude")
 	// done
 	doneID := mustAdd(t, db, "claude", "Done task", nil, nil)
-	if _, _, err := job.RunDone(db, []string{doneID}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{doneID}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -167,10 +167,10 @@ func TestPlan_AutoCollapsesFullyDoneSubtree(t *testing.T) {
 
 	doneRoot := mustAdd(t, db, "claude", "Done root", nil, nil)
 	doneChild := mustAdd(t, db, "claude", "Done child", &doneRoot, nil)
-	if _, _, err := job.RunDone(db, []string{doneChild}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{doneChild}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone child: %v", err)
 	}
-	if _, _, err := job.RunDone(db, []string{doneRoot}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{doneRoot}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone root: %v", err)
 	}
 
@@ -210,10 +210,10 @@ func TestPlan_RollupDoesNotOverrideDoneParent(t *testing.T) {
 	// a closed branch visually.
 	parent := mustAdd(t, db, "claude", "Done parent", nil, nil)
 	child := mustAdd(t, db, "claude", "Reopened child", &parent, nil)
-	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone child: %v", err)
 	}
-	if _, _, err := job.RunDone(db, []string{parent}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{parent}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone parent: %v", err)
 	}
 	if _, err := job.RunReopen(db, child, false, "claude"); err != nil {
@@ -253,7 +253,7 @@ func TestPlan_LeafWithDescriptionIsCollapsible(t *testing.T) {
 	// should start collapsed so the page stays skimmable.
 	active := mustAddWithDesc(t, db, "claude", "Active leaf", "An open description.", nil, nil)
 	done := mustAddWithDesc(t, db, "claude", "Done leaf", "A closed description.", nil, nil)
-	if _, _, err := job.RunDone(db, []string{done}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{done}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -493,10 +493,10 @@ func TestPlan_ShowFilter_ActiveIsDefaultAndHidesArchivedRoots(t *testing.T) {
 
 	archivedRoot := mustAdd(t, db, "claude", "Archived root", nil, nil)
 	child := mustAdd(t, db, "claude", "Done child", &archivedRoot, nil)
-	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone child: %v", err)
 	}
-	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone root: %v", err)
 	}
 
@@ -515,7 +515,7 @@ func TestPlan_ShowFilter_ArchivedShowsOnlyArchivedRoots(t *testing.T) {
 	_ = mustAdd(t, db, "claude", "Open child", &activeRoot, nil)
 
 	archivedRoot := mustAdd(t, db, "claude", "Archived root", nil, nil)
-	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -532,7 +532,7 @@ func TestPlan_ShowFilter_AllShowsBoth(t *testing.T) {
 	db := setupPlanTestDB(t)
 	activeRoot := mustAdd(t, db, "claude", "Active root", nil, nil)
 	archivedRoot := mustAdd(t, db, "claude", "Archived root", nil, nil)
-	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{archivedRoot}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -582,7 +582,7 @@ func TestPlan_ShowFilter_LabelPillPreservesShowParam(t *testing.T) {
 	db := setupPlanTestDB(t)
 	_ = mustAdd(t, db, "claude", "A", nil, []string{"web"})
 	doneID := mustAdd(t, db, "claude", "B", nil, []string{"other"})
-	if _, _, err := job.RunDone(db, []string{doneID}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{doneID}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -609,7 +609,7 @@ func TestPlan_FilterComposition(t *testing.T) {
 	rootA := mustAdd(t, db, "claude", "Root A active web", nil, []string{"web"})
 	_ = mustAdd(t, db, "claude", "Child A1 css", &rootA, []string{"css"})
 	rootB := mustAdd(t, db, "claude", "Root B archived web", nil, []string{"web"})
-	if _, _, err := job.RunDone(db, []string{rootB}, false, "", nil, "claude"); err != nil {
+	if _, _, err := job.RunDone(db, []string{rootB}, false, "", nil, "claude", false, ""); err != nil {
 		t.Fatalf("RunDone B: %v", err)
 	}
 	rootC := mustAdd(t, db, "claude", "Root C active other", nil, []string{"other"})

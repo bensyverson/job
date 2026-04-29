@@ -206,6 +206,55 @@ func TestTask_CriteriaSection_OmittedWhenZero(t *testing.T) {
 	}
 }
 
+// TestTask_HistoryClustersCriterionStateUnderClose drives the rendering
+// path end-to-end: when a close swept up trailing criterion_state events,
+// the History section emits the parent done as a normal row and the swept
+// criteria as a sub-list (`c-history-cluster`) — not as N+1 interleaved
+// rows above the close.
+func TestTask_HistoryClustersCriterionStateUnderClose(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "criteria-heavy task", nil, nil)
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "alpha"}, {Label: "beta"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	// Mirror the close flow that --all-passed would run from the CLI:
+	// mark each criterion before closing, then close. The bulk-state
+	// string on RunDone records the close shape on the done event;
+	// the pre-close marks emit the actual criterion_state events that
+	// the cluster rule will sweep up.
+	if _, err := job.RunSetCriterion(db, id, "alpha", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion alpha: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "beta", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion beta: %v", err)
+	}
+	if _, _, err := job.RunDone(db, []string{id}, false, "all set", nil, "alice", false, "passed"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
+
+	// The cluster ul exists.
+	mustContain(t, body, `c-history-cluster`)
+	// Cluster rows render the criterion verb without trailing " by".
+	mustContain(t, body, `marked &#34;alpha&#34; passed</li>`)
+	mustContain(t, body, `marked &#34;beta&#34; passed</li>`)
+
+	// The History section (between >History< and the next h2/section)
+	// should not surface the snake_case event type for criterion_state.
+	hi := strings.Index(body, ">History<")
+	if hi < 0 {
+		t.Fatalf("History section not found")
+	}
+	historyRegion := body[hi:]
+	if strings.Contains(historyRegion, `marked &#34;alpha&#34; passed by`) {
+		t.Errorf("clustered cs row should not render with trailing ' by':\n%s", historyRegion)
+	}
+}
+
 func TestTask_HistoryRendersCriteriaAddedAndCriterionStateAsHumanVerbs(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "subject", nil, nil)
@@ -312,7 +361,7 @@ func TestTask_HistoryRowsCarryNoInlineNoteText(t *testing.T) {
 	if err := job.RunNote(db, id, "this is a progress note", nil, "alice"); err != nil {
 		t.Fatalf("RunNote: %v", err)
 	}
-	if _, _, err := job.RunDone(db, []string{id}, false, "the closing note", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "the closing note", nil, "alice", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 

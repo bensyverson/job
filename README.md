@@ -157,15 +157,48 @@ List output is GitHub-Flavored Markdown with checkbox items, so pasting `job ls 
 
 | Command | Description |
 |---------|-------------|
-| `job done <id> [<id>...]` | Mark one or more tasks done, atomically. Idempotent: already-done IDs are reported, not re-recorded. |
-| | `--cascade` Also close all open descendants. |
+| `job done <id> [<id>...]` | Mark one or more tasks done, atomically. Idempotent: already-done IDs are reported, not re-recorded. If the task carries unmarked acceptance criteria, the close refuses with a `cannot close: N pending criteria` error and lists the unmarked rows — see the Acceptance criteria section below for marking and override flags. |
+| | `--cascade` Also close all open descendants. Bypasses the strict-criteria gate (children own the criteria). |
 | | `-m "<note>"` Record a completion note. Also accepts `-m @path` (read from file) or `-m -` (read from stdin) for multi-line payloads. The ack echoes the stored body beneath the `Done:` line: `  note: <N> chars · "<preview>"`. |
 | | `--result '<json>'` Record structured JSON on the `done` event. |
 | | `--claim-next` After closing, atomically claim the next available leaf. Collapses the close-then-advance flow into one call. On race (leaf grabbed by another agent between close and claim), done still succeeds and a status line names the taken leaf — claim is opportunistic, close is irreversible. |
+| | `--criterion "<ref>=<state>"` Mark one criterion before close. `<ref>` may be the criterion's short_id (3-char base62) or its verbatim label; `<state>` is one of `passed`, `skipped`, `failed`. Repeatable. For multi-id closes, prefix the ref with `<task-id>:`. |
+| | `--all-passed` Mark every still-pending criterion as passed before closing. Already-marked rows are left alone; the close ack reports the count touched. Composes with explicit `--criterion` overrides (the explicit row wins). |
+| | `--all=<state>` Like `--all-passed` but for `skipped` or `failed`. |
+| | `--force-close-with-pending` Close even when criteria remain pending. The unmarked labels are recorded as a waiver on the done event so a reviewer can see what was deferred. |
 | | `--format=json` Machine-readable output. |
 | `job reopen <id>` | Reopen a completed task and auto-claim it (so you can continue work immediately). `--no-claim` skips the auto-claim. `--cascade` also reopens all done descendants (auto-claim is suppressed with `--cascade` since the parent would have open children). |
 
 After a successful `done`, the ack ends with a `Next:` hint naming the suggested next claimable leaf. The walk starts at the closed task's parent and, at each ancestor level, prefers forward siblings (later sort_order) over earlier ones before stepping up; it only crosses into a different root tree once the closed task's own root is exhausted. Agents following the hint stay inside the current plan as long as there's work there.
+
+#### Acceptance criteria
+
+A task can carry a list of acceptance criteria — short, testable statements
+that the close should verify. Each criterion has a state (`pending`,
+`passed`, `skipped`, `failed`) and a server-minted 3-char short id (e.g.
+`x7e`) usable in the `--criterion <ref>=<state>` form so a label like
+`Renders only when the task has a completion note (existing condition)`
+survives shell quoting cleanly. Criteria are authored via the YAML import
+grammar (`criteria: [...]` on a task) or `job add --criterion <label>`;
+they are listed by `job show`, with the short id at the head of each row,
+and tracked through their own event types (`criteria_added`,
+`criterion_state`).
+
+`job done` is strict by default: if a target carries unmarked pending
+criteria, the close refuses with a stable, greppable
+`cannot close: N pending criteria` error that lists the unmarked labels and
+names the override. Three close shapes recover:
+
+- Mark each row before the close (`--criterion x7e=passed`, repeatable).
+- Use the bulk shorthand (`--all-passed`, or `--all=skipped`/`failed`) to
+  mark every remaining pending row in one flag. The close ack reports
+  `Marked N criteria <state> before closing.`
+- Pass `--force-close-with-pending` to deliberately close with the
+  unmarked labels recorded as a waiver on the done event.
+
+`--cascade` closes are unaffected — the criteria belong to the children.
+`job cancel` is unaffected — canceled work's criteria are moot. Tasks
+without criteria see no new friction.
 
 ### Editing tasks
 

@@ -48,7 +48,7 @@ func searchMustClaim(t *testing.T, db *sql.DB, shortID, actor string) {
 
 func searchMustDone(t *testing.T, db *sql.DB, shortID, actor string) {
 	t.Helper()
-	if _, _, err := RunDone(db, []string{shortID}, false, "", nil, actor); err != nil {
+	if _, _, err := RunDone(db, []string{shortID}, false, "", nil, actor, false, ""); err != nil {
 		t.Fatalf("RunDone(%q): %v", shortID, err)
 	}
 }

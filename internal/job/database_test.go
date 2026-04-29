@@ -409,7 +409,7 @@ func TestRunDone_LeafTask(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Task")
 
-	closed, _, err := RunDone(db, []string{id}, false, "", nil, TestActor)
+	closed, _, err := RunDone(db, []string{id}, false, "", nil, TestActor, false, "")
 	if err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestRunDone_WithNote(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Task")
 
-	if _, _, err := RunDone(db, []string{id}, false, "abc1234", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{id}, false, "abc1234", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -442,7 +442,7 @@ func TestRunDone_IncompleteChildren(t *testing.T) {
 	pid := MustAdd(t, db, "", "Parent")
 	MustAdd(t, db, pid, "Incomplete child")
 
-	_, _, err := RunDone(db, []string{pid}, false, "", nil, TestActor)
+	_, _, err := RunDone(db, []string{pid}, false, "", nil, TestActor, false, "")
 	if err == nil {
 		t.Fatal("expected error for incomplete children")
 	}
@@ -459,7 +459,7 @@ func TestRunDone_CascadeClosesChildren(t *testing.T) {
 	pid := MustAdd(t, db, "", "Parent")
 	cid := MustAdd(t, db, pid, "Child")
 
-	closed, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor)
+	closed, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor, false, "")
 	if err != nil {
 		t.Fatalf("RunDone --cascade: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestRunDone_CascadeNested(t *testing.T) {
 	cid := MustAdd(t, db, pid, "Child")
 	gcid := MustAdd(t, db, cid, "Grandchild")
 
-	closed, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor)
+	closed, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor, false, "")
 	if err != nil {
 		t.Fatalf("RunDone --cascade: %v", err)
 	}
@@ -500,7 +500,7 @@ func TestRunDone_AlreadyDone(t *testing.T) {
 	id := MustAdd(t, db, "", "Task")
 	MustDone(t, db, id)
 
-	closed, alreadyDone, err := RunDone(db, []string{id}, false, "", nil, TestActor)
+	closed, alreadyDone, err := RunDone(db, []string{id}, false, "", nil, TestActor, false, "")
 	if err != nil {
 		t.Fatalf("RunDone on already-done should be idempotent: %v", err)
 	}
@@ -520,7 +520,7 @@ func TestRunDone_BlockedTaskSucceeds(t *testing.T) {
 		t.Fatalf("RunBlock: %v", err)
 	}
 
-	closed, _, err := RunDone(db, []string{blocked}, false, "", nil, TestActor)
+	closed, _, err := RunDone(db, []string{blocked}, false, "", nil, TestActor, false, "")
 	if err != nil {
 		t.Fatalf("done on blocked task should succeed: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestRunDone_BlockedTaskSucceeds(t *testing.T) {
 
 func TestRunDone_NotFound(t *testing.T) {
 	db := SetupTestDB(t)
-	_, _, err := RunDone(db, []string{"noExs"}, false, "", nil, TestActor)
+	_, _, err := RunDone(db, []string{"noExs"}, false, "", nil, TestActor, false, "")
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}
@@ -540,7 +540,7 @@ func TestRunDone_NotFound(t *testing.T) {
 func TestRunDone_DoneEvent(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Task")
-	if _, _, err := RunDone(db, []string{id}, false, "abc1234", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{id}, false, "abc1234", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -565,7 +565,7 @@ func TestRunDone_CascadeEventRecordsChildren(t *testing.T) {
 	pid := MustAdd(t, db, "", "Parent")
 	cid := MustAdd(t, db, pid, "Child")
 
-	if _, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -615,7 +615,7 @@ func TestRunReopen_CascadeReopensChildren(t *testing.T) {
 	pid := MustAdd(t, db, "", "Parent")
 	cid := MustAdd(t, db, pid, "Child")
 
-	if _, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("RunDone --cascade: %v", err)
 	}
 
@@ -676,7 +676,7 @@ func TestRunReopen_CascadeNested(t *testing.T) {
 	cid := MustAdd(t, db, pid, "Child")
 	gcid := MustAdd(t, db, cid, "Grandchild")
 
-	if _, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{pid}, true, "", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("RunDone --cascade: %v", err)
 	}
 
@@ -2528,7 +2528,7 @@ func TestRunList_ClaimedByFilter_ExcludesDoneTasks(t *testing.T) {
 	if err := RunClaim(db, id, "1h", "alice", false); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	if _, _, err := RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 

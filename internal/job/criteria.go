@@ -16,9 +16,14 @@ const (
 	CriterionFailed  CriterionState = "failed"
 )
 
-// Criterion is a single acceptance-criterion row.
+// Criterion is a single acceptance-criterion row. ShortID is the
+// server-minted handle (3-char base62) used for stable references across
+// label edits, shell-friendly --criterion flags, and DOM ids; Label is
+// the human-facing string, free to be edited later without orphaning the
+// event log.
 type Criterion struct {
 	ID        int64
+	ShortID   string
 	TaskID    int64
 	Label     string
 	State     CriterionState
@@ -76,17 +81,22 @@ func insertCriteria(tx dbtx, taskID int64, items []Criterion) ([]Criterion, erro
 		if _, err := ValidateCriterionState(string(state)); err != nil {
 			return nil, err
 		}
+		shortID, err := generateCriterionShortID(tx)
+		if err != nil {
+			return nil, err
+		}
 		var id int64
 		err = tx.QueryRow(
-			`INSERT INTO task_criteria (task_id, label, state, sort_order, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
-			taskID, label, string(state), next, now, now,
+			`INSERT INTO task_criteria (task_id, short_id, label, state, sort_order, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			taskID, shortID, label, string(state), next, now, now,
 		).Scan(&id)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, Criterion{
 			ID:        id,
+			ShortID:   shortID,
 			TaskID:    taskID,
 			Label:     label,
 			State:     state,
@@ -100,7 +110,7 @@ func insertCriteria(tx dbtx, taskID int64, items []Criterion) ([]Criterion, erro
 // GetCriteria returns the criteria for taskID in sort order.
 func GetCriteria(db dbtx, taskID int64) ([]Criterion, error) {
 	rows, err := db.Query(
-		`SELECT id, task_id, label, state, sort_order
+		`SELECT id, COALESCE(short_id, ''), task_id, label, state, sort_order
 		 FROM task_criteria WHERE task_id = ? ORDER BY sort_order, id`,
 		taskID,
 	)
@@ -112,7 +122,7 @@ func GetCriteria(db dbtx, taskID int64) ([]Criterion, error) {
 	for rows.Next() {
 		var c Criterion
 		var state string
-		if err := rows.Scan(&c.ID, &c.TaskID, &c.Label, &state, &c.SortOrder); err != nil {
+		if err := rows.Scan(&c.ID, &c.ShortID, &c.TaskID, &c.Label, &state, &c.SortOrder); err != nil {
 			return nil, err
 		}
 		c.State = CriterionState(state)
@@ -121,42 +131,69 @@ func GetCriteria(db dbtx, taskID int64) ([]Criterion, error) {
 	return out, rows.Err()
 }
 
-// SetCriterionState updates the state of one criterion (matched by label,
-// case-sensitive) on taskID. Returns the new state and the prior state.
-func SetCriterionState(tx dbtx, taskID int64, label string, state CriterionState) (prior CriterionState, err error) {
+// SetCriterionState updates the state of one criterion identified by `ref`,
+// which may be either the criterion's short_id or its verbatim label
+// (short_id is tried first because it is the stable identity; label is
+// kept as a fallback so callers without the short_id — including legacy
+// `--criterion "label=state"` use — keep working). Returns the resolved
+// criterion (so the caller can record stable identifiers on the event
+// detail) and the prior state.
+func SetCriterionState(tx dbtx, taskID int64, ref string, state CriterionState) (resolved Criterion, prior CriterionState, err error) {
 	if _, err := ValidateCriterionState(string(state)); err != nil {
-		return "", err
+		return Criterion{}, "", err
 	}
+	// Try short_id first.
 	row := tx.QueryRow(
-		"SELECT state FROM task_criteria WHERE task_id = ? AND label = ?",
-		taskID, label,
+		"SELECT id, COALESCE(short_id, ''), label, state FROM task_criteria WHERE task_id = ? AND short_id = ?",
+		taskID, ref,
 	)
-	var existing string
-	if err := row.Scan(&existing); err != nil {
-		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("no criterion %q on task", label)
+	var found Criterion
+	var existingState string
+	if err := row.Scan(&found.ID, &found.ShortID, &found.Label, &existingState); err != nil {
+		if err != sql.ErrNoRows {
+			return Criterion{}, "", err
 		}
-		return "", err
+		// Fall back to label match (including legacy rows whose short_id
+		// pre-dates the backfill, and the historical CLI form).
+		row = tx.QueryRow(
+			"SELECT id, COALESCE(short_id, ''), label, state FROM task_criteria WHERE task_id = ? AND label = ?",
+			taskID, ref,
+		)
+		if err := row.Scan(&found.ID, &found.ShortID, &found.Label, &existingState); err != nil {
+			if err == sql.ErrNoRows {
+				return Criterion{}, "", fmt.Errorf("no criterion %q on task", ref)
+			}
+			return Criterion{}, "", err
+		}
 	}
 	now := CurrentNowFunc().Unix()
 	if _, err := tx.Exec(
-		"UPDATE task_criteria SET state = ?, updated_at = ? WHERE task_id = ? AND label = ?",
-		string(state), now, taskID, label,
+		"UPDATE task_criteria SET state = ?, updated_at = ? WHERE id = ?",
+		string(state), now, found.ID,
 	); err != nil {
-		return "", err
+		return Criterion{}, "", err
 	}
-	return CriterionState(existing), nil
+	found.State = state
+	found.TaskID = taskID
+	return found, CriterionState(existingState), nil
 }
 
 // criteriaEventDetail shapes a list of Criterion records for inclusion in an
-// event detail JSON payload.
+// event detail JSON payload. The short_id rides along so the JS replay-fold
+// can establish the criterion's stable identity at criteria_added time and
+// then match subsequent criterion_state events by short_id rather than by
+// label.
 func criteriaEventDetail(items []Criterion) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for _, c := range items {
-		out = append(out, map[string]any{
+		entry := map[string]any{
 			"label": c.Label,
 			"state": string(c.State),
-		})
+		}
+		if c.ShortID != "" {
+			entry["short_id"] = c.ShortID
+		}
+		out = append(out, entry)
 	}
 	return out
 }
@@ -203,8 +240,12 @@ func RunAddCriteria(db *sql.DB, shortID string, items []Criterion, actor string)
 }
 
 // RunSetCriterion updates one criterion's state on a task and records a
-// criterion_state event with the prior state for invertibility.
-func RunSetCriterion(db *sql.DB, shortID, label string, state CriterionState, actor string) (prior CriterionState, err error) {
+// criterion_state event. `ref` may be either the criterion's short_id or
+// its verbatim label; the resolved criterion's stable identifiers (short
+// id + label) are recorded on the event so the JS replay-fold can match
+// by short_id while the human-readable label remains available for
+// rendering and as a legacy-event fallback.
+func RunSetCriterion(db *sql.DB, taskShortID, ref string, state CriterionState, actor string) (prior CriterionState, err error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return "", err
@@ -214,22 +255,26 @@ func RunSetCriterion(db *sql.DB, shortID, label string, state CriterionState, ac
 	if err := expireStaleClaimsInTx(tx, actor); err != nil {
 		return "", err
 	}
-	task, err := GetTaskByShortID(tx, shortID)
+	task, err := GetTaskByShortID(tx, taskShortID)
 	if err != nil {
 		return "", err
 	}
 	if task == nil {
-		return "", fmt.Errorf("task %q not found", shortID)
+		return "", fmt.Errorf("task %q not found", taskShortID)
 	}
-	prior, err = SetCriterionState(tx, task.ID, label, state)
+	resolved, prior, err := SetCriterionState(tx, task.ID, ref, state)
 	if err != nil {
 		return "", err
 	}
-	if err := recordEvent(tx, task.ID, "criterion_state", actor, map[string]any{
-		"label": label,
+	detail := map[string]any{
+		"label": resolved.Label,
 		"state": string(state),
 		"prior": string(prior),
-	}); err != nil {
+	}
+	if resolved.ShortID != "" {
+		detail["short_id"] = resolved.ShortID
+	}
+	if err := recordEvent(tx, task.ID, "criterion_state", actor, detail); err != nil {
 		return "", err
 	}
 	if err := maybeExtendClaim(tx, task.ID, actor); err != nil {

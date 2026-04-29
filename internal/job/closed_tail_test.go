@@ -238,11 +238,11 @@ func TestRunListWithTail_ClaimedByFiltersByCloser(t *testing.T) {
 	a := MustAdd(t, db, "", "alice's task")
 	b := MustAdd(t, db, "", "bob's task")
 	advance(1)
-	if _, _, err := RunDone(db, []string{a}, false, "", nil, "alice"); err != nil {
+	if _, _, err := RunDone(db, []string{a}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatal(err)
 	}
 	advance(1)
-	if _, _, err := RunDone(db, []string{b}, false, "", nil, "bob"); err != nil {
+	if _, _, err := RunDone(db, []string{b}, false, "", nil, "bob", false, ""); err != nil {
 		t.Fatal(err)
 	}
 

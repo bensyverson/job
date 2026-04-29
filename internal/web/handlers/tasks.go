@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	job "github.com/bensyverson/jobs/internal/job"
@@ -76,6 +77,14 @@ type TaskLabel struct {
 // verb (and timestamp) is the entire row — note bodies live in their
 // own Progress notes / Completion note sections above, so History
 // stays a terse audit trail.
+//
+// Cluster carries criterion_state events that the close swept up: when
+// a contiguous trailing run of criterion_state events on the same task
+// ends in a done event, those entries hang off the done row instead of
+// flooding the timeline as N+1 separate rows. The structural rule (no
+// time-window) is what the 2026-04-29 spike picked, since every
+// criteria-heavy close in the live data records its criteria in the
+// same second as the done.
 type TaskHistoryEntry struct {
 	EventType string
 	Actor     string
@@ -83,6 +92,7 @@ type TaskHistoryEntry struct {
 	RelTime   string
 	ISOTime   string
 	ActorURL  string
+	Cluster   []TaskHistoryEntry
 }
 
 // Task renders /tasks/<id>. See vision §3.5. The full-page view
@@ -285,7 +295,7 @@ func buildProgressNotes(events []job.EventEntry) []TaskProgressNote {
 
 func buildHistory(events []job.EventEntry) []TaskHistoryEntry {
 	now := time.Now()
-	out := make([]TaskHistoryEntry, len(events))
+	rendered := make([]TaskHistoryEntry, len(events))
 	for i, e := range events {
 		ts := time.Unix(e.CreatedAt, 0)
 		entry := TaskHistoryEntry{
@@ -303,7 +313,72 @@ func buildHistory(events []job.EventEntry) []TaskHistoryEntry {
 			entry.Actor = ""
 			entry.ActorURL = ""
 		}
-		out[i] = entry
+		rendered[i] = entry
+	}
+
+	// Cluster the trailing run of criterion_state entries onto the
+	// done that closes them. The rule is purely structural — no
+	// timestamp window — because the live event log shows
+	// criterion_state and done recorded in the same second when
+	// they belong together. We walk events in chronological order
+	// (sorted by id ascending) so the "trailing run" pattern is
+	// well-defined regardless of the caller's input order; the
+	// final output preserves the caller's order so the dashboard's
+	// newest-first display still works.
+	chronological := make([]int, len(events))
+	for i := range chronological {
+		chronological[i] = i
+	}
+	sortByID := func(events []job.EventEntry, indices []int) {
+		// Insertion sort is fine — typical task event count is small.
+		for i := 1; i < len(indices); i++ {
+			for j := i; j > 0 && events[indices[j-1]].ID > events[indices[j]].ID; j-- {
+				indices[j-1], indices[j] = indices[j], indices[j-1]
+			}
+		}
+	}
+	sortByID(events, chronological)
+
+	swept := make(map[int]bool)
+	for i := range chronological {
+		idx := chronological[i]
+		if events[idx].EventType != "done" {
+			continue
+		}
+		// Walk backward over a contiguous run of criterion_state
+		// events that immediately precede this done in chronological
+		// order. Stop at the first non-criterion_state event.
+		var clusterIdx []int
+		for j := i - 1; j >= 0; j-- {
+			cidx := chronological[j]
+			if events[cidx].EventType != "criterion_state" {
+				break
+			}
+			clusterIdx = append([]int{cidx}, clusterIdx...)
+		}
+		if len(clusterIdx) == 0 {
+			continue
+		}
+		cluster := make([]TaskHistoryEntry, len(clusterIdx))
+		for k, cidx := range clusterIdx {
+			entry := rendered[cidx]
+			// Strip the trailing " by" only when the entry is
+			// promoted into a cluster: in the cluster the row
+			// reads as `marked "alpha" passed`, with the parent
+			// done row carrying the actor for the whole batch.
+			entry.Verb = strings.TrimSuffix(entry.Verb, " by")
+			cluster[k] = entry
+			swept[cidx] = true
+		}
+		rendered[idx].Cluster = cluster
+	}
+
+	out := make([]TaskHistoryEntry, 0, len(rendered)-len(swept))
+	for i, entry := range rendered {
+		if swept[i] {
+			continue
+		}
+		out = append(out, entry)
 	}
 	return out
 }

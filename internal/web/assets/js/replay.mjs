@@ -254,10 +254,9 @@ const FORWARD = {
     const items = Array.isArray(detail.criteria) ? detail.criteria : [];
     t.criteria = t.criteria ? t.criteria.slice() : [];
     for (const c of items) {
-      t.criteria.push({
-        label: c.label,
-        state: c.state ?? "pending",
-      });
+      const entry = { label: c.label, state: c.state ?? "pending" };
+      if (c.short_id) entry.short_id = c.short_id;
+      t.criteria.push(entry);
     }
   },
 
@@ -265,12 +264,30 @@ const FORWARD = {
     const detail = event.detail ?? {};
     const t = frame.tasks.get(event.task_id);
     if (!t || !Array.isArray(t.criteria)) return;
-    const idx = t.criteria.findIndex((c) => c.label === detail.label);
+    // Prefer short_id (the stable identity); fall back to label for
+    // events recorded before migration 0005, and for legacy callers
+    // that still pass labels.
+    const idx = findCriterionIndex(t.criteria, detail);
     if (idx < 0) return;
     t.criteria = t.criteria.slice();
     t.criteria[idx] = { ...t.criteria[idx], state: detail.state };
   },
 };
+
+// findCriterionIndex resolves a criterion_state event's target back to its
+// index in the criteria array, preferring short_id when present. Both the
+// forward and reverse folds share this resolver so the matching rule
+// stays in one place.
+function findCriterionIndex(criteria, detail) {
+  if (detail.short_id) {
+    const i = criteria.findIndex((c) => c.short_id === detail.short_id);
+    if (i >= 0) return i;
+  }
+  if (detail.label !== undefined) {
+    return criteria.findIndex((c) => c.label === detail.label);
+  }
+  return -1;
+}
 
 export function applyEvent(frame, event) {
   const next = cloneFrame(frame);
@@ -444,7 +461,7 @@ const REVERSE = {
     if (detail.prior === undefined) return false;
     const t = frame.tasks.get(event.task_id);
     if (!t || !Array.isArray(t.criteria)) return true;
-    const idx = t.criteria.findIndex((c) => c.label === detail.label);
+    const idx = findCriterionIndex(t.criteria, detail);
     if (idx < 0) return true;
     t.criteria = t.criteria.slice();
     t.criteria[idx] = { ...t.criteria[idx], state: detail.prior };

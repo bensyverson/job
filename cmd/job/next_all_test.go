@@ -391,7 +391,7 @@ func TestDone_LastOpenChildAutoClosesParent(t *testing.T) {
 	parent := job.MustAdd(t, db, "", "Parent")
 	child := job.MustAdd(t, db, parent, "Only Child")
 
-	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done child: %v", err)
 	}
 
@@ -408,7 +408,7 @@ func TestDone_AutoCloseCascadesUpTree(t *testing.T) {
 	parent := job.MustAdd(t, db, grand, "Parent")
 	leaf := job.MustAdd(t, db, parent, "Leaf")
 
-	if _, _, err := job.RunDone(db, []string{leaf}, false, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{leaf}, false, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done leaf: %v", err)
 	}
 
@@ -430,7 +430,7 @@ func TestDone_CanceledSiblingsDoNotBlockAutoClose(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 
-	if _, _, err := job.RunDone(db, []string{open}, false, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{open}, false, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done open: %v", err)
 	}
 
@@ -447,7 +447,7 @@ func TestDone_DoesNotAutoCloseWhenSiblingOpen(t *testing.T) {
 	c1 := job.MustAdd(t, db, parent, "C1")
 	_ = job.MustAdd(t, db, parent, "C2") // still open
 
-	if _, _, err := job.RunDone(db, []string{c1}, false, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{c1}, false, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done c1: %v", err)
 	}
 
@@ -613,7 +613,7 @@ func TestDone_EventLog_RecordsAutoCloseAttribution(t *testing.T) {
 	parent := job.MustAdd(t, db, "", "Parent")
 	child := job.MustAdd(t, db, parent, "Child")
 
-	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{child}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done child: %v", err)
 	}
 

@@ -136,7 +136,7 @@ func TestActors_ActiveClaimComesBeforeHistoryInDOM(t *testing.T) {
 	idA := mustAdd(t, db, "alice", "alice-claimed-task", nil, nil)
 	mustClaim(t, db, idA, "alice")
 	idB := mustAdd(t, db, "alice", "alice-done-task", nil, nil)
-	if _, _, err := job.RunDone(db, []string{idB}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{idB}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -160,7 +160,7 @@ func TestActors_IdleColumnGetsIdleClass(t *testing.T) {
 	db := setupLogTestDB(t)
 	// alice has activity but no current claim → idle column.
 	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 

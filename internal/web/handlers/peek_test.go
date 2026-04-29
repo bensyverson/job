@@ -252,7 +252,7 @@ func TestPeek_CriteriaSection_RendersFourStatesAndOmittedWhenZero(t *testing.T) 
 func TestPeek_NotesSectionRendersWhenTaskCompletedWithNote(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
-	if _, _, err := job.RunDone(db, []string{id}, false, "All wrapped up neatly.", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "All wrapped up neatly.", nil, "alice", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 
@@ -339,7 +339,7 @@ func TestPeek_StatusPillReflectsTaskState(t *testing.T) {
 			name: "done",
 			setup: func(t *testing.T, db *sql.DB) string {
 				id := mustAdd(t, db, "alice", "done-task", nil, nil)
-				if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+				if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 					t.Fatalf("RunDone: %v", err)
 				}
 				return id

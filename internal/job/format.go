@@ -266,9 +266,27 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 	}
 
 	if len(info.Criteria) > 0 {
-		fmt.Fprintln(w, "Criteria:")
+		pending := 0
 		for _, c := range info.Criteria {
-			fmt.Fprintf(w, "  %s %s\n", criterionGlyph(c.State), c.Label)
+			if c.State == CriterionPending {
+				pending++
+			}
+		}
+		// When pending > 0 the header line names the same constraint the
+		// operator will hit at close time (the strict-close gate), so the
+		// claim briefing primes them for the close shape rather than letting
+		// the count surprise them on `job done`.
+		if pending > 0 {
+			fmt.Fprintf(w, "Criteria: %d pending — mark each before close, or use --force-close-with-pending\n", pending)
+		} else {
+			fmt.Fprintln(w, "Criteria:")
+		}
+		for _, c := range info.Criteria {
+			if c.ShortID != "" {
+				fmt.Fprintf(w, "  %s %s %s\n", c.ShortID, criterionGlyph(c.State), c.Label)
+			} else {
+				fmt.Fprintf(w, "  %s %s\n", criterionGlyph(c.State), c.Label)
+			}
 		}
 	}
 

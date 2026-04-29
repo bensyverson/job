@@ -222,7 +222,7 @@ func TestClaimConflict(t *testing.T) {
 		t.Fatalf("alice claim: %v", err)
 	}
 
-	_, _, err := job.RunDone(db, []string{id}, false, "", nil, "bob")
+	_, _, err := job.RunDone(db, []string{id}, false, "", nil, "bob", false, "")
 	if err == nil {
 		t.Fatal("expected bob done to error")
 	}
@@ -260,7 +260,7 @@ func TestStolenClaim(t *testing.T) {
 	// Move time forward a bit so "claimed X ago" reads non-zero.
 	job.CurrentNowFunc = func() time.Time { return baseTime.Add(2*time.Hour + 5*time.Minute) }
 
-	_, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice")
+	_, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, "")
 	if err == nil {
 		t.Fatal("expected alice done to error (stolen claim)")
 	}

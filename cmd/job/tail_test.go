@@ -63,7 +63,7 @@ func TestTail_Events_Filter(t *testing.T) {
 	db := job.SetupTestDB(t)
 	id := job.MustAdd(t, db, "", "X")
 	job.MustClaim(t, db, id, "1h")
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 
@@ -215,7 +215,7 @@ func TestTail_UntilClose_BlocksUntilDone(t *testing.T) {
 
 	// Give goroutine a moment to enter the poll loop.
 	time.Sleep(100 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 
@@ -293,11 +293,11 @@ func TestTail_UntilClose_Multi_Conjunction(t *testing.T) {
 	}()
 
 	time.Sleep(100 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{a}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{a}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done a: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{b}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{b}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done b: %v", err)
 	}
 
@@ -308,7 +308,7 @@ func TestTail_UntilClose_Multi_Conjunction(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 
-	if _, _, err := job.RunDone(db, []string{c}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{c}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done c: %v", err)
 	}
 
@@ -344,7 +344,7 @@ func TestTail_UntilClose_Quiet_SuppressesStream(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 	time.Sleep(1200 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	select {
@@ -389,7 +389,7 @@ func TestTail_UntilClose_EventsFilter_DoesNotHideTermination(t *testing.T) {
 	}()
 
 	time.Sleep(100 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 
@@ -441,7 +441,7 @@ func TestTail_Timeout_NotFired_ExitsCleanlyOnClose(t *testing.T) {
 		done <- job.RunTailUntilClose(context.Background(), db, id, []string{id}, 3*time.Second, 20*time.Millisecond, true, "md", job.EventFilter{}, &sw)
 	}()
 	time.Sleep(100 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	select {
@@ -551,7 +551,7 @@ func TestTail_NoArg_GlobalStream_WithUntilClose(t *testing.T) {
 
 	// Tail globally, block until b closes. Pre-close b so we exit promptly.
 	db2 := openTestDB(t, dbFile)
-	if _, _, err := job.RunDone(db2, []string{b}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db2, []string{b}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done b: %v", err)
 	}
 	db2.Close()
@@ -572,7 +572,7 @@ func TestTail_All_Synonym(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	b := job.MustAdd(t, db, "", "Beta")
-	if _, _, err := job.RunDone(db, []string{b}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{b}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done b: %v", err)
 	}
 	db.Close()
@@ -591,7 +591,7 @@ func TestTail_SpecificID_Unchanged(t *testing.T) {
 	dbFile := setupCLI(t)
 	db := openTestDB(t, dbFile)
 	id := job.MustAdd(t, db, "", "X")
-	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{id}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	db.Close()
@@ -631,7 +631,7 @@ func TestTail_Global_UntilCloseNamedTask(t *testing.T) {
 		t.Fatalf("claim a: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{target}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{target}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done target: %v", err)
 	}
 	select {
@@ -680,7 +680,7 @@ func TestTail_Global_EventsFilter(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if _, _, err := job.RunDone(db, []string{a}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{a}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("done: %v", err)
 	}
 	select {

@@ -251,6 +251,75 @@ session is fresh.
 
 ---
 
+## Co-signing notes (Opus 4.7, second pass)
+
+I came in cold to this report after independently writing my own
+friction notes from a different task (`oqfNR`, the `ls --all`
+truncation work). The overlap is the load-bearing signal here: two
+sessions, two different tasks, same diagnoses. So:
+
+**I co-sign all three suggestions as-written.** Strict-on-default,
+short IDs, and the `--all-passed` shorthand are the right fixes at
+the right layer. Whoever picks this up should treat the embedded YAML
+as the spec.
+
+**One reordering.** Strict-on-default is the *forcing function*; short
+IDs are the *ergonomic*. If they ship sequentially, ship strict-default
+first — it closes the actual failure mode (autopilot closes with
+unmarked criteria) and the verbose label syntax becomes self-limiting
+once `--all-passed` exists. Short IDs then layer on as the cleanup pass
+and earn their keep on the correctness side (label-edit stability,
+replay-fold robustness) rather than just keystrokes.
+
+### Enhancements I'm folding into the plan
+
+These came up while reading and felt small enough to add without
+reopening the design:
+
+1. **Greppable strict-mode error string.** Agents will pattern-match
+   for the refusal to drive retry-with-override automation. A stable
+   leading prefix (e.g. `cannot close: <N> pending criteria`) makes
+   that automation robust. Adding to the strict-on-default task as an
+   explicit criterion.
+
+2. **`--all-passed` reports what it touched.** A bulk flag that
+   silently marks N criteria erodes the self-audit value of the
+   per-row form. The close ack should say `Marked 6 criteria passed
+   before closing` so the discipline survives the convenience flag.
+   Adding to the `--all-passed` task as an explicit criterion.
+
+3. **Strict-on-default needs a regression test that the count and the
+   list agree.** It would be embarrassing for the refusal to say "6
+   pending" and list 5. Trivial to test, easy to forget. Adding as a
+   criterion.
+
+4. **Override flag naming: pick one and document it.** The report
+   floats both `--criteria-pending=ok` and `--force-close-with-pending`.
+   I'd commit to `--force-close-with-pending` — `--force-*` is the
+   established Unix idiom for "I know what I'm doing," and the
+   verbosity is what makes it self-documenting in shell history. Pin
+   that in the criteria so the implementer doesn't re-debate it.
+
+### The one piece I'd hold
+
+The History clustering task (third in the YAML) is the right idea
+but underspecified. The proposed grouping rule — "events that share
+a transaction with a done event" — is correct on paper but I'd want
+to see the actual dashboard behavior with a real criteria-heavy close
+before locking in the rule. Edge case: what if criteria get marked
+seconds before the close call, in a separate transaction? Strict
+transaction-grouping misses them; loose time-windowing might
+over-cluster. Worth a "spike + decide" pre-task before committing the
+implementation criteria.
+
+I'm leaving it in the plan so the work isn't lost, but I've added a
+criterion noting the grouping rule needs a real-data spike before
+the implementation criteria are finalized.
+
+— claude
+
+---
+
 ```yaml
 tasks:
   - title: Make criteria-strict the default close behavior
@@ -267,10 +336,17 @@ tasks:
       pending state, refuse the close and print the list of pending
       criteria back to the caller. Allow override via an explicit
       flag whose verbosity is the point.
+
+      Override flag: standardize on `--force-close-with-pending`. The
+      `--force-*` prefix is the established Unix idiom for "I know
+      what I'm doing"; the verbosity is what makes it self-documenting
+      in shell history.
     criteria:
       - "`job done <id>` refuses to close a task with pending criteria by default"
       - The refusal lists the unmarked criteria back to the caller so the override is informed
-      - "An explicit override flag (e.g. `--criteria-pending=ok` or `--force-close-with-pending`) bypasses the check"
+      - "The refusal's leading line uses a stable, greppable prefix (e.g. `cannot close: N pending criteria`) so retry automation can pattern-match it"
+      - The pending-count in the refusal header agrees with the listed criteria (regression test against off-by-one)
+      - "An explicit override flag (`--force-close-with-pending`) bypasses the check"
       - "The override path records the waiver on the done event so a reviewer can see what was deferred"
       - "`--cascade` closes still work without per-criterion flags (children own the criteria)"
       - "`job cancel` is unaffected (canceled work's criteria are moot)"
@@ -284,9 +360,16 @@ tasks:
           for an 8-criterion task is 8 long quoted strings. A bulk
           shorthand keeps the discipline (you still typed it) without
           the typing tax.
+
+          The close ack must surface what the bulk flag touched
+          (e.g. `Marked 6 criteria passed before closing`) so the
+          self-audit value of the per-row form is preserved. A bulk
+          flag that silently mutates N rows would erode exactly the
+          discipline strict-default is trying to add.
         criteria:
           - "`job done <id> --all-passed` marks every pending criterion as passed before closing"
           - "`job done <id> --all=skipped` marks every pending criterion as skipped"
+          - The close ack reports the count of criteria the bulk flag touched (e.g. `Marked 6 criteria passed before closing`) so the operation is auditable from the terminal
           - Per-row `--criterion` flags compose with the bulk flag — explicit overrides win over the default
           - Already-marked criteria are not re-marked (no spurious criterion_state events)
           - The done event's detail records that the bulk shorthand was used so the close shape is visible in History
@@ -349,8 +432,17 @@ tasks:
       Out of scope for the original aez2c plan; surfaced here as a
       follow-up because the data is already there and the dashboard
       now renders criteria states.
+
+      Open question (resolve before locking the implementation
+      criteria): the right grouping rule. Transaction-grouping is
+      tight but misses criteria marked seconds before the close call
+      in a separate transaction. Time-windowing is loose but may
+      over-cluster. A small spike against real criteria-heavy close
+      data should pick the rule before this task is broken into
+      implementation children.
     criteria:
-      - Criteria-state events that share a transaction with a done event render as a sub-section of that done row
+      - "Spike pre-task: instrument a real criteria-heavy close on the live dashboard and choose between transaction-grouping vs. time-window grouping based on observed event sequences"
+      - Criteria-state events that share a transaction (or fall in the chosen grouping window) with a done event render as a sub-section of that done row
       - Standalone criterion_state events (not part of a close) still render as their own History row
       - The Log tab continues to show all events independently — the clustering applies only to per-task History
       - The CLI's `job show` is unchanged; this is a dashboard-side render concern only

@@ -85,13 +85,16 @@ func TestSetCriterionState(t *testing.T) {
 	}
 
 	tx2, _ := db.Begin()
-	prior, err := SetCriterionState(tx2, pt.ID, "Tests pass", CriterionPassed)
+	resolved, prior, err := SetCriterionState(tx2, pt.ID, "Tests pass", CriterionPassed)
 	if err != nil {
 		tx2.Rollback()
 		t.Fatalf("SetCriterionState: %v", err)
 	}
 	if prior != CriterionPending {
 		t.Errorf("prior = %q, want pending", prior)
+	}
+	if resolved.Label != "Tests pass" || resolved.ShortID == "" {
+		t.Errorf("resolved: got %+v, want non-empty short_id and matching label", resolved)
 	}
 	if err := tx2.Commit(); err != nil {
 		t.Fatal(err)
@@ -110,7 +113,7 @@ func TestSetCriterionState_NotFound(t *testing.T) {
 
 	tx, _ := db.Begin()
 	defer tx.Rollback()
-	if _, err := SetCriterionState(tx, pt.ID, "nope", CriterionPassed); err == nil {
+	if _, _, err := SetCriterionState(tx, pt.ID, "nope", CriterionPassed); err == nil {
 		t.Fatal("expected error for missing criterion")
 	}
 }

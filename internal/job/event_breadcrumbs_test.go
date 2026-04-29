@@ -126,7 +126,7 @@ func TestDone_CascadeChildRecordsWasStatus(t *testing.T) {
 	parent := job.MustAdd(t, db, "", "parent")
 	child := job.MustAdd(t, db, parent, "child")
 
-	if _, _, err := job.RunDone(db, []string{parent}, true, "", nil, job.TestActor); err != nil {
+	if _, _, err := job.RunDone(db, []string{parent}, true, "", nil, job.TestActor, false, ""); err != nil {
 		t.Fatalf("RunDone --cascade: %v", err)
 	}
 

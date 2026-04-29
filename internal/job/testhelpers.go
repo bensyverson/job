@@ -43,7 +43,7 @@ func MustAddDesc(t *testing.T, db *sql.DB, parentShortID, title, desc string) st
 
 func MustDone(t *testing.T, db *sql.DB, shortID string) {
 	t.Helper()
-	if _, _, err := RunDone(db, []string{shortID}, false, "", nil, TestActor); err != nil {
+	if _, _, err := RunDone(db, []string{shortID}, false, "", nil, TestActor, false, ""); err != nil {
 		t.Fatalf("done task %s: %v", shortID, err)
 	}
 }

@@ -461,10 +461,54 @@ func cascadeAutoCloseAncestors(tx dbtx, taskID int64, triggerShortID, triggerKin
 	}
 }
 
+// strictCloseTarget is the minimal pair the strict-close error formatter
+// needs from each target — the operator-facing short ID plus the title used
+// in the per-task header line.
+type strictCloseTarget struct {
+	ShortID string
+	Title   string
+}
+
+// formatStrictCloseError builds the multi-line refusal returned by the
+// strict-default close gate. The leading line uses a stable "cannot close:
+// N pending criteria" prefix so retry-with-override automation can grep for
+// it; the body lists each unmarked criterion under its task header so the
+// override is informed; the trailing line names the override flag.
+func formatStrictCloseError(targets []strictCloseTarget, pending map[string][]string) error {
+	total := 0
+	for _, labels := range pending {
+		total += len(labels)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "cannot close: %d pending criteria", total)
+	if len(pending) > 1 {
+		fmt.Fprintf(&b, " across %d tasks", len(pending))
+	}
+	for _, tgt := range targets {
+		labels := pending[tgt.ShortID]
+		if len(labels) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\n  %s %q:", tgt.ShortID, tgt.Title)
+		for _, l := range labels {
+			fmt.Fprintf(&b, "\n    [ ] %s", l)
+		}
+	}
+	b.WriteString("\nOverride: --force-close-with-pending")
+	return fmt.Errorf("%s", b.String())
+}
+
 // RunDone closes one or more tasks atomically. If cascade is true, each target
-// expands to include all open descendants. Returns per-target results, a list
-// of already-done targets that were skipped, or an error (all-or-nothing).
-func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.RawMessage, actor string) (closed []*ClosedResult, alreadyDone []string, err error) {
+// expands to include all open descendants. If a target has unmarked pending
+// criteria and cascade is false, RunDone refuses with a "cannot close: N
+// pending criteria" error unless forceCloseWithPending is true; in that case
+// the unmarked labels are persisted on the done event under "criteria_waived"
+// so a reviewer can see what was deferred. When bulkCriteriaState is non-
+// empty, it is recorded on the done event under "criteria_bulk_state" so the
+// close shape (e.g. "all marked passed via --all-passed") survives in the
+// event log. Returns per-target results, a list of already-done targets that
+// were skipped, or an error (all-or-nothing).
+func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.RawMessage, actor string, forceCloseWithPending bool, bulkCriteriaState string) (closed []*ClosedResult, alreadyDone []string, err error) {
 	if len(ids) == 0 {
 		return nil, nil, fmt.Errorf("done requires at least one task id")
 	}
@@ -544,6 +588,32 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 		plans = append(plans, plan{target: tgt, cascadeTasks: cTasks, cascadeShorts: cShorts})
 	}
 
+	// Strict-default close gate: refuse if a target has pending criteria,
+	// unless --cascade is set ("children own the criteria") or the operator
+	// has opted in to the override. Override callers carry the unmarked
+	// labels through to the done-event detail as a recorded waiver.
+	pendingByTarget := make(map[string][]string, len(targets))
+	if !cascade {
+		for _, tgt := range targets {
+			cs, err := GetCriteria(tx, tgt.task.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, c := range cs {
+				if c.State == CriterionPending {
+					pendingByTarget[tgt.shortID] = append(pendingByTarget[tgt.shortID], c.Label)
+				}
+			}
+		}
+		if len(pendingByTarget) > 0 && !forceCloseWithPending {
+			ordered := make([]strictCloseTarget, 0, len(targets))
+			for _, tgt := range targets {
+				ordered = append(ordered, strictCloseTarget{ShortID: tgt.shortID, Title: tgt.task.Title})
+			}
+			return nil, nil, formatStrictCloseError(ordered, pendingByTarget)
+		}
+	}
+
 	now := CurrentNowFunc().Unix()
 
 	var noteVal any
@@ -616,6 +686,12 @@ func RunDone(db *sql.DB, ids []string, cascade bool, note string, result json.Ra
 		}
 		if resultVal != nil {
 			detail["result"] = resultVal
+		}
+		if waived := pendingByTarget[p.target.shortID]; len(waived) > 0 {
+			detail["criteria_waived"] = waived
+		}
+		if bulkCriteriaState != "" {
+			detail["criteria_bulk_state"] = bulkCriteriaState
 		}
 		if err := recordEvent(tx, targetTask.ID, "done", actor, detail); err != nil {
 			return nil, nil, err

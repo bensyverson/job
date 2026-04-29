@@ -130,7 +130,7 @@ func TestSearch_PrioritySort(t *testing.T) {
 	if err := job.RunClaim(db, claimed, "", "alice", false); err != nil {
 		t.Fatalf("RunClaim: %v", err)
 	}
-	if _, _, err := job.RunDone(db, []string{done}, false, "", nil, "alice"); err != nil {
+	if _, _, err := job.RunDone(db, []string{done}, false, "", nil, "alice", false, ""); err != nil {
 		t.Fatalf("RunDone: %v", err)
 	}
 	if _, _, _, err := job.RunCancel(db, []string{canceled}, "test", false, false, false, "alice"); err != nil {

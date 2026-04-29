@@ -704,7 +704,7 @@ func TestDone_IncompleteSubtasks_SuggestsCascade(t *testing.T) {
 	parent := job.MustAdd(t, db, "", "Parent")
 	child := job.MustAdd(t, db, parent, "Child")
 
-	_, _, err := job.RunDone(db, []string{parent}, false, "", nil, job.TestActor)
+	_, _, err := job.RunDone(db, []string{parent}, false, "", nil, job.TestActor, false, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

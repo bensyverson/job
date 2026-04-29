@@ -188,6 +188,33 @@ type ListFilter struct {
 	// filter that means "any status except done and canceled". When non-empty,
 	// it implicitly overrides the actionable-only default (ShowAll behavior).
 	Status string
+	// ClosedTailCap caps the number of closed-tail rows returned by
+	// RunListWithTail. 0 = default cap (DefaultClosedTailCap). Negative =
+	// no cap. Ignored by RunListFiltered.
+	ClosedTailCap int
+	// ClosedTailSinceUnix, when non-zero, restricts closed-tail rows to
+	// events at or after this unix timestamp. Ignored by RunListFiltered.
+	ClosedTailSinceUnix int64
+}
+
+// DefaultClosedTailCap is the row cap applied to RunListWithTail when the
+// caller leaves ListFilter.ClosedTailCap at zero.
+const DefaultClosedTailCap = 10
+
+// ClosedTailRow names a task that closed (done or canceled) within scope,
+// paired with the unix timestamp of the close event used to sort the tail.
+type ClosedTailRow struct {
+	Task     *Task
+	ClosedAt int64
+}
+
+// ListResult bundles the open tree (today's RunListFiltered output) with a
+// flat closed-tail set and the unbounded total of closed tasks in scope.
+// Returned by RunListWithTail.
+type ListResult struct {
+	Open        []*TaskNode
+	ClosedTail  []ClosedTailRow
+	ClosedTotal int
 }
 
 func runList(db *sql.DB, parentShortID, actor string, showAll bool) ([]*TaskNode, error) {

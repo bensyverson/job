@@ -306,8 +306,11 @@ func TestList_ShowsCanceled_InListAll(t *testing.T) {
 	if !strings.Contains(stdout, id) {
 		t.Errorf("canceled task should appear in list all:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "(canceled)") {
-		t.Errorf("expected '(canceled)' marker:\n%s", stdout)
+	// Canceled root tasks render in the "Recently closed" footer (no open
+	// parent to anchor them inline), where the leading `[-]` glyph plays
+	// the role of the in-tree `(canceled)` marker.
+	if !strings.Contains(stdout, "[-] `"+id+"`") {
+		t.Errorf("expected '[-] `%s`' canceled glyph in tail:\n%s", id, stdout)
 	}
 }
 

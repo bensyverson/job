@@ -136,7 +136,7 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 
 | Command | Description |
 |---------|-------------|
-| `job ls [parent] [all]` | List actionable tasks. `all` includes done, claimed, and blocked. Done tasks render as structural lines (`- [x] \`<id>\` Title`) without inline note bodies — labels and blockers stay scannable. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job list` and `job tree` are silent aliases. |
+| `job ls [parent] [--all]` | List actionable tasks. `--all` (or the legacy positional `all`) shows live work plus a flat "Recently closed (N of M)" footer of the 10 most recently closed tasks; closed children of an open parent render inline under that parent so local context stays visible. `--since <window>` (e.g. `5m`, `2h`, `7d`) or `--since <count>` (e.g. `50`) widens the footer; `--no-truncate` removes the cap entirely. The two are mutually exclusive. `--format=json` returns the full closed history, bypassing the cap. Use `-l, --label <name>` to filter, `--mine` for caller-claimed only, `--claimed-by <name>` for a specific agent. `job list` and `job tree` are silent aliases. |
 | `job show <id> [id ...]` | Show full details for one or more tasks, separated by a blank line. When the task has 1–10 direct children, a `Children:` section lists them inline as a markdown checklist (same shape as `job ls` rows, including blockers / claim / labels in parens); above 10 it collapses to a count line pointing at `job ls <id>`. Includes a `Notes:` section listing every `noted` event chronologically with actor and relative timestamp. Description and note bodies are unwrapped on render — author-supplied single newlines collapse to spaces, blank-line paragraph breaks and bullet lists are preserved. `--ancestors` prepends each ancestor's id, title, and description before the named node, in root → parent → node order, so a single call gives the full plan context without extra round-trips. `--format=json` returns a JSON array; the `children` field is an array of `{id,title,status,blockers?,labels?}` objects. `job info <id>` is a silent alias. |
 | `job next [parent]` | Show the next available leaf (a task with no open children). Pass `--include-parents` to surface any available task. `-l, --label <name>` filters. |
 | `job status` | Session briefing: claimed / open / done tally + identity line, then a per-root rollup of the top-level forest (one row per top-level task with its own subtree counts). Ends with a `Next:` hint naming the globally-next claimable leaf, `Stale:` lines for any claims past their TTL, and `Decision:` lines for any open tasks labeled `decision` (human-decision pending). With `--as`, the claimed count is scoped to the caller; without, it counts all live claims. |
@@ -144,7 +144,7 @@ All writes additionally require `--as <name>` (see [Identity](#identity)).
 
 All support `--format=json` (except `status`, which is always plain text).
 
-List output is GitHub-Flavored Markdown with checkbox items, so pasting `job ls all` into a PR or issue renders as a task list:
+List output is GitHub-Flavored Markdown with checkbox items, so pasting `job ls --all` into a PR or issue renders as a task list:
 
 ```
 - [ ] `87TNz` Phase 1 — Data model

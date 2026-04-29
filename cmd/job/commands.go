@@ -131,7 +131,7 @@ QUICKSTART
                job done <id> -m "notes" --claim-next  (closes <id> with a note and opens the next available leaf in one move)
 
   5. Observe:  job ls                      (actionable tasks in tree view)
-               job ls all                  (include all tasks)
+               job ls --all                (live work + recently closed footer; --since/--no-truncate to widen)
                job ls <i>                  (print the children of a task)
                job show <id>               (full description and children; --ancestors prepends parent chain)
                job log <id>                (event history)

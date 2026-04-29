@@ -459,10 +459,12 @@ a.c-id-pill:hover {
 .c-log-row {
   position: relative;
   display: grid;
-  /* time | actor | verb | id-pill | detail. id-pill column is auto so
-     it hugs the pill's content (≈45px for a 5-char short_id in the mono
-     font) instead of leaving ~35px of dead space before the title. */
-  grid-template-columns: 56px minmax(90px, 120px) 78px auto minmax(0, 1fr);
+  /* time | actor | verb | id-pill | title | meta. id-pill column is auto
+     so it hugs the pill's content (≈45px for a 5-char short_id in the
+     mono font); title and meta share the remaining space (title gets
+     2× the share so the task name dominates and the per-event payload
+     summary trails behind). */
+  grid-template-columns: 56px minmax(90px, 120px) 78px auto minmax(0, 2fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-md);
   padding: 8px var(--space-lg);
@@ -562,6 +564,23 @@ a.c-log-row__actor {
 .c-log-row__verb--canceled { color: var(--color-signal-warn); }
 .c-log-row__verb--noted { color: var(--color-on-surface-dim); }
 .c-log-row__verb--claim_expired { color: var(--color-on-surface-dim); }
+
+/* Metadata cell — quiet trailing payload column. Truncates to one line
+   so the row stays single-row regardless of content. Color is dim by
+   default; the per-state rules below color the criterion_state cell to
+   mirror the Criteria section's SVG icons. */
+.c-log-row__meta {
+  color: var(--color-on-surface-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.c-log-row__meta[data-state="passed"] { color: var(--color-status-active); }
+.c-log-row__meta[data-state="failed"] { color: var(--color-signal-alert); }
+.c-log-row__meta[data-state="skipped"] { color: var(--color-status-done); }
+/* The id-pill inside a meta cell (blocked / unblocked) inherits the
+   row's existing pill styling and color, no extra rule needed. */
 
 /* System actor — used for housekeeping events (claim_expired, etc).
    Reads as a quiet inline label rather than a clickable identity. */

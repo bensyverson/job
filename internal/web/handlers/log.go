@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	job "github.com/bensyverson/jobs/internal/job"
@@ -73,6 +75,26 @@ type LogEventRow struct {
 	// the expiration sweep). The template renders these without an
 	// avatar/link so the prior claimer isn't surfaced as the doer.
 	IsSystem bool
+	// Metadata is the trailing per-event payload column on the log
+	// row. Most events carry one of: a short text snippet (note body,
+	// completion note, cancel reason, claim duration, criterion
+	// label, label name, criteria list) or a task-id pill (blocker
+	// short id for blocked/unblocked rows). Events with no payload
+	// (created, released, claim_expired) leave Metadata zero-valued
+	// so the cell renders empty but keeps row layout consistent.
+	Metadata LogRowMetadata
+}
+
+// LogRowMetadata is the payload-column data for one log row. PillID
+// and Text are mutually exclusive — PillID renders as a c-id-pill
+// linking to /tasks/<short_id>; Text renders as plain content. State
+// is set on criterion_state rows so the template can color the label
+// the same way the Criteria section colors its SVG icons (passed →
+// green, failed → red, skipped → muted).
+type LogRowMetadata struct {
+	Text   string
+	PillID string
+	State  string
 }
 
 // LogPageData is the full payload the log template renders.
@@ -368,18 +390,94 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, has
 			row.ActorURL = ""
 			row.IsSystem = true
 		}
-		// Folded-detail verbs: keep the same vocabulary the task/peek
-		// History uses, just without the trailing "by" since the log
-		// row places the actor before the verb.
+		// Verbs collapse to a single word for events that carry extra
+		// detail; the detail itself folds into the metadata cell. Keeps
+		// the verb column the same width as DONE / CLAIMED.
 		switch e.EventType {
 		case "criteria_added":
-			row.VerbText = criteriaAddedVerb(e.Detail)
+			row.VerbText = "criteria"
 		case "criterion_state":
-			row.VerbText = criterionStateVerb(e.Detail)
+			row.VerbText = "criterion"
 		}
+		row.Metadata = buildLogRowMetadata(e.EventType, e.Detail)
 		rows[i] = row
 	}
 	return rows, total, hasMore, nil
+}
+
+// buildLogRowMetadata folds the per-event payload into the trailing
+// metadata cell on a log row. Each event type pulls one summary value
+// from its detail JSON: a text snippet, a task-id pill (blocked /
+// unblocked), or nothing (events whose payload is purely structural,
+// like created or released). Unknown event types fall through to an
+// empty cell — the row still renders normally.
+//
+// The vocabulary intentionally mirrors what the task/peek History and
+// the Criteria section already show, so a row read from the Log says
+// the same thing as the same row read from the task page.
+func buildLogRowMetadata(eventType, detailJSON string) LogRowMetadata {
+	if detailJSON == "" {
+		return LogRowMetadata{}
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+		return LogRowMetadata{}
+	}
+	switch eventType {
+	case "claimed":
+		// The CLI string ("30m", "2h", …) is recorded directly on the
+		// event, so we surface what the actor chose at claim time.
+		if v, ok := detail["duration"].(string); ok {
+			return LogRowMetadata{Text: v}
+		}
+	case "noted":
+		if v, ok := detail["text"].(string); ok {
+			return LogRowMetadata{Text: v}
+		}
+	case "done":
+		if v, ok := detail["note"].(string); ok && v != "" {
+			return LogRowMetadata{Text: v}
+		}
+	case "canceled":
+		if v, ok := detail["reason"].(string); ok && v != "" {
+			return LogRowMetadata{Text: v}
+		}
+	case "labeled":
+		if list, ok := detail["names"].([]any); ok {
+			names := make([]string, 0, len(list))
+			for _, n := range list {
+				if s, ok := n.(string); ok && s != "" {
+					names = append(names, s)
+				}
+			}
+			if len(names) > 0 {
+				return LogRowMetadata{Text: strings.Join(names, ", ")}
+			}
+		}
+	case "criteria_added":
+		if list, ok := detail["criteria"].([]any); ok {
+			labels := make([]string, 0, len(list))
+			for _, c := range list {
+				if obj, ok := c.(map[string]any); ok {
+					if label, ok := obj["label"].(string); ok && label != "" {
+						labels = append(labels, label)
+					}
+				}
+			}
+			if len(labels) > 0 {
+				return LogRowMetadata{Text: strings.Join(labels, ", ")}
+			}
+		}
+	case "criterion_state":
+		label, _ := detail["label"].(string)
+		state, _ := detail["state"].(string)
+		return LogRowMetadata{Text: label, State: state}
+	case "blocked", "unblocked":
+		if v, ok := detail["blocker_id"].(string); ok && v != "" {
+			return LogRowMetadata{PillID: v}
+		}
+	}
+	return LogRowMetadata{}
 }
 
 func taskIDsWithLabel(db *sql.DB, label string) ([]int64, error) {

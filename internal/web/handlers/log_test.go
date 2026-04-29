@@ -246,7 +246,7 @@ func TestLog_PaginationOmitsLoadMoreWhenAllEventsFit(t *testing.T) {
 	}
 }
 
-func TestLog_CriteriaAddedAndCriterionStateRenderHumanVerbs(t *testing.T) {
+func TestLog_CriteriaAddedAndCriterionStateRenderShortVerbs(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "subject", nil, nil)
 	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
@@ -272,11 +272,15 @@ func TestLog_CriteriaAddedAndCriterionStateRenderHumanVerbs(t *testing.T) {
 	if strings.Contains(body, `criterion_state</span>`) {
 		t.Errorf("log verb span should not render the raw 'criterion_state' enum")
 	}
-	mustContain(t, body, `c-log-row__verb--criteria_added">added 3 criteria<`)
-	mustContain(t, body, `c-log-row__verb--criterion_state">marked &#34;beta&#34; passed<`)
+	// Verbs are now collapsed to single-word forms so the verb column
+	// stays the same width as DONE / CLAIMED. The folded-out detail
+	// (count, label) lives in the new metadata cell — see
+	// TestLog_RowsCarryMetadataCell.
+	mustContain(t, body, `c-log-row__verb--criteria_added">criteria<`)
+	mustContain(t, body, `c-log-row__verb--criterion_state">criterion<`)
 }
 
-func TestLog_RowsCarryNoInlineNoteBodies(t *testing.T) {
+func TestLog_NoteBodiesRenderInMetadataCell(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "subject", nil, nil)
 	mustClaim(t, db, id, "alice")
@@ -290,13 +294,13 @@ func TestLog_RowsCarryNoInlineNoteBodies(t *testing.T) {
 	deps := newLogDeps(t, db)
 	body := fetchLog(t, deps, "")
 
-	for _, banned := range []string{"LOG_NOTE_BODY_PROGRESS", "LOG_NOTE_BODY_DONE"} {
-		if strings.Contains(body, banned) {
-			t.Errorf("Log row should not inline the note body %q", banned)
-		}
-	}
-	// And verb spans still render. The 'noted' verb stays as-is — we
-	// dropped only the trailing note text.
+	// Note bodies surface in the per-event metadata cell so the row
+	// reads at a glance without leaving the log. The cell carries
+	// data-event-meta so it's locatable + style-targetable per type.
+	mustContain(t, body, `data-event-meta="noted">LOG_NOTE_BODY_PROGRESS</span>`)
+	mustContain(t, body, `data-event-meta="done">LOG_NOTE_BODY_DONE</span>`)
+	// Verb spans still render. The 'noted' verb stays as-is — only the
+	// inline trailing text moved into the dedicated cell.
 	mustContain(t, body, `c-log-row__verb--noted">noted<`)
 }
 
@@ -601,6 +605,103 @@ func TestLog_AtComposesWithTaskFilter(t *testing.T) {
 			t.Errorf("?task=%s&at=%d should NOT include the post-at claim event, got row:\n%s", idA, atCreate, r)
 		}
 	}
+}
+
+// TestLog_RowsCarryMetadataCell pins the redesign that gives each log
+// row an extra "metadata" cell after the task title. Verbs collapse to
+// single words (DONE, CRITERIA, …) so the verb column stays narrow,
+// and the per-event payload that used to fold into the verb (criteria
+// count, criterion label/state, completion-note text, …) lives in the
+// new cell. Events with no payload (created, released, …) leave it
+// empty.
+func TestLog_RowsCarryMetadataCell(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "subject", nil, nil)
+	mustClaim(t, db, id, "alice") // claimed event with duration "30m"
+	if err := job.RunNote(db, id, "shipping update", nil, "alice"); err != nil {
+		t.Fatalf("RunNote: %v", err)
+	}
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "alpha"}, {Label: "beta"}, {Label: "gamma"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "beta", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+	if _, err := job.RunLabelAdd(db, id, []string{"frontend"}, "alice"); err != nil {
+		t.Fatalf("RunLabelAdd: %v", err)
+	}
+	// Block on a sibling so we get a blocked + unblocked pair.
+	other := mustAdd(t, db, "alice", "blocker", nil, nil)
+	if err := job.RunBlock(db, id, other, "alice"); err != nil {
+		t.Fatalf("RunBlock: %v", err)
+	}
+	if err := job.RunUnblock(db, id, other, "alice"); err != nil {
+		t.Fatalf("RunUnblock: %v", err)
+	}
+	// Re-claim before close (RunUnblock cleared blockers but the prior
+	// claim is still in place; dry-run not needed). Adding a release
+	// step to populate that branch of the metadata coverage too — the
+	// release should leave the cell empty since the reason rides on a
+	// sibling noted event.
+	if err := job.RunRelease(db, id, "", "alice"); err != nil {
+		t.Fatalf("RunRelease: %v", err)
+	}
+	if _, _, err := job.RunDone(db, []string{id}, false, "ship it: launch complete", nil, "alice", true, ""); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+	// Cancel a separate task so we can assert the cancel-reason metadata.
+	cancelID := mustAdd(t, db, "alice", "drop this", nil, nil)
+	if _, _, _, err := job.RunCancel(db, []string{cancelID}, "out of scope", false, false, false, "alice"); err != nil {
+		t.Fatalf("RunCancel: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "")
+
+	// Each row carries a c-log-row__meta cell.
+	mustContain(t, body, `c-log-row__meta`)
+
+	// claimed → planned lease window from the event payload.
+	mustContain(t, body, `data-event-meta="claimed"`)
+	mustContain(t, body, `<span class="c-log-row__meta" data-event-meta="claimed">30m</span>`)
+
+	// noted → progress-note text.
+	mustContain(t, body, `<span class="c-log-row__meta" data-event-meta="noted">shipping update</span>`)
+
+	// criteria_added → label list.
+	mustContain(t, body, `<span class="c-log-row__meta" data-event-meta="criteria_added">alpha, beta, gamma</span>`)
+
+	// criterion_state → label, color-keyed to the new state via the meta cell's
+	// data-state attribute (mirroring the criteria SVG icon coloring).
+	mustContain(t, body, `data-event-meta="criterion_state" data-state="passed">beta</span>`)
+
+	// labeled → label name(s).
+	mustContain(t, body, `data-event-meta="labeled">frontend</span>`)
+
+	// blocked / unblocked → blocker id-pill.
+	mustContainAll(t, body,
+		`data-event-meta="blocked"`,
+		`data-event-meta="unblocked"`,
+	)
+	// Each carries a c-id-pill for the blocker short id.
+	otherShort := other
+	mustContainAll(t, body,
+		`data-event-meta="blocked"><a class="c-id-pill" href="/tasks/`+otherShort+`">`+otherShort+`</a>`,
+		`data-event-meta="unblocked"><a class="c-id-pill" href="/tasks/`+otherShort+`">`+otherShort+`</a>`,
+	)
+
+	// done → completion note text.
+	mustContain(t, body, `data-event-meta="done">ship it: launch complete</span>`)
+
+	// canceled → reason text.
+	mustContain(t, body, `data-event-meta="canceled">out of scope</span>`)
+
+	// Events with no payload leave the cell empty (no inner text). The
+	// span itself still renders for layout consistency.
+	mustContain(t, body, `<span class="c-log-row__meta" data-event-meta="created"></span>`)
+	mustContain(t, body, `<span class="c-log-row__meta" data-event-meta="released"></span>`)
 }
 
 // --- helpers ---

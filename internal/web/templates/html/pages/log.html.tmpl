@@ -57,6 +57,13 @@
     <span class="c-log-row__detail">
       {{if .Title}}<span class="c-log-row__title">{{.Title}}</span>{{end}}
     </span>
+    {{- if .Metadata.PillID -}}
+    <span class="c-log-row__meta" data-event-meta="{{.EventType}}"><a class="c-id-pill" href="/tasks/{{.Metadata.PillID}}">{{.Metadata.PillID}}</a></span>
+    {{- else if .Metadata.State -}}
+    <span class="c-log-row__meta" data-event-meta="{{.EventType}}" data-state="{{.Metadata.State}}">{{.Metadata.Text}}</span>
+    {{- else -}}
+    <span class="c-log-row__meta" data-event-meta="{{.EventType}}">{{.Metadata.Text}}</span>
+    {{- end}}
     <a href="{{.TaskURL}}" data-peek class="c-row-link" aria-label="Open task {{.ShortID}}"></a>
   </div>
   {{else}}

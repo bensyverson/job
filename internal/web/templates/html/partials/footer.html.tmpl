@@ -27,6 +27,12 @@
   <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="epm">—</span><span class="c-footer__metric-label">events / min</span></span>
   <span class="c-footer__metric"><span class="c-footer__metric-value" data-metric="throughput">—</span><span class="c-footer__metric-label">tasks / hr</span></span>
   <div class="grow"></div>
+  <span class="c-footer__heartbeat" data-heartbeat>
+    <span class="c-footer__heartbeat-dot"></span>
+    <span>connecting…</span>
+  </span>
+  <span class="c-footer__metric"><span data-connection role="status" aria-live="polite">—</span></span>
+  <div class="grow"></div>
   <button class="c-scrubber-pill" aria-label="Time travel" data-scrubber-toggle>
     <svg class="c-scrubber-pill__icon" data-scrubber-pill-icon-back width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
       <path d="M5 2L2 6l3 4M2.5 6h7.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -34,11 +40,5 @@
     <span class="c-scrubber-pill__dot" data-scrubber-pill-icon-live></span>
     <span data-scrubber-pill-label>Time travel</span>
   </button>
-  <div class="grow"></div>
-  <span class="c-footer__heartbeat" data-heartbeat>
-    <span class="c-footer__heartbeat-dot"></span>
-    <span>connecting…</span>
-  </span>
-  <span class="c-footer__metric"><span data-connection role="status" aria-live="polite">—</span></span>
 </footer>
 {{end}}

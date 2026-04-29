@@ -1790,30 +1790,68 @@ peek-sheet[data-state="open"] .c-peek-sheet {
 /* Inline SVGs replace the older [x]/[ ]/[-]/[!] ASCII glyphs. The disc
    shapes use fill="currentColor"; the per-state color rule below sets
    the SVG color. Pending uses an outline-only circle. */
+.c-criterion__icon,
+.c-criterion__badge {
+  /* Nudge the icon and trailing state badge down so they sit on the
+     cap-height baseline of the first label line under flex
+     `align-items: flex-start`, instead of riding the absolute top. */
+  margin-top: 0.2em;
+}
 .c-criterion__icon {
   width: 1em;
   height: 1em;
   flex: 0 0 auto;
   display: inline-block;
-  vertical-align: -0.15em;
 }
-.c-criterion[data-criterion-state="passed"] .c-criterion__icon {
+.c-criterion__badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.c-criterion[data-criterion-state="passed"] .c-criterion__icon,
+.c-criterion[data-criterion-state="passed"] .c-criterion__badge {
   color: var(--color-status-active);
 }
-.c-criterion[data-criterion-state="failed"] .c-criterion__icon {
+.c-criterion[data-criterion-state="failed"] .c-criterion__icon,
+.c-criterion[data-criterion-state="failed"] .c-criterion__badge {
   color: var(--color-signal-alert);
 }
-.c-criterion[data-criterion-state="skipped"] .c-criterion__icon {
+.c-criterion[data-criterion-state="skipped"] .c-criterion__icon,
+.c-criterion[data-criterion-state="skipped"] .c-criterion__badge {
   color: var(--color-status-done);
 }
-.c-criterion[data-criterion-state="pending"] .c-criterion__icon {
+.c-criterion[data-criterion-state="pending"] .c-criterion__icon,
+.c-criterion[data-criterion-state="pending"] .c-criterion__badge {
   color: var(--color-on-surface-dim);
 }
 
-/* Cap the criterion label measure too — long criterion text was
-   stretching the row to viewport width. */
-.c-criterion__label {
+/* Quiet state-name affordance — uses the same caps-label spec as
+   section headers (size, weight, tracking) so it reads as metadata
+   rather than as part of the criterion label text. Color-keyed to
+   the row state via the rules above. */
+.c-criterion__badge {
+  font-size: var(--font-label-caps-size);
+  font-weight: var(--font-label-caps-weight);
+  line-height: var(--font-label-caps-line-height);
+  letter-spacing: var(--font-label-caps-letter-spacing);
+  text-transform: uppercase;
+}
+
+/* Cap the whole Criteria list at the same measure as the narrative
+   blocks so the icon + label + badge row stays within readable line
+   length even on wide viewports. The default <ul> disc marker is
+   suppressed because the criterion icon plays the role of the marker. */
+.c-criteria {
   max-width: 38em;
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.c-criterion {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+.c-criterion__label {
   overflow-wrap: anywhere;
 }
 

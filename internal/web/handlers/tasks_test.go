@@ -352,6 +352,31 @@ func TestTask_CriteriaSection_RendersSVGIcons(t *testing.T) {
 	}
 }
 
+// TestTask_CancelReasonRendersSection asserts that a canceled task
+// surfaces its cancel reason in a dedicated "Cancel reason" section,
+// parallel to the Completion note section for done tasks. The reason
+// lives only on the canceled event payload (the task row's
+// completion_note column stays NULL on cancel), so the handler must
+// pull it from the event log.
+func TestTask_CancelReasonRendersSection(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "drop this", nil, nil)
+	if _, _, _, err := job.RunCancel(db, []string{id}, "out of scope this quarter", false, false, false, "alice"); err != nil {
+		t.Fatalf("RunCancel: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := stripInitialFrame(fetchTask(t, deps, id).Body.String())
+
+	// A "Cancel reason" section header renders, with the reason text in it.
+	mustContain(t, body, `>Cancel reason<`)
+	mustContain(t, body, "out of scope this quarter")
+	// Completion note section stays absent — this task wasn't done.
+	if strings.Contains(body, `>Completion note<`) {
+		t.Errorf("canceled task should not render a Completion note section")
+	}
+}
+
 // TestTask_NarrativeFieldsDoNotUsePre asserts that Description and
 // Completion note render in a non-<pre> block so newlines are preserved
 // (via white-space:pre-wrap CSS) but the body font is used and content

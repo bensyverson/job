@@ -111,6 +111,13 @@
 </section>
 {{end}}
 
+{{if .CancelReason}}
+<section class="c-section">
+  <h2 class="c-section__label t-label-caps">Cancel reason</h2>
+  <div class="c-note">{{.CancelReason}}</div>
+</section>
+{{end}}
+
 <section class="c-section">
   <h2 class="c-section__label t-label-caps">History</h2>
   <div class="stack stack-gap-sm">

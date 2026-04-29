@@ -461,10 +461,12 @@ a.c-id-pill:hover {
   display: grid;
   /* time | actor | verb | id-pill | title | meta. id-pill column is auto
      so it hugs the pill's content (≈45px for a 5-char short_id in the
-     mono font); title and meta share the remaining space (title gets
-     2× the share so the task name dominates and the per-event payload
-     summary trails behind). */
-  grid-template-columns: 56px minmax(90px, 120px) 78px auto minmax(0, 2fr) minmax(0, 1fr);
+     mono font); title and meta share the remaining space at roughly
+     1:2 (meta gets the larger share so per-event payload — note text,
+     completion notes, criteria lists — has room to render without
+     ellipsizing aggressively, while the task title still gets a
+     readable column). */
+  grid-template-columns: 56px minmax(90px, 120px) 78px auto minmax(0, 1fr) minmax(0, 2fr);
   align-items: center;
   gap: var(--space-md);
   padding: 8px var(--space-lg);
@@ -480,7 +482,9 @@ a.c-id-pill:hover {
    inherit this; actor/timestamp stay neutral (see below). */
 .c-log-row--claimed,
 .c-log-row--unblocked { color: var(--color-text-active); }
-.c-log-row--done,
+/* Done rows pop white against the muted released/canceled rows so the
+   eye finds completed work first when scanning the log. */
+.c-log-row--done { color: var(--color-on-surface); }
 .c-log-row--released,
 .c-log-row--canceled { color: var(--color-text-done); }
 .c-log-row--blocked { color: var(--color-text-blocked); }
@@ -564,6 +568,12 @@ a.c-log-row__actor {
 .c-log-row__verb--canceled { color: var(--color-signal-warn); }
 .c-log-row__verb--noted { color: var(--color-on-surface-dim); }
 .c-log-row__verb--claim_expired { color: var(--color-on-surface-dim); }
+/* Criteria authoring is constructive (like created/unblocked), so the
+   verb picks up the same teal-dim primary tint. The state transition
+   itself carries no judgement at the verb level — color-keying lives
+   on the meta cell (passed → green, failed → red, skipped → muted). */
+.c-log-row__verb--criteria_added { color: var(--color-primary-dim); }
+.c-log-row__verb--criterion_state { color: var(--color-on-surface-dim); }
 
 /* Metadata cell — quiet trailing payload column. Truncates to one line
    so the row stays single-row regardless of content. Color is dim by

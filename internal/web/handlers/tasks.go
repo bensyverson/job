@@ -28,9 +28,14 @@ type TaskPageData struct {
 	Blocking       []TaskRef
 	Criteria       []TaskCriterion
 	CompletionNote string
-	ClaimedBy      string
-	ProgressNotes  []TaskProgressNote
-	History        []TaskHistoryEntry
+	// CancelReason is the prose recorded on the canceled event for a
+	// canceled task. Empty for tasks that aren't canceled. The detail
+	// view renders it in a "Cancel reason" section parallel to the
+	// "Completion note" section that done tasks render.
+	CancelReason  string
+	ClaimedBy     string
+	ProgressNotes []TaskProgressNote
+	History       []TaskHistoryEntry
 }
 
 // TaskProgressNote is one row in the "Progress notes" section, ordered
@@ -198,10 +203,54 @@ func loadTaskPageData(deps Deps, w http.ResponseWriter, r *http.Request) (TaskPa
 		Blocking:       taskRefs(blocking, relBlockers),
 		Criteria:       buildTaskCriteria(criteria),
 		CompletionNote: derefString(task.CompletionNote),
+		CancelReason:   buildCancelReason(task.Status, events),
 		ClaimedBy:      derefString(task.ClaimedBy),
 		ProgressNotes:  buildProgressNotes(events),
 		History:        buildHistory(events),
 	}, true
+}
+
+// buildCancelReason scans events newest-id first for the canceled
+// event that most recently put the task into its current canceled
+// state, and returns its "reason" detail field. Empty for tasks that
+// aren't canceled or whose canceled event carries no reason.
+//
+// The reason lives only on the canceled event (the task row's
+// completion_note column stays NULL on cancel), so the detail page
+// has to read the event log to surface it.
+func buildCancelReason(status string, events []job.EventEntry) string {
+	if status != "canceled" {
+		return ""
+	}
+	var bestID int64
+	var best string
+	for _, e := range events {
+		if e.EventType != "canceled" {
+			continue
+		}
+		if e.ID < bestID {
+			continue
+		}
+		if e.Detail == "" {
+			bestID = e.ID
+			best = ""
+			continue
+		}
+		var detail map[string]any
+		if err := json.Unmarshal([]byte(e.Detail), &detail); err != nil {
+			bestID = e.ID
+			best = ""
+			continue
+		}
+		if reason, ok := detail["reason"].(string); ok {
+			bestID = e.ID
+			best = reason
+		} else {
+			bestID = e.ID
+			best = ""
+		}
+	}
+	return best
 }
 
 // buildTaskCriteria pre-renders the criterion rows for the template.

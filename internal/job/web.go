@@ -152,6 +152,36 @@ func OpenTaskLabelFreqs(db *sql.DB) (map[string]int, error) {
 	return out, rows.Err()
 }
 
+// AllTaskLabelFreqs returns each label's count across all
+// non-soft-deleted tasks regardless of status. The Log view uses this
+// to populate its Label filter strip — the log is a historical event
+// stream, so filtering by a label whose tasks have all closed is a
+// perfectly valid query (where it would be noise on the live
+// Home/Plan strips, which want only labels currently in flight).
+func AllTaskLabelFreqs(db *sql.DB) (map[string]int, error) {
+	rows, err := db.Query(`
+		SELECT tl.name, COUNT(DISTINCT tl.task_id)
+		FROM task_labels tl
+		JOIN tasks t ON t.id = tl.task_id
+		WHERE t.deleted_at IS NULL
+		GROUP BY tl.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var name string
+		var count int
+		if err := rows.Scan(&name, &count); err != nil {
+			return nil, err
+		}
+		out[name] = count
+	}
+	return out, rows.Err()
+}
+
 // DistinctLabels returns unique label names from task_labels, sorted
 // alphabetically. Used by the web dashboard's log view to populate
 // the Label filter chips.

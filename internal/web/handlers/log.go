@@ -159,7 +159,7 @@ func Log(deps Deps) http.Handler {
 			InternalError(deps, w, "actors query", err)
 			return
 		}
-		labelFreqs, err := job.OpenTaskLabelFreqs(deps.DB)
+		labelFreqs, err := job.AllTaskLabelFreqs(deps.DB)
 		if err != nil {
 			InternalError(deps, w, "label freqs query", err)
 			return
@@ -503,12 +503,29 @@ func buildTypeChips(f LogFilters) []LogChip {
 	}
 	for _, t := range knownEventTypes {
 		chips = append(chips, LogChip{
-			Label:  t,
+			Label:  typeChipLabel(t),
 			HRef:   logURL(f, "type", t),
 			Active: f.Type == t,
 		})
 	}
 	return chips
+}
+
+// typeChipLabel renders a friendlier label for the event-type filter
+// chips. Snake-cased event types collapse to their short verb form so
+// the chip strip reads as the same vocabulary as the row verb column
+// (CRITERIA / CRITERION rather than the raw enum). The HRef still
+// carries the canonical type so the URL contract stays stable.
+func typeChipLabel(t string) string {
+	switch t {
+	case "criteria_added":
+		return "criteria"
+	case "criterion_state":
+		return "criterion"
+	case "claim_expired":
+		return "expired"
+	}
+	return t
 }
 
 func buildActorChips(f LogFilters, actors []string) []LogChip {

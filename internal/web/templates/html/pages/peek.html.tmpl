@@ -125,6 +125,13 @@
   </div>
   {{end}}
 
+  {{if .CancelReason}}
+  <div class="c-peek-sheet__section">
+    <div class="c-peek-sheet__section-label">Cancel reason</div>
+    <div class="c-note">{{.CancelReason}}</div>
+  </div>
+  {{end}}
+
   <div class="c-peek-sheet__section">
     <div class="c-peek-sheet__section-label">History</div>
     <div class="stack stack-gap-sm">

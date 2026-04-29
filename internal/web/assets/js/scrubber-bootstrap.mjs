@@ -9,7 +9,7 @@
        Frame.
     3. Construct a ReplayBuffer wired to fetch /events?since=X&limit=N.
     4. Stash the buffer at window.JobsScrubber so the pill UI and
-       timeline (FxhFR / Xg742) can grab it without a circular import.
+       timeline can grab it without a circular import.
 
   No dependencies on the DOM in the parts that matter for tests:
   the JSON-parse, fetcher-builder, and scrubber-construction are all

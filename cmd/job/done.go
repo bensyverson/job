@@ -81,31 +81,16 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 			}
 
 			// Soft pending warning: count pending criteria across all closed
-			// targets and surface a single line so the operator notices but
-			// the close still proceeds.
-			pendingByID := map[string]int{}
-			for _, id := range args {
-				task, _ := job.GetTaskByShortID(db, id)
-				if task == nil {
-					continue
-				}
-				n, _ := job.CountPendingCriteria(db, task.ID)
-				if n > 0 {
-					pendingByID[id] = n
-				}
-			}
+			// targets in one query and surface a single line so the operator
+			// notices but the close still proceeds.
+			pendingByID, _ := job.PendingCriteriaByShortID(db, args)
 
 			closed, alreadyDone, err := job.RunDone(db, args, cascade, note, resultRaw, actor)
 			if err != nil {
 				return err
 			}
 
-			// Determine last-named input id still targetable for the context block.
-			lastCtxID := ""
-			for i := len(args) - 1; i >= 0; i-- {
-				lastCtxID = args[i]
-				break
-			}
+			lastCtxID := args[len(args)-1]
 
 			// Collect all auto-closed ancestor IDs across all closed results so
 			// job.ComputeDoneContext can distinguish "already-done parent" from
@@ -175,8 +160,10 @@ Tip: pass --claim-next to atomically close this task and claim the next availabl
 			} else if claimRaceTaken != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "Next leaf unavailable: %s\n", claimRaceTaken)
 			}
-			for id, n := range pendingByID {
-				fmt.Fprintf(cmd.OutOrStdout(), "  Note: %s closed with %d pending criteria.\n", id, n)
+			for _, id := range args {
+				if n, ok := pendingByID[id]; ok {
+					fmt.Fprintf(cmd.OutOrStdout(), "  Note: %s closed with %d pending criteria.\n", id, n)
+				}
 			}
 			return nil
 		},

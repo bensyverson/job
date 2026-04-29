@@ -71,7 +71,7 @@ func TestActors_CollapsesActorTaskPairToLatestStateCard(t *testing.T) {
 	// earlier created or claimed.
 	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
 	mustClaim(t, db, id, "alice")
-	if err := job.RunRelease(db, id, "alice"); err != nil {
+	if err := job.RunRelease(db, id, "", "alice"); err != nil {
 		t.Fatalf("RunRelease: %v", err)
 	}
 
@@ -419,7 +419,7 @@ func TestActors_ReleasedCardSitsInHistoryNotClaimBand(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
 	mustClaim(t, db, id, "alice")
-	if err := job.RunRelease(db, id, "alice"); err != nil {
+	if err := job.RunRelease(db, id, "", "alice"); err != nil {
 		t.Fatalf("RunRelease: %v", err)
 	}
 
@@ -531,7 +531,7 @@ func TestActors_AtDerivesClaimFromEventWalk(t *testing.T) {
 		t.Fatalf("query claimed event: %v", err)
 	}
 
-	if err := job.RunRelease(db, id, "alice"); err != nil {
+	if err := job.RunRelease(db, id, "", "alice"); err != nil {
 		t.Fatalf("RunRelease: %v", err)
 	}
 

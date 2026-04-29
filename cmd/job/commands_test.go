@@ -283,7 +283,7 @@ func TestReleaseWrongHolder(t *testing.T) {
 	if err := job.RunClaim(db, id, "1h", "alice", false); err != nil {
 		t.Fatalf("alice claim: %v", err)
 	}
-	err := job.RunRelease(db, id, "bob")
+	err := job.RunRelease(db, id, "", "bob")
 	if err == nil {
 		t.Fatal("expected bob release to error")
 	}

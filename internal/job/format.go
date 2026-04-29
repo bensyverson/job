@@ -209,8 +209,6 @@ func RenderAncestorBrief(w io.Writer, t *Task) {
 }
 
 func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
-	// Header: structural metadata first so the eye can land on identity,
-	// status, and shape without scrolling past a long description.
 	fmt.Fprintf(w, "ID:           %s\n", info.Task.ShortID)
 	fmt.Fprintf(w, "Title:        %s\n", info.Task.Title)
 	fmt.Fprintf(w, "Status:       %s\n", info.Task.Status)
@@ -263,9 +261,6 @@ func RenderInfoMarkdown(w io.Writer, info *TaskInfo) {
 	}
 	fmt.Fprintf(w, "Created:      %s\n", formatTimestamp(info.Task.CreatedAt))
 
-	// Body: description, criteria, then notes. Now that the header sits
-	// above this block, a long description doesn't push structural
-	// metadata off the first screen.
 	if info.Task.Description != "" {
 		fmt.Fprintf(w, "\nDescription:\n  %s\n", unwrapProse(info.Task.Description))
 	}

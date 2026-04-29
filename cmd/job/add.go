@@ -43,17 +43,9 @@ func newAddCmd() *cobra.Command {
 				parentShortID = parentFlag
 			}
 
-			// Capture pre-add child count so we can emit the auto-close
-			// cascade hint (LACgS) when adding into a parent that already
-			// has children.
 			var priorChildCount int
 			if parentShortID != "" {
-				if pp, _ := job.GetTaskByShortID(db, parentShortID); pp != nil {
-					_ = db.QueryRow(
-						"SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND deleted_at IS NULL",
-						pp.ID,
-					).Scan(&priorChildCount)
-				}
+				priorChildCount, _, _ = job.CountOpenChildrenOfShortID(db, parentShortID)
 			}
 
 			res, err := job.RunAdd(db, parentShortID, title, desc, before, labels, actor)

@@ -12,7 +12,6 @@ func newCancelCmd() *cobra.Command {
 	var purge bool
 	var yes bool
 	var format string
-	var quiet bool
 	cmd := &cobra.Command{
 		Use:   "cancel <id> [<id>...]",
 		Short: "Non-destructively stop work on one or more tasks",
@@ -50,7 +49,6 @@ func newCancelCmd() *cobra.Command {
 			}
 
 			job.RenderCancelAckAs(cmd.OutOrStdout(), canceled, alreadyCanceled, reason, actor)
-			_ = quiet // cancel has no trailing show block; --quiet exists for parity with claim/done.
 			return nil
 		},
 	}
@@ -59,6 +57,5 @@ func newCancelCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&purge, "purge", false, "erase the task row and its events instead of transitioning state")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "confirm irrecoverable purge of a subtree (required with --purge --cascade)")
 	cmd.Flags().StringVar(&format, "format", "md", "output format (md|json)")
-	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress non-essential output (parity with claim/done)")
 	return cmd
 }

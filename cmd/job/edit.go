@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strings"
+
 	job "github.com/bensyverson/jobs/internal/job"
 	"github.com/spf13/cobra"
 )
@@ -79,21 +81,13 @@ func newEditCmd() *cobra.Command {
 
 // parseCriterionAssignment parses "label=state" into its parts and validates state.
 func parseCriterionAssignment(raw string) (string, job.CriterionState, error) {
-	idx := -1
-	for i := len(raw) - 1; i >= 0; i-- {
-		if raw[i] == '=' {
-			idx = i
-			break
-		}
-	}
+	idx := strings.LastIndex(raw, "=")
 	if idx <= 0 || idx == len(raw)-1 {
 		return "", "", fmt.Errorf("invalid criterion assignment %q (want \"label=state\")", raw)
 	}
-	label := raw[:idx]
-	stateRaw := raw[idx+1:]
-	state, err := job.ValidateCriterionState(stateRaw)
+	state, err := job.ValidateCriterionState(raw[idx+1:])
 	if err != nil {
 		return "", "", err
 	}
-	return label, state, nil
+	return raw[:idx], state, nil
 }

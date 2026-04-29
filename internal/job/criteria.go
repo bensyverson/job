@@ -26,11 +26,12 @@ type Criterion struct {
 }
 
 func ValidateCriterionState(raw string) (CriterionState, error) {
-	switch raw {
-	case "pending", "passed", "skipped", "failed":
+	switch CriterionState(raw) {
+	case CriterionPending, CriterionPassed, CriterionSkipped, CriterionFailed:
 		return CriterionState(raw), nil
 	default:
-		return "", fmt.Errorf("invalid criterion state %q (want pending|passed|skipped|failed)", raw)
+		return "", fmt.Errorf("invalid criterion state %q (want %s|%s|%s|%s)",
+			raw, CriterionPending, CriterionPassed, CriterionSkipped, CriterionFailed)
 	}
 }
 
@@ -204,9 +205,6 @@ func RunAddCriteria(db *sql.DB, shortID string, items []Criterion, actor string)
 // RunSetCriterion updates one criterion's state on a task and records a
 // criterion_state event with the prior state for invertibility.
 func RunSetCriterion(db *sql.DB, shortID, label string, state CriterionState, actor string) (prior CriterionState, err error) {
-	if _, err := ValidateCriterionState(string(state)); err != nil {
-		return "", err
-	}
 	tx, err := db.Begin()
 	if err != nil {
 		return "", err
@@ -253,4 +251,42 @@ func CountPendingCriteria(db dbtx, taskID int64) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// PendingCriteriaByShortID returns, for each shortID with pending criteria,
+// the count keyed by shortID. shortIDs that don't resolve, or whose tasks
+// have no pending criteria, are omitted from the map. One query, not N+1.
+func PendingCriteriaByShortID(db *sql.DB, shortIDs []string) (map[string]int, error) {
+	if len(shortIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(shortIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(shortIDs))
+	for i, id := range shortIDs {
+		args[i] = id
+	}
+	q := `
+		SELECT t.short_id, COUNT(c.id)
+		FROM tasks t
+		JOIN task_criteria c ON c.task_id = t.id AND c.state = 'pending'
+		WHERE t.short_id IN (` + placeholders + `) AND t.deleted_at IS NULL
+		GROUP BY t.short_id
+		HAVING COUNT(c.id) > 0
+	`
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int, len(shortIDs))
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
 }

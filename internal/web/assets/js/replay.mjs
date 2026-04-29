@@ -34,8 +34,8 @@
         replay loops to decide when to checkpoint.
 
   Out of scope here: HTTP fetching from /events, view-specific DOM
-  updates, the scrubber pill UI. Those land in FxhFR / Xg742 and the
-  per-view *-live.mjs modules. This module is pure data.
+  updates, the scrubber pill UI. Those land in the per-view *-live.mjs
+  modules and the scrubber bootstrap. This module is pure data.
 */
 
 // Frame shape:

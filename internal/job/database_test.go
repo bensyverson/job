@@ -1460,7 +1460,7 @@ func TestParseDuration_NoNumber(t *testing.T) {
 
 func mustRelease(t *testing.T, db *sql.DB, shortID string) {
 	t.Helper()
-	if err := RunRelease(db, shortID, TestActor); err != nil {
+	if err := RunRelease(db, shortID, "", TestActor); err != nil {
 		t.Fatalf("release %s: %v", shortID, err)
 	}
 }
@@ -1630,7 +1630,7 @@ func TestRunRelease_ClaimedTask(t *testing.T) {
 	id := MustAdd(t, db, "", "Task")
 	MustClaim(t, db, id, "")
 
-	if err := RunRelease(db, id, TestActor); err != nil {
+	if err := RunRelease(db, id, "", TestActor); err != nil {
 		t.Fatalf("RunRelease: %v", err)
 	}
 
@@ -1651,7 +1651,7 @@ func TestRunRelease_RecordsEvent(t *testing.T) {
 	id := MustAdd(t, db, "", "Task")
 	MustClaim(t, db, id, "")
 
-	if err := RunRelease(db, id, TestActor); err != nil {
+	if err := RunRelease(db, id, "", TestActor); err != nil {
 		t.Fatalf("RunRelease: %v", err)
 	}
 
@@ -1666,11 +1666,42 @@ func TestRunRelease_RecordsEvent(t *testing.T) {
 
 }
 
+// Atomicity: when -m is supplied, the noted event and the released event
+// must land in the same transaction — both or neither.
+func TestRunRelease_WithNote_RecordsBothEventsAtomically(t *testing.T) {
+	db := SetupTestDB(t)
+	id := MustAdd(t, db, "", "Task")
+	MustClaim(t, db, id, "")
+
+	if err := RunRelease(db, id, "wrap-up note", TestActor); err != nil {
+		t.Fatalf("RunRelease: %v", err)
+	}
+
+	task := MustGet(t, db, id)
+	notedDetail, err := GetLatestEventDetail(db, task.ID, "noted")
+	if err != nil {
+		t.Fatalf("GetLatestEventDetail noted: %v", err)
+	}
+	if notedDetail["text"] != "wrap-up note" {
+		t.Errorf("noted text: got %v, want %q", notedDetail["text"], "wrap-up note")
+	}
+	releasedDetail, err := GetLatestEventDetail(db, task.ID, "released")
+	if err != nil {
+		t.Fatalf("GetLatestEventDetail released: %v", err)
+	}
+	if releasedDetail == nil {
+		t.Fatal("expected released event alongside noted event")
+	}
+	if task.Status != "available" {
+		t.Errorf("status: got %q, want %q", task.Status, "available")
+	}
+}
+
 func TestRunRelease_NotClaimed(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Task")
 
-	err := RunRelease(db, id, TestActor)
+	err := RunRelease(db, id, "", TestActor)
 	if err == nil {
 		t.Fatal("expected error when releasing unclaimed task")
 	}
@@ -1678,7 +1709,7 @@ func TestRunRelease_NotClaimed(t *testing.T) {
 
 func TestRunRelease_NotFound(t *testing.T) {
 	db := SetupTestDB(t)
-	err := RunRelease(db, "noExs", TestActor)
+	err := RunRelease(db, "noExs", "", TestActor)
 	if err == nil {
 		t.Fatal("expected error for non-existent task")
 	}

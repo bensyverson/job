@@ -1,8 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+
 	job "github.com/bensyverson/jobs/internal/job"
 	"github.com/spf13/cobra"
 )
@@ -38,19 +38,16 @@ func buildReleaseCmd(use string) *cobra.Command {
 				return err
 			}
 
+			resolved := ""
 			if cmd.Flags().Changed("message") {
-				resolved, rerr := resolveMessage(note, cmd.InOrStdin())
+				r, rerr := resolveMessage(note, cmd.InOrStdin())
 				if rerr != nil {
 					return rerr
 				}
-				if resolved != "" {
-					if err := job.RunNote(db, args[0], resolved, json.RawMessage(nil), actor); err != nil {
-						return err
-					}
-				}
+				resolved = r
 			}
 
-			if err := job.RunRelease(db, args[0], actor); err != nil {
+			if err := job.RunRelease(db, args[0], resolved, actor); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Released: %s\n", args[0])

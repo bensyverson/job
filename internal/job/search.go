@@ -148,6 +148,11 @@ func searchTasks(db *sql.DB, query, likePattern string, limit int) ([]SearchHit,
 	// Note pass: any task whose latest matching `noted` event body matches
 	// the query. Rank 4 — sits below description matches (rank 3) and above
 	// short_id substring matches (rank 5).
+	//
+	// Bounded by a multiple of `limit` so we cap the scan even when the
+	// noted-event table is large; the outer caller trims to `limit`
+	// post-merge. event_type is indexed (idx_events_event_type) so the
+	// driving predicate prunes before the json_extract evaluates.
 	const noteSQL = `
 		SELECT t.id, t.short_id, t.title, t.status, t.description,
 		       json_extract(e.detail, '$.text') AS note_text
@@ -157,8 +162,9 @@ func searchTasks(db *sql.DB, query, likePattern string, limit int) ([]SearchHit,
 		  AND t.deleted_at IS NULL
 		  AND json_extract(e.detail, '$.text') LIKE ? ESCAPE '\'
 		ORDER BY e.id DESC
+		LIMIT ?
 	`
-	noteRows, err := db.Query(noteSQL, likePattern)
+	noteRows, err := db.Query(noteSQL, likePattern, limit*4)
 	if err != nil {
 		return nil, fmt.Errorf("search notes: %w", err)
 	}

@@ -97,20 +97,9 @@ Tip: use 'job claim --next [parent] [duration]' to find and claim the next avail
 	return cmd
 }
 
-// runClaimNext is the body of `claim --next [parent] [duration]` — folds
-// the prior standalone `claim-next` into `claim` per pVUoZ.
+// runClaimNext is the body of `claim --next [parent] [duration]`.
 func runClaimNext(cmd *cobra.Command, db *sql.DB, args []string, actor string, force, includeParents, quiet bool, format string) error {
-	var parentShortID, duration string
-	if len(args) > 0 {
-		if job.IsDuration(args[0]) {
-			duration = args[0]
-		} else {
-			parentShortID = args[0]
-			if len(args) > 1 {
-				duration = args[1]
-			}
-		}
-	}
+	parentShortID, duration := job.ParseNextParentAndDuration(args)
 	task, err := job.RunClaimNextFiltered(db, parentShortID, duration, actor, force, includeParents)
 	if err != nil {
 		return err
@@ -138,20 +127,18 @@ func autoCloseCascadeHint(db *sql.DB, task *job.Task) string {
 	if task.ParentID == nil {
 		return ""
 	}
-	var openSiblings int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM tasks
-		 WHERE parent_id = ? AND status NOT IN ('done', 'canceled') AND deleted_at IS NULL AND id != ?`,
-		*task.ParentID, task.ID,
-	).Scan(&openSiblings); err != nil {
+	parent, err := job.GetTaskByID(db, *task.ParentID)
+	if err != nil || parent == nil {
 		return ""
 	}
-	if openSiblings != 0 {
+	openCount, _, err := job.CountOpenChildrenOfShortID(db, parent.ShortID)
+	if err != nil {
 		return ""
 	}
-	var parentShort string
-	if err := db.QueryRow("SELECT short_id FROM tasks WHERE id = ?", *task.ParentID).Scan(&parentShort); err != nil {
+	// `task` is itself one of the open children (it's about to be claimed,
+	// not yet closed); so "1" means it's the last one standing.
+	if openCount != 1 {
 		return ""
 	}
-	return fmt.Sprintf("  Closing this task will auto-close parent %s. Verify scope first.", parentShort)
+	return fmt.Sprintf("  Closing this task will auto-close parent %s. Verify scope first.", parent.ShortID)
 }

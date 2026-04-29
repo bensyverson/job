@@ -131,13 +131,10 @@ Use --format=json for machine-readable output.`,
 				}
 				job.RenderMarkdownList(cmd.OutOrStdout(), nodes, blockers, labels, 0)
 
-				// Sparse-results hint: when an unscoped, unfiltered ls returns
-				// fewer than 5 nodes, append a one-liner so first-time users
-				// understand the actionable-only default and how to broaden.
 				unscopedUnfiltered := parentShortID == "" && !showAll &&
 					labelFilter == "" && claimedByFilter == "" && grepPattern == "" &&
 					effectiveStatus == ""
-				if unscopedUnfiltered && countTopNodes(nodes) < 5 {
+				if unscopedUnfiltered && len(nodes) < 5 {
 					fmt.Fprintln(cmd.OutOrStdout(), "Showing actionable tasks only. Use --all to include blocked / done / canceled tasks.")
 				}
 			}
@@ -153,11 +150,4 @@ Use --format=json for machine-readable output.`,
 	cmd.Flags().StringVar(&statusFilter, "status", "", "filter to one status (available|claimed|done|canceled|open)")
 	cmd.Flags().BoolVar(&openFlag, "open", false, "shortcut for --status=open (anything not done or canceled)")
 	return cmd
-}
-
-// countTopNodes counts only the top-level returned nodes — children are
-// not double-counted, since the sparse-results hint is about how few roots
-// the user sees on screen.
-func countTopNodes(nodes []*job.TaskNode) int {
-	return len(nodes)
 }

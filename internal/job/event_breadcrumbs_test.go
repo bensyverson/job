@@ -159,7 +159,7 @@ func TestRelease_RecordsClaimBreadcrumbs(t *testing.T) {
 	task := job.MustGet(t, db, id)
 	wantExpires := *task.ClaimExpiresAt
 
-	if err := job.RunRelease(db, id, job.TestActor); err != nil {
+	if err := job.RunRelease(db, id, "", job.TestActor); err != nil {
 		t.Fatalf("RunRelease: %v", err)
 	}
 

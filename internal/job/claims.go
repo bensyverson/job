@@ -265,6 +265,32 @@ func countOpenChildren(tx dbtx, taskID int64) (int, error) {
 	return n, err
 }
 
+// CountOpenChildrenOfShortID returns the number of open direct children of
+// the task with the given short_id. "Open" matches the leaf-frontier filter
+// shared with countOpenChildren / queryAvailableLeafFrontier. Returns
+// (0, false, nil) if the parent short_id doesn't resolve.
+func CountOpenChildrenOfShortID(db *sql.DB, parentShortID string) (count int, found bool, err error) {
+	parent, err := GetTaskByShortID(db, parentShortID)
+	if err != nil {
+		return 0, false, err
+	}
+	if parent == nil {
+		return 0, false, nil
+	}
+	n, err := countOpenChildren(db, parent.ID)
+	if err != nil {
+		return 0, true, err
+	}
+	return n, true, nil
+}
+
+// GetTaskByID returns the task with the given internal id, or nil if no
+// matching row exists. Public counterpart to getTaskByID for callers (e.g.
+// cmd/job) that hold a *sql.DB rather than a dbtx.
+func GetTaskByID(db *sql.DB, id int64) (*Task, error) {
+	return getTaskByID(db, id)
+}
+
 func RunClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -367,7 +393,10 @@ func RunClaim(db *sql.DB, shortID, duration, actor string, force bool) error {
 	return tx.Commit()
 }
 
-func RunRelease(db *sql.DB, shortID, actor string) error {
+// RunRelease releases the caller's claim on a task. If note is non-empty, a
+// noted event is recorded in the same transaction so a release-with-note is
+// atomic — either both land or neither does.
+func RunRelease(db *sql.DB, shortID, note, actor string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -395,6 +424,12 @@ func RunRelease(db *sql.DB, shortID, actor string) error {
 		}
 		return fmt.Errorf("task %s is claimed by %s, not you. 'release' operates only on your own claims.",
 			shortID, holder)
+	}
+
+	if note != "" {
+		if err := recordEvent(tx, task.ID, "noted", actor, map[string]any{"text": note}); err != nil {
+			return err
+		}
 	}
 
 	now := CurrentNowFunc().Unix()
@@ -686,12 +721,20 @@ func IsDuration(s string) bool {
 	return err == nil
 }
 
-func parseNextParentAndDuration(args []string) (parentShortID, duration string) {
+// ParseNextParentAndDuration parses up to two positional args for `claim
+// --next [parent] [duration]` / `next [parent] [duration]`. The first arg may
+// be a duration (no parent) or a parent short_id; if the first is a parent,
+// the second (if any) is treated as a duration. Extra args are ignored.
+func ParseNextParentAndDuration(args []string) (parentShortID, duration string) {
 	if len(args) == 0 {
 		return "", ""
 	}
 	if IsDuration(args[0]) {
 		return "", args[0]
 	}
-	return args[0], ""
+	parentShortID = args[0]
+	if len(args) > 1 {
+		duration = args[1]
+	}
+	return parentShortID, duration
 }

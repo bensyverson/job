@@ -61,27 +61,30 @@ $ job identity set claude --as <your-username>
 To start the dashboard, type `job serve`.
 
 <p>
+    <sub>The Plan contains the written plan, organized hierarchically:</sub>
     <img src="docs/static/screenshots/plan.png" alt="Home dashboard" width="860">
-    <sub>The Plan contains the written plan, organized hierarchically.</sub>
 </p>
 
 <!-- Half-width pair via a 2-column table -->
 <table>
   <tr>
     <td>
+        <sub>Actors — see what each agent is working on:</sub>
         <img src="docs/static/screenshots/actors.png" alt="Actors" width="420">
-        <sub>Actors — see what each agent is working on.</sub>
     </td>
     <td>
+        <sub>Log — every event with filter chips:</sub>
         <img src="docs/static/screenshots/log.png" alt="Log" width="420">
-        <sub>Log — every event with filter chips.</sub>
     </td>
   </tr>
 </table>
 
-Click the **Time Travel** button to reveal a zoomable timeline. Grab the scrubber or use the arrow keys to inspect the exact task flow:
+<p>
+    <sub>Click the **Time Travel** button to reveal a zoomable timeline. Grab the scrubber or use the arrow keys to inspect the exact task flow:</sub>
+    <img src="docs/static/screenshots/timeline.png" alt="Time Travel line scrubber" width="860">
+</p>
 
-<img src="docs/static/screenshots/timeline.png" alt="Time Travel line scrubber" width="860">
+
 
 
 ## What Jobs is… and isn’t

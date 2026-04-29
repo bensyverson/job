@@ -292,7 +292,6 @@ func loadActorEvents(ctx context.Context, db *sql.DB, name string, now time.Time
 			EventType: verb,
 			VerbText:  verb,
 			Title:     title,
-			Note:      notePreviewFromDetail(verb, detail),
 			RelTime:   render.RelativeTime(now, ts),
 			ISOTime:   ts.UTC().Format(time.RFC3339),
 			TaskURL:   "/tasks/" + shortID,
@@ -303,6 +302,14 @@ func loadActorEvents(ctx context.Context, db *sql.DB, name string, now time.Time
 			row.Actor = "Jobs"
 			row.ActorURL = ""
 			row.IsSystem = true
+		}
+		// Mirror log.go's folded-detail verb mapping so criteria
+		// activity reads as prose on the actor page too.
+		switch verb {
+		case "criteria_added":
+			row.VerbText = criteriaAddedVerb(detail)
+		case "criterion_state":
+			row.VerbText = criterionStateVerb(detail)
 		}
 		out = append(out, row)
 	}

@@ -93,6 +93,24 @@
 </section>
 {{end}}
 
+{{if .Criteria}}
+<section class="c-section">
+  <h2 class="c-section__label t-label-caps">Criteria</h2>
+  <ul class="c-criteria stack stack-gap-xs" role="list">
+    {{range .Criteria}}{{template "criterion-row" .}}{{end}}
+  </ul>
+</section>
+{{end}}
+
+{{if .ProgressNotes}}
+<section class="c-section">
+  <h2 class="c-section__label t-label-caps">Progress notes</h2>
+  <div class="stack stack-gap-sm">
+    {{range .ProgressNotes}}{{template "progress-note-row" .}}{{end}}
+  </div>
+</section>
+{{end}}
+
 <section class="c-section">
   <h2 class="c-section__label t-label-caps">History</h2>
   <div class="stack stack-gap-sm">
@@ -102,10 +120,10 @@
       <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
         <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
       </a>
-      <span class="t-body-sm">{{.Verb}} <strong>{{.Actor}}</strong>{{if .Note}} — {{.Note}}{{end}}</span>
+      <span class="t-body-sm">{{.Verb}} <strong>{{.Actor}}</strong></span>
       {{else}}
       <span class="c-avatar c-avatar-sm" aria-hidden="true"></span>
-      <span class="t-body-sm t-muted">{{.Verb}}{{if .Note}} — {{.Note}}{{end}}</span>
+      <span class="t-body-sm t-muted">{{.Verb}}</span>
       {{end}}
       <time class="t-dim t-data-id" style="margin-left: auto" datetime="{{.ISOTime}}">{{.RelTime}} ago</time>
     </div>
@@ -114,6 +132,46 @@
     {{end}}
   </div>
 </section>
+{{end}}
+
+{{- /* Inline partial: one criterion row. Renders the four-state
+     glyph, the label, and (for non-pending) a quiet trailing state
+     badge so screen readers and color-blind users get the state
+     without relying on the glyph alone. Glyph vocabulary mirrors the
+     CLI's criterionGlyph: pending [ ], passed [x], skipped [-],
+     failed [!]. The data-criterion-state attribute carries the raw
+     state for CSS targeting and tests. */ -}}
+{{define "criterion-row"}}
+  {{- $s := .State -}}
+  <li class="c-criterion" data-criterion-state="{{$s}}">
+    <span class="c-criterion__glyph" aria-hidden="true">
+      {{- if eq $s "passed" -}}[x]
+      {{- else if eq $s "skipped" -}}[-]
+      {{- else if eq $s "failed" -}}[!]
+      {{- else -}}[ ]
+      {{- end -}}
+    </span>
+    <span class="c-criterion__label">{{.Label}}</span>
+    {{- if .StateBadge -}}
+    <span class="c-criterion__badge c-criterion__badge--{{$s}}">{{.StateBadge}}</span>
+    {{- end -}}
+  </li>
+{{end}}
+
+{{- /* Inline partial: one Progress notes row. Mirrors the History
+     row's actor avatar/link, but pulls the body into its own line so
+     longer notes wrap without crowding the timestamp. The History
+     section will (in a sibling task) drop the inline note text now
+     that this section owns the body. */ -}}
+{{define "progress-note-row"}}
+  <div class="c-progress-note">
+    <a href="{{.ActorURL}}" class="c-log-row__actor" data-actor="{{.Actor}}">
+      <span class="c-avatar c-avatar-sm" data-actor="{{.Actor}}"></span>
+      <strong>{{.Actor}}</strong>
+    </a>
+    <time class="t-dim t-data-id" datetime="{{.ISOTime}}">{{.RelTime}} ago</time>
+    <p class="c-progress-note__body">{{.Text}}</p>
+  </div>
 {{end}}
 
 {{- /* Inline partial: a status pill for a given status string. */ -}}

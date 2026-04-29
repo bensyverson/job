@@ -34,14 +34,25 @@ type Frame struct {
 // nullable; when the task has no parent, the field encodes as null
 // (Go nil string pointer). labels is a flat list — order matches the
 // task_labels insertion order to keep the wire output deterministic.
+// criteria mirrors the task_criteria rows in sort order so the JS
+// reducer can render the checklist and apply criterion_state events
+// without re-querying.
 type TaskState struct {
-	ShortID       string   `json:"shortId"`
-	Title         string   `json:"title"`
-	Description   string   `json:"description"`
-	Status        string   `json:"status"`
-	ParentShortID *string  `json:"parentShortId"`
-	SortOrder     int64    `json:"sortOrder"`
-	Labels        []string `json:"labels"`
+	ShortID       string           `json:"shortId"`
+	Title         string           `json:"title"`
+	Description   string           `json:"description"`
+	Status        string           `json:"status"`
+	ParentShortID *string          `json:"parentShortId"`
+	SortOrder     int64            `json:"sortOrder"`
+	Labels        []string         `json:"labels"`
+	Criteria      []CriterionState `json:"criteria"`
+}
+
+// CriterionState is one acceptance-criterion row in the JSON island,
+// in the wire shape the JS reducer consumes.
+type CriterionState struct {
+	Label string `json:"label"`
+	State string `json:"state"`
 }
 
 // BlockEdge is one (blocked, blocker) edge active at the head moment.
@@ -150,6 +161,7 @@ func loadTasks(ctx context.Context, db *sql.DB) ([]TaskState, error) {
 			ts.ParentShortID = &s
 		}
 		ts.Labels = []string{}
+		ts.Criteria = []CriterionState{}
 		idsByShort[ts.ShortID] = len(tasks)
 		tasks = append(tasks, ts)
 	}
@@ -189,6 +201,39 @@ func loadTasks(ctx context.Context, db *sql.DB) ([]TaskState, error) {
 	}
 	for i := range tasks {
 		sort.Strings(tasks[i].Labels)
+	}
+
+	// Criteria: one row per (task, criterion) in sort order so the JS
+	// reducer can render the checklist as the CLI does. Sort by
+	// (task_id, sort_order, id) for deterministic output.
+	crows, err := db.QueryContext(ctx, `
+		SELECT t.short_id, c.label, c.state
+		FROM task_criteria c
+		JOIN tasks t ON t.id = c.task_id
+		WHERE t.deleted_at IS NULL
+		ORDER BY t.short_id, c.sort_order, c.id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("criteria query: %w", err)
+	}
+	defer crows.Close()
+
+	for crows.Next() {
+		var shortID, label, state string
+		if err := crows.Scan(&shortID, &label, &state); err != nil {
+			return nil, err
+		}
+		idx, ok := idsByShort[shortID]
+		if !ok {
+			continue
+		}
+		tasks[idx].Criteria = append(tasks[idx].Criteria, CriterionState{
+			Label: label,
+			State: state,
+		})
+	}
+	if err := crows.Err(); err != nil {
+		return nil, err
 	}
 	return tasks, nil
 }

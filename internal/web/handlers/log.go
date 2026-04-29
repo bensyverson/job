@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	job "github.com/bensyverson/jobs/internal/job"
@@ -66,7 +64,6 @@ type LogEventRow struct {
 	// "EXPIRED" after the CSS uppercase rather than the raw enum.
 	VerbText string
 	Title    string
-	Note     string
 	RelTime  string
 	ISOTime  string
 	TaskURL  string
@@ -108,9 +105,13 @@ const defaultLogLimit = 200
 // knownEventTypes is the canonical ordered set of event types surfaced
 // in the filter bar. Order matches the prototype so users see the
 // same layout regardless of which events are present in the DB.
+// criteria_added and criterion_state are authoring-side activity (not
+// state transitions like done/canceled), so they sit alongside noted
+// rather than at the lifecycle end of the row.
 var knownEventTypes = []string{
 	"created", "claimed", "done", "blocked", "unblocked",
-	"noted", "released", "canceled",
+	"noted", "criteria_added", "criterion_state",
+	"released", "canceled",
 }
 
 // Log renders the filterable event stream view. See vision §3.4.
@@ -356,7 +357,6 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, has
 			EventType: e.EventType,
 			VerbText:  e.EventType,
 			Title:     titles[e.TaskID],
-			Note:      notePreviewFromDetail(e.EventType, e.Detail),
 			RelTime:   render.RelativeTime(now, ts),
 			ISOTime:   ts.UTC().Format(time.RFC3339),
 			TaskURL:   "/tasks/" + e.ShortID,
@@ -368,41 +368,18 @@ func loadLogEvents(db *sql.DB, f LogFilters) (rows []LogEventRow, total int, has
 			row.ActorURL = ""
 			row.IsSystem = true
 		}
+		// Folded-detail verbs: keep the same vocabulary the task/peek
+		// History uses, just without the trailing "by" since the log
+		// row places the actor before the verb.
+		switch e.EventType {
+		case "criteria_added":
+			row.VerbText = criteriaAddedVerb(e.Detail)
+		case "criterion_state":
+			row.VerbText = criterionStateVerb(e.Detail)
+		}
 		rows[i] = row
 	}
 	return rows, total, hasMore, nil
-}
-
-// notePreviewFromDetail extracts the free-text body from the JSON
-// detail payload emitted by done/canceled/noted events. Other event
-// types carry structural metadata (blocker IDs, move targets) that
-// would add noise more than signal in a log row, so they're skipped.
-func notePreviewFromDetail(eventType, detail string) string {
-	if detail == "" {
-		return ""
-	}
-	var field string
-	switch eventType {
-	case "done", "canceled":
-		field = "note"
-	case "noted":
-		field = "text"
-	default:
-		return ""
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(detail), &payload); err != nil {
-		return ""
-	}
-	s, _ := payload[field].(string)
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	if len(s) > 160 {
-		return s[:160] + "…"
-	}
-	return s
 }
 
 func taskIDsWithLabel(db *sql.DB, label string) ([]int64, error) {

@@ -211,6 +211,44 @@ func TestPeek_DescriptionSectionAbsentWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestPeek_CriteriaSection_RendersFourStatesAndOmittedWhenZero(t *testing.T) {
+	db := setupLogTestDB(t)
+	idEmpty := mustAdd(t, db, "alice", "no criteria", nil, nil)
+	idFull := mustAdd(t, db, "alice", "has criteria", nil, nil)
+	if _, err := job.RunAddCriteria(db, idFull, []job.Criterion{
+		{Label: "p"},
+		{Label: "q"},
+		{Label: "r"},
+		{Label: "s"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, idFull, "q", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, idFull, "r", job.CriterionSkipped, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, idFull, "s", job.CriterionFailed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	bodyEmpty := mustFetchPeek(t, deps, idEmpty)
+	if strings.Contains(bodyEmpty, ">Criteria<") {
+		t.Errorf("peek should omit Criteria section when zero criteria")
+	}
+
+	body := mustFetchPeek(t, deps, idFull)
+	mustContain(t, body, ">Criteria<")
+	mustContainAll(t, body,
+		`data-criterion-state="pending"`,
+		`data-criterion-state="passed"`,
+		`data-criterion-state="skipped"`,
+		`data-criterion-state="failed"`,
+	)
+}
+
 func TestPeek_NotesSectionRendersWhenTaskCompletedWithNote(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "alice-task", nil, nil)
@@ -221,7 +259,7 @@ func TestPeek_NotesSectionRendersWhenTaskCompletedWithNote(t *testing.T) {
 	deps := newLogDeps(t, db)
 	body := mustFetchPeek(t, deps, id)
 
-	mustContain(t, body, `>Notes<`)
+	mustContain(t, body, `>Completion note<`)
 	mustContain(t, body, `All wrapped up neatly.`)
 }
 
@@ -232,8 +270,8 @@ func TestPeek_NotesSectionAbsentWhenNoCompletionNote(t *testing.T) {
 	deps := newLogDeps(t, db)
 	body := mustFetchPeek(t, deps, id)
 
-	if strings.Contains(body, `>Notes<`) {
-		t.Errorf("task without a completion note should not render the Notes section")
+	if strings.Contains(body, `>Completion note<`) {
+		t.Errorf("task without a completion note should not render the Completion note section")
 	}
 }
 

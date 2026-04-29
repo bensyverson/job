@@ -181,6 +181,85 @@ func TestLoad_ActiveBlocks(t *testing.T) {
 	}
 }
 
+func TestLoad_TasksWithCriteria(t *testing.T) {
+	db := job.SetupTestDB(t)
+	id := job.MustAdd(t, db, "", "task with criteria")
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "alpha"},
+		{Label: "beta"},
+		{Label: "gamma"},
+	}, job.TestActor); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "beta", job.CriterionPassed, job.TestActor); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+
+	f, err := initial.Load(context.Background(), db)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	var got *initial.TaskState
+	for i := range f.Tasks {
+		if f.Tasks[i].ShortID == id {
+			got = &f.Tasks[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("task %s missing from frame", id)
+	}
+	if len(got.Criteria) != 3 {
+		t.Fatalf("Criteria len = %d, want 3", len(got.Criteria))
+	}
+	want := []initial.CriterionState{
+		{Label: "alpha", State: "pending"},
+		{Label: "beta", State: "passed"},
+		{Label: "gamma", State: "pending"},
+	}
+	for i, w := range want {
+		if got.Criteria[i] != w {
+			t.Errorf("Criteria[%d] = %+v, want %+v", i, got.Criteria[i], w)
+		}
+	}
+}
+
+func TestLoad_TasksWithoutCriteriaSerializeAsEmptyArray(t *testing.T) {
+	db := job.SetupTestDB(t)
+	id := job.MustAdd(t, db, "", "criterion-less task")
+
+	raw, err := initial.LoadJSON(context.Background(), db)
+	if err != nil {
+		t.Fatalf("LoadJSON: %v", err)
+	}
+	// We want criteria: [] not criteria: null so the JS consumer can
+	// always treat it as iterable. Spot-check via JSON parse.
+	var parsed struct {
+		Tasks []map[string]any `json:"tasks"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, ts := range parsed.Tasks {
+		if ts["shortId"] == id {
+			c, ok := ts["criteria"]
+			if !ok {
+				t.Fatalf("criteria field missing on task %s", id)
+			}
+			arr, ok := c.([]any)
+			if !ok {
+				t.Fatalf("criteria field on task %s is %T, want []any", id, c)
+			}
+			if len(arr) != 0 {
+				t.Errorf("criteria len = %d, want 0", len(arr))
+			}
+			return
+		}
+	}
+	t.Fatalf("task %s missing from JSON island", id)
+}
+
 func TestLoadJSON_HTMLSafeAgainstScriptInjection(t *testing.T) {
 	db := job.SetupTestDB(t)
 	// A task whose title contains a literal </script> sequence — the

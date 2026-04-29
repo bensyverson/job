@@ -246,6 +246,90 @@ func TestLog_PaginationOmitsLoadMoreWhenAllEventsFit(t *testing.T) {
 	}
 }
 
+func TestLog_CriteriaAddedAndCriterionStateRenderHumanVerbs(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "subject", nil, nil)
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "alpha"},
+		{Label: "beta"},
+		{Label: "gamma"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "beta", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "")
+
+	// Verb span must not echo the raw event type — that's the leak
+	// EUW3M is closing. The CSS class can still carry the type for
+	// styling hooks, mirroring how claim_expired is handled.
+	if strings.Contains(body, `criteria_added</span>`) {
+		t.Errorf("log verb span should not render the raw 'criteria_added' enum")
+	}
+	if strings.Contains(body, `criterion_state</span>`) {
+		t.Errorf("log verb span should not render the raw 'criterion_state' enum")
+	}
+	mustContain(t, body, `c-log-row__verb--criteria_added">added 3 criteria<`)
+	mustContain(t, body, `c-log-row__verb--criterion_state">marked &#34;beta&#34; passed<`)
+}
+
+func TestLog_RowsCarryNoInlineNoteBodies(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "subject", nil, nil)
+	mustClaim(t, db, id, "alice")
+	if err := job.RunNote(db, id, "LOG_NOTE_BODY_PROGRESS", nil, "alice"); err != nil {
+		t.Fatalf("RunNote: %v", err)
+	}
+	if _, _, err := job.RunDone(db, []string{id}, false, "LOG_NOTE_BODY_DONE", nil, "alice"); err != nil {
+		t.Fatalf("RunDone: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	body := fetchLog(t, deps, "")
+
+	for _, banned := range []string{"LOG_NOTE_BODY_PROGRESS", "LOG_NOTE_BODY_DONE"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("Log row should not inline the note body %q", banned)
+		}
+	}
+	// And verb spans still render. The 'noted' verb stays as-is — we
+	// dropped only the trailing note text.
+	mustContain(t, body, `c-log-row__verb--noted">noted<`)
+}
+
+func TestLog_FilterChipsIncludeCriteriaTypes(t *testing.T) {
+	db := setupLogTestDB(t)
+	id := mustAdd(t, db, "alice", "subject", nil, nil)
+	if _, err := job.RunAddCriteria(db, id, []job.Criterion{
+		{Label: "alpha"},
+		{Label: "beta"},
+	}, "alice"); err != nil {
+		t.Fatalf("RunAddCriteria: %v", err)
+	}
+	if _, err := job.RunSetCriterion(db, id, "alpha", job.CriterionPassed, "alice"); err != nil {
+		t.Fatalf("RunSetCriterion: %v", err)
+	}
+
+	deps := newLogDeps(t, db)
+	bar := extractFilterBar(t, fetchLog(t, deps, ""))
+
+	// Both event types appear as type chips in the filter bar.
+	mustContain(t, bar, `/log?type=criteria_added`)
+	mustContain(t, bar, `/log?type=criterion_state`)
+
+	// And clicking either chip filters the log to just that type.
+	body := fetchLog(t, deps, "type=criterion_state")
+	if !strings.Contains(body, `c-log-row--criterion_state`) {
+		t.Errorf("?type=criterion_state should include criterion_state rows")
+	}
+	if strings.Contains(body, `c-log-row--criteria_added`) {
+		t.Errorf("?type=criterion_state should NOT include criteria_added rows")
+	}
+}
+
 func TestLog_ClaimExpiredRendersAsExpiredVerb(t *testing.T) {
 	db := setupLogTestDB(t)
 	id := mustAdd(t, db, "alice", "expired-task", nil, nil)

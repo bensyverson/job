@@ -63,6 +63,7 @@ function defaultTask(shortId) {
     sortOrder: 0,
     labels: new Set(),
     notes: [],
+    criteria: [],
   };
 }
 
@@ -73,6 +74,9 @@ function cloneFrame(frame) {
       ...v,
       labels: new Set(v.labels),
       notes: v.notes ? v.notes.slice() : [],
+      criteria: v.criteria
+        ? v.criteria.map((c) => ({ ...c }))
+        : [],
     });
   }
   const blocks = new Map();
@@ -96,6 +100,7 @@ export function initialFrame(payload) {
       parentShortId: t.parentShortId ?? null,
       labels: new Set(t.labels ?? []),
       notes: Array.isArray(t.notes) ? t.notes.map((n) => ({ ...n })) : [],
+      criteria: Array.isArray(t.criteria) ? t.criteria.map((c) => ({ ...c })) : [],
     });
   }
   const blocks = new Map();
@@ -240,6 +245,30 @@ const FORWARD = {
     const t = frame.tasks.get(event.task_id);
     if (t) t.status = "available";
     frame.claims.delete(event.task_id);
+  },
+
+  criteria_added(frame, event) {
+    const detail = event.detail ?? {};
+    const t = frame.tasks.get(event.task_id);
+    if (!t) return;
+    const items = Array.isArray(detail.criteria) ? detail.criteria : [];
+    t.criteria = t.criteria ? t.criteria.slice() : [];
+    for (const c of items) {
+      t.criteria.push({
+        label: c.label,
+        state: c.state ?? "pending",
+      });
+    }
+  },
+
+  criterion_state(frame, event) {
+    const detail = event.detail ?? {};
+    const t = frame.tasks.get(event.task_id);
+    if (!t || !Array.isArray(t.criteria)) return;
+    const idx = t.criteria.findIndex((c) => c.label === detail.label);
+    if (idx < 0) return;
+    t.criteria = t.criteria.slice();
+    t.criteria[idx] = { ...t.criteria[idx], state: detail.state };
   },
 };
 
@@ -391,6 +420,34 @@ const REVERSE = {
     });
     const t = frame.tasks.get(event.task_id);
     if (t) t.status = "claimed";
+    return true;
+  },
+
+  criteria_added(frame, event) {
+    const detail = event.detail ?? {};
+    const t = frame.tasks.get(event.task_id);
+    if (!t) return true;
+    const items = Array.isArray(detail.criteria) ? detail.criteria : [];
+    if (items.length === 0) return true;
+    // Forward fold appends in input order; reverse pops the same count
+    // off the end. We don't try to undo by label since the forward
+    // path is a tail-append and order is the only invariant.
+    if (!Array.isArray(t.criteria) || t.criteria.length < items.length) {
+      return false;
+    }
+    t.criteria = t.criteria.slice(0, t.criteria.length - items.length);
+    return true;
+  },
+
+  criterion_state(frame, event) {
+    const detail = event.detail ?? {};
+    if (detail.prior === undefined) return false;
+    const t = frame.tasks.get(event.task_id);
+    if (!t || !Array.isArray(t.criteria)) return true;
+    const idx = t.criteria.findIndex((c) => c.label === detail.label);
+    if (idx < 0) return true;
+    t.criteria = t.criteria.slice();
+    t.criteria[idx] = { ...t.criteria[idx], state: detail.prior };
     return true;
   },
 };

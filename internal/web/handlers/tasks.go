@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	job "github.com/bensyverson/jobs/internal/job"
@@ -25,9 +25,34 @@ type TaskPageData struct {
 	Parent         *TaskRef
 	BlockedBy      []TaskRef
 	Blocking       []TaskRef
+	Criteria       []TaskCriterion
 	CompletionNote string
 	ClaimedBy      string
+	ProgressNotes  []TaskProgressNote
 	History        []TaskHistoryEntry
+}
+
+// TaskProgressNote is one row in the "Progress notes" section, ordered
+// newest-first. The body is the raw note text; the avatar and actor
+// link mirror how History rows render their actor.
+type TaskProgressNote struct {
+	Actor    string
+	ActorURL string
+	Text     string
+	RelTime  string
+	ISOTime  string
+}
+
+// TaskCriterion is one row in the Criteria checklist on the task page
+// and peek sheet. State is one of "pending", "passed", "skipped",
+// "failed" — same vocabulary as the CLI's CriterionState. StateBadge
+// is the human-readable trailing label rendered for non-pending rows;
+// blank when the row is pending and the section just shows the empty
+// glyph.
+type TaskCriterion struct {
+	Label      string
+	State      string
+	StateBadge string
 }
 
 // TaskRef is a minimal reference used for parents, blockers, and the
@@ -47,12 +72,14 @@ type TaskLabel struct {
 }
 
 // TaskHistoryEntry is one row in the history section of the detail
-// view, pre-rendered to avoid template-side conditionals.
+// view, pre-rendered to avoid template-side conditionals. The actor's
+// verb (and timestamp) is the entire row — note bodies live in their
+// own Progress notes / Completion note sections above, so History
+// stays a terse audit trail.
 type TaskHistoryEntry struct {
 	EventType string
 	Actor     string
 	Verb      string
-	Note      string
 	RelTime   string
 	ISOTime   string
 	ActorURL  string
@@ -120,6 +147,11 @@ func loadTaskPageData(deps Deps, w http.ResponseWriter, r *http.Request) (TaskPa
 		InternalError(deps, w, "events", err)
 		return TaskPageData{}, false
 	}
+	criteria, err := job.GetCriteria(deps.DB, task.ID)
+	if err != nil {
+		InternalError(deps, w, "criteria", err)
+		return TaskPageData{}, false
+	}
 
 	// One batched lookup so the Blocked-by / Blocks / Parent rows
 	// all get a blocker-aware status without an N+1 per related
@@ -156,10 +188,35 @@ func loadTaskPageData(deps Deps, w http.ResponseWriter, r *http.Request) (TaskPa
 		Parent:         taskRefOrNil(parent, relBlockers),
 		BlockedBy:      taskRefs(blockers, relBlockers),
 		Blocking:       taskRefs(blocking, relBlockers),
+		Criteria:       buildTaskCriteria(criteria),
 		CompletionNote: derefString(task.CompletionNote),
 		ClaimedBy:      derefString(task.ClaimedBy),
+		ProgressNotes:  buildProgressNotes(events),
 		History:        buildHistory(events),
 	}, true
+}
+
+// buildTaskCriteria pre-renders the criterion rows for the template.
+// Mirrors the CLI's criterionGlyph vocabulary so screen-readers and
+// color-blind users get a coherent story: pending rows have no badge
+// (the empty checkbox carries the meaning); the other three each get
+// a one-word badge that reads as the state.
+func buildTaskCriteria(items []job.Criterion) []TaskCriterion {
+	out := make([]TaskCriterion, len(items))
+	for i, c := range items {
+		state := string(c.State)
+		var badge string
+		switch c.State {
+		case job.CriterionPassed:
+			badge = "passed"
+		case job.CriterionSkipped:
+			badge = "skipped"
+		case job.CriterionFailed:
+			badge = "failed"
+		}
+		out[i] = TaskCriterion{Label: c.Label, State: state, StateBadge: badge}
+	}
+	return out
 }
 
 func buildTaskLabels(names []string) []TaskLabel {
@@ -196,6 +253,36 @@ func toTaskRef(t *job.Task, blockerMap map[int64][]string) TaskRef {
 	}
 }
 
+// buildProgressNotes filters the event log down to noted events with
+// non-empty bodies, returning rows newest-first. Caller passes the
+// event slice already sorted newest-first (GetEventsForTask uses
+// ORDER BY created_at DESC, id DESC), so a forward walk preserves
+// that order. Empty-body or malformed-detail events are skipped
+// silently; History will still surface a "noted by" row for them, so
+// the dashboard does not lose the fact that the event happened.
+func buildProgressNotes(events []job.EventEntry) []TaskProgressNote {
+	now := time.Now()
+	out := make([]TaskProgressNote, 0)
+	for _, e := range events {
+		if e.EventType != "noted" {
+			continue
+		}
+		text := noteTextFromDetail(e.Detail)
+		if text == "" {
+			continue
+		}
+		ts := time.Unix(e.CreatedAt, 0)
+		out = append(out, TaskProgressNote{
+			Actor:    e.Actor,
+			ActorURL: "/actors/" + url.PathEscape(e.Actor),
+			Text:     text,
+			RelTime:  render.RelativeTime(now, ts),
+			ISOTime:  ts.UTC().Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
 func buildHistory(events []job.EventEntry) []TaskHistoryEntry {
 	now := time.Now()
 	out := make([]TaskHistoryEntry, len(events))
@@ -204,8 +291,7 @@ func buildHistory(events []job.EventEntry) []TaskHistoryEntry {
 		entry := TaskHistoryEntry{
 			EventType: e.EventType,
 			Actor:     e.Actor,
-			Verb:      eventVerb(e.EventType),
-			Note:      extractNoteFromDetail(e.EventType, e.Detail),
+			Verb:      eventVerb(e.EventType, e.Detail),
 			RelTime:   render.RelativeTime(now, ts),
 			ISOTime:   ts.UTC().Format(time.RFC3339),
 			ActorURL:  "/actors/" + url.PathEscape(e.Actor),
@@ -227,8 +313,9 @@ func buildHistory(events []job.EventEntry) []TaskHistoryEntry {
 // human/agent actor, so verbs typically end in "by". For system
 // events (e.g. claim expiration) the verb stands alone — the
 // template suppresses the actor trailer when EventEntry.Actor is
-// blanked out below.
-func eventVerb(t string) string {
+// blanked out below. detail is consulted for events whose phrasing
+// folds in payload data (criteria count, criterion label/state).
+func eventVerb(t, detail string) string {
 	switch t {
 	case "created":
 		return "added by"
@@ -250,16 +337,61 @@ func eventVerb(t string) string {
 		return "claim expired"
 	case "labeled":
 		return "labeled by"
+	case "criteria_added":
+		return criteriaAddedVerb(detail) + " by"
+	case "criterion_state":
+		return criterionStateVerb(detail) + " by"
 	default:
 		return t + " by"
 	}
 }
 
-// extractNoteFromDetail pulls the free-text body out of the JSON
-// detail payload for event types that carry one. Only user-supplied
-// fields are surfaced — the internal `reason` field (`manual`,
-// `blocker_done`, `blocker_canceled`) is system categorization, not
-// prose, and would leak as garbled copy in the history column.
+// criteriaAddedVerb renders the count-aware phrase for a
+// criteria_added event payload. Falls back to a count-less phrase if
+// the detail is missing or malformed so a corrupt event still reads
+// as prose rather than leaking the snake_case enum.
+func criteriaAddedVerb(detailJSON string) string {
+	count := 0
+	if detailJSON != "" {
+		var detail map[string]any
+		if err := json.Unmarshal([]byte(detailJSON), &detail); err == nil {
+			if list, ok := detail["criteria"].([]any); ok {
+				count = len(list)
+			}
+		}
+	}
+	noun := "criteria"
+	if count == 1 {
+		noun = "criterion"
+	}
+	if count == 0 {
+		return "added criteria"
+	}
+	return fmt.Sprintf("added %d %s", count, noun)
+}
+
+// criterionStateVerb renders the label+state phrase for a
+// criterion_state event payload. Mirrors the CLI vocabulary so the
+// two surfaces tell the same story.
+func criterionStateVerb(detailJSON string) string {
+	label, state := "", ""
+	if detailJSON != "" {
+		var detail map[string]any
+		if err := json.Unmarshal([]byte(detailJSON), &detail); err == nil {
+			if v, ok := detail["label"].(string); ok {
+				label = v
+			}
+			if v, ok := detail["state"].(string); ok {
+				state = v
+			}
+		}
+	}
+	if label == "" || state == "" {
+		return "marked a criterion"
+	}
+	return fmt.Sprintf("marked %q %s", label, state)
+}
+
 // DisplayStatus maps the DB's raw status column into the four visual
 // status categories used by the dashboard's c-status-pill ("todo",
 // "active", "blocked", "done"). An open task that has any unresolved
@@ -293,20 +425,4 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-func extractNoteFromDetail(eventType, detail string) string {
-	if detail == "" {
-		return ""
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(detail), &payload); err != nil {
-		return ""
-	}
-	for _, key := range []string{"note", "text"} {
-		if s, ok := payload[key].(string); ok && strings.TrimSpace(s) != "" {
-			return strings.TrimSpace(s)
-		}
-	}
-	return ""
 }

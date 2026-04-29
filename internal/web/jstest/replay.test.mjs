@@ -555,6 +555,142 @@ test("applyEvent noted: does not mutate the prior frame's notes array", () => {
   assert.equal(after.tasks.get("ABC12").notes.length, 2);
 });
 
+// --- criteria ---
+
+test("initialFrame: hydrates per-task criteria from the JSON island", () => {
+  const f = initialFrame({
+    headEventId: 5,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        status: "available",
+        sortOrder: 0,
+        criteria: [
+          { label: "alpha", state: "pending" },
+          { label: "beta", state: "passed" },
+        ],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  assert.deepStrictEqual(f.tasks.get("ABC12").criteria, [
+    { label: "alpha", state: "pending" },
+    { label: "beta", state: "passed" },
+  ]);
+});
+
+test("initialFrame: missing criteria defaults to []", () => {
+  const f = initialFrame({
+    headEventId: 0,
+    tasks: [
+      { shortId: "ABC12", title: "T", status: "available", sortOrder: 0 },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  assert.deepStrictEqual(f.tasks.get("ABC12").criteria, []);
+});
+
+test("applyEvent criteria_added: appends each entry in input order", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        status: "available",
+        sortOrder: 0,
+        criteria: [{ label: "existing", state: "pending" }],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 20,
+    task_id: "ABC12",
+    actor: "alice",
+    event_type: "criteria_added",
+    detail: {
+      criteria: [
+        { label: "alpha", state: "pending" },
+        { label: "beta", state: "pending" },
+      ],
+    },
+  });
+
+  assert.deepStrictEqual(after.tasks.get("ABC12").criteria, [
+    { label: "existing", state: "pending" },
+    { label: "alpha", state: "pending" },
+    { label: "beta", state: "pending" },
+  ]);
+  // Cloning isolation: prior frame untouched.
+  assert.equal(before.tasks.get("ABC12").criteria.length, 1);
+});
+
+test("applyEvent criterion_state: mutates the matching row by label", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        status: "available",
+        sortOrder: 0,
+        criteria: [
+          { label: "alpha", state: "pending" },
+          { label: "beta", state: "pending" },
+        ],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 21,
+    task_id: "ABC12",
+    actor: "alice",
+    event_type: "criterion_state",
+    detail: { label: "beta", state: "passed", prior: "pending" },
+  });
+
+  assert.deepStrictEqual(after.tasks.get("ABC12").criteria, [
+    { label: "alpha", state: "pending" },
+    { label: "beta", state: "passed" },
+  ]);
+  // Prior frame's row preserves its old state — prove cloning, not aliasing.
+  assert.equal(before.tasks.get("ABC12").criteria[1].state, "pending");
+});
+
+test("applyEvent criterion_state: unknown label is a no-op", () => {
+  const before = initialFrame({
+    headEventId: 0,
+    tasks: [
+      {
+        shortId: "ABC12",
+        title: "T",
+        status: "available",
+        sortOrder: 0,
+        criteria: [{ label: "alpha", state: "pending" }],
+      },
+    ],
+    blocks: [],
+    claims: [],
+  });
+  const after = applyEvent(before, {
+    id: 22,
+    task_id: "ABC12",
+    actor: "alice",
+    event_type: "criterion_state",
+    detail: { label: "ghost", state: "passed", prior: "pending" },
+  });
+  assert.deepStrictEqual(after.tasks.get("ABC12").criteria, [
+    { label: "alpha", state: "pending" },
+  ]);
+});
+
 test("applyEvent claim_expired: clears claim; status -> available", () => {
   const before = initialFrame({
     headEventId: 0,
@@ -857,6 +993,62 @@ const roundTripCases = [
         old_sort_order: 5,
         new_sort_order: 10,
       },
+    },
+  },
+  {
+    name: "criteria_added",
+    seed: () => initialFrame({
+      headEventId: 0,
+      tasks: [
+        {
+          shortId: "ABC12",
+          title: "T",
+          status: "available",
+          sortOrder: 0,
+          criteria: [{ label: "existing", state: "pending" }],
+        },
+      ],
+      blocks: [],
+      claims: [],
+    }),
+    event: {
+      id: 15,
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "criteria_added",
+      detail: {
+        criteria: [
+          { label: "alpha", state: "pending" },
+          { label: "beta", state: "pending" },
+        ],
+      },
+    },
+  },
+  {
+    name: "criterion_state",
+    seed: () => initialFrame({
+      headEventId: 0,
+      tasks: [
+        {
+          shortId: "ABC12",
+          title: "T",
+          status: "available",
+          sortOrder: 0,
+          criteria: [
+            { label: "alpha", state: "pending" },
+            { label: "beta", state: "pending" },
+          ],
+        },
+      ],
+      blocks: [],
+      claims: [],
+    }),
+    event: {
+      id: 16,
+      task_id: "ABC12",
+      actor: "alice",
+      event_type: "criterion_state",
+      detail: { label: "beta", state: "passed", prior: "pending" },
     },
   },
 ];

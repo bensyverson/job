@@ -27,7 +27,7 @@ test("renderPlanSection: empty roots emit the c-plan-empty placeholder", () => {
   const html = renderPlanSection([]);
   assert.match(html, /<section class="c-section" aria-label="Plan">/);
   assert.match(html, /c-plan-empty/);
-  assert.match(html, /No tasks yet\./);
+  assert.match(html, /No active tasks\./);
 });
 
 test("renderPlanSection: one node emits a row with id, status pill, and labels", () => {

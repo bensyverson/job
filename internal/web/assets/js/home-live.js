@@ -85,6 +85,7 @@
     var oldRecent = document.querySelector("[data-home-recent]");
     var oldBlocked = document.querySelector("[data-home-blocked]");
     var oldSignals = document.querySelector("main .c-grid-signals");
+    var oldGraph = document.querySelector("[data-home-graph] .c-mini-graph");
     if (!oldClaims) return;
     try {
       var res = await fetch(window.location.href, {
@@ -98,10 +99,12 @@
       var freshRecent = doc.querySelector("[data-home-recent]");
       var freshBlocked = doc.querySelector("[data-home-blocked]");
       var freshSignals = doc.querySelector("main .c-grid-signals");
+      var freshGraph = doc.querySelector("[data-home-graph] .c-mini-graph");
       if (freshClaims) oldClaims.replaceWith(freshClaims);
       if (freshRecent && oldRecent) oldRecent.replaceWith(freshRecent);
       if (freshBlocked && oldBlocked) oldBlocked.replaceWith(freshBlocked);
       if (freshSignals && oldSignals) oldSignals.replaceWith(freshSignals);
+      if (freshGraph && oldGraph) oldGraph.replaceWith(freshGraph);
 
       // Idempotent re-paint so new rows get their actor colors.
       if (window.JobsColors && typeof window.JobsColors.paint === "function") {

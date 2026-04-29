@@ -194,6 +194,6 @@ export function renderPlanSection(planNodes) {
   const inner =
     planNodes && planNodes.length > 0
       ? `<div class="stack stack-gap-xs">${planNodes.map(renderNode).join("")}</div>`
-      : `<div class="c-plan-empty"><span class="t-muted">No tasks yet. <code style="font-family: var(--font-mono)">job add &lt;title&gt;</code> to get started.</span></div>`;
+      : `<div class="c-plan-empty"><span class="t-muted">No active tasks.</div>`;
   return `<section class="c-section" aria-label="Plan">${inner}</section>`;
 }

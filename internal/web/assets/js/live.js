@@ -250,7 +250,7 @@
       if (state === "connected") {
         label.textContent = lastEventAt
           ? "last event " + agoLabel(Date.now() - lastEventAt)
-          : "waiting for first event";
+          : "listening";
       } else if (state === "reconnecting") {
         label.textContent = "reconnecting…";
       } else if (state === "offline") {

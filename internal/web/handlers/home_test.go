@@ -697,7 +697,7 @@ func TestHome_Graph_EmptyWhenNoTasks(t *testing.T) {
 	body := fetchHome(t, deps)
 
 	mustContain(t, body, `data-home-graph`)
-	mustContain(t, body, `Dependency flow`)
+	mustContain(t, body, `Task map`)
 	mustContain(t, body, `No active or upcoming work.`)
 }
 

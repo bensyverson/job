@@ -2,7 +2,8 @@
 
 *The task tracker that agents love using and humans love watching.*
 
-[Screenshot]
+<!-- Full-width heros -->
+<img src="docs/static/screenshots/home.png" alt="Home dashboard" width="860">
 
 **Jobs is a CLI tool which helps agents create detailed plans and carry them out methodically.**
 
@@ -59,21 +60,22 @@ $ job identity set claude --as <your-username>
 
 To start the dashboard, type `job serve`.
 
-- The Home screen of the dashboard shows the current state of the system at a glance, including a “subway map” of past and upcoming work.
-- The Plan tab contains the written plan, organized hierarchically.
-- The Actors tab lets you see what individual agents are working on.
-- The Log shows the entire event stream.
-
-<!-- Full-width heros -->
-<img src="docs/static/screenshots/home.png" alt="Home dashboard" width="860">
-
-<img src="docs/static/screenshots/plan.png" alt="Home dashboard" width="860">
+<p>
+    <img src="docs/static/screenshots/plan.png" alt="Home dashboard" width="860">
+    <sub>The Plan contains the written plan, organized hierarchically.</sub>
+</p>
 
 <!-- Half-width pair via a 2-column table -->
 <table>
   <tr>
-    <td><img src="docs/static/screenshots/actors.png" alt="Actors" width="420"></td>
-    <td><img src="docs/static/screenshots/log.png" alt="Log" width="420"></td>
+    <td>
+        <img src="docs/static/screenshots/actors.png" alt="Actors" width="420">
+        <sub>Actors — see what each agent is working on.</sub>
+    </td>
+    <td>
+        <img src="docs/static/screenshots/log.png" alt="Log" width="420">
+        <sub>Log — every event with filter chips.</sub>
+    </td>
   </tr>
 </table>
 

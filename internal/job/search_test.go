@@ -128,9 +128,9 @@ func TestRunSearch_MatchesByDescription(t *testing.T) {
 	}
 }
 
-// RunNote appends note text to tasks.description (see RunNote in tasks.go),
-// so a note-only match surfaces as a description match — that's the field the
-// text actually lives in.
+// Notes live in the event log only (no longer appended to tasks.description),
+// so a note-only match surfaces as MatchSource="note" with the excerpt drawn
+// from the note body.
 func TestRunSearch_MatchesByNote(t *testing.T) {
 	db := setupSearchTestDB(t)
 	id := searchMustAdd(t, db, "alice", "Task", "", nil, nil)
@@ -144,11 +144,53 @@ func TestRunSearch_MatchesByNote(t *testing.T) {
 		t.Fatalf("expected 1 hit, got %d", len(hits))
 	}
 	h := hits[0]
-	if h.Kind != "task" || h.MatchSource != "description" {
-		t.Errorf("got Kind=%q MatchSource=%q, want task/description", h.Kind, h.MatchSource)
+	if h.Kind != "task" || h.MatchSource != "note" {
+		t.Errorf("got Kind=%q MatchSource=%q, want task/note", h.Kind, h.MatchSource)
+	}
+	if h.ShortID != id {
+		t.Errorf("ShortID = %q, want %q", h.ShortID, id)
 	}
 	if !strings.Contains(strings.ToLower(h.Excerpt), "docs") {
 		t.Errorf("Excerpt = %q, want it to contain 'docs'", h.Excerpt)
+	}
+}
+
+// Notes rank just after description: a description hit on one task and a
+// note-only hit on another both match, and the description hit is returned
+// first.
+func TestRunSearch_NoteRanksAfterDescription(t *testing.T) {
+	db := setupSearchTestDB(t)
+	descHit := searchMustAdd(t, db, "alice", "DescTask", "wombat in description", nil, nil)
+	noteHit := searchMustAdd(t, db, "alice", "NoteTask", "", nil, nil)
+	searchMustNote(t, db, noteHit, "wombat in note", "alice")
+
+	hits, err := RunSearch(db, "wombat", 20)
+	if err != nil {
+		t.Fatalf("RunSearch: %v", err)
+	}
+	var taskShortIDs []string
+	for _, h := range hits {
+		if h.Kind == "task" {
+			taskShortIDs = append(taskShortIDs, h.ShortID)
+		}
+	}
+	if len(taskShortIDs) != 2 {
+		t.Fatalf("expected 2 task hits, got %d (%v)", len(taskShortIDs), taskShortIDs)
+	}
+	if taskShortIDs[0] != descHit {
+		t.Errorf("rank[0] = %q, want description hit %q", taskShortIDs[0], descHit)
+	}
+	if taskShortIDs[1] != noteHit {
+		t.Errorf("rank[1] = %q, want note hit %q", taskShortIDs[1], noteHit)
+	}
+	var taskSources []string
+	for _, h := range hits {
+		if h.Kind == "task" {
+			taskSources = append(taskSources, h.MatchSource)
+		}
+	}
+	if len(taskSources) != 2 || taskSources[0] != "description" || taskSources[1] != "note" {
+		t.Errorf("MatchSource sequence = %v, want [description note]", taskSources)
 	}
 }
 

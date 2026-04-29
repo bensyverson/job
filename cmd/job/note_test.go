@@ -18,8 +18,8 @@ func TestNote_Flag_Happy(t *testing.T) {
 
 	db = openTestDB(t, dbFile)
 	task := job.MustGet(t, db, id)
-	if !strings.Contains(task.Description, "progress") {
-		t.Errorf("description: %q", task.Description)
+	if task.Description != "" {
+		t.Errorf("description should remain empty, got %q", task.Description)
 	}
 	detail, _ := job.GetLatestEventDetail(db, task.ID, "noted")
 	if detail["text"] != "progress" {
@@ -39,8 +39,12 @@ func TestNote_Stdin_Form(t *testing.T) {
 
 	db = openTestDB(t, dbFile)
 	task := job.MustGet(t, db, id)
-	if !strings.Contains(task.Description, "from stdin") {
-		t.Errorf("description: %q", task.Description)
+	if task.Description != "" {
+		t.Errorf("description should remain empty, got %q", task.Description)
+	}
+	detail, _ := job.GetLatestEventDetail(db, task.ID, "noted")
+	if detail["text"] != "from stdin" {
+		t.Errorf("event text: %v", detail["text"])
 	}
 }
 

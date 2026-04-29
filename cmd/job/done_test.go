@@ -682,8 +682,15 @@ func TestNote_DashM_AtFile_ReadsFromFile(t *testing.T) {
 
 	db2 := openTestDB(t, dbFile)
 	task := job.MustGet(t, db2, id)
-	if !strings.Contains(task.Description, contents) {
-		t.Errorf("note body not appended: description=%q", task.Description)
+	if task.Description != "" {
+		t.Errorf("description should remain empty, got %q", task.Description)
+	}
+	detail, err := job.GetLatestEventDetail(db2, task.ID, "noted")
+	if err != nil {
+		t.Fatalf("GetLatestEventDetail: %v", err)
+	}
+	if detail == nil || detail["text"] != contents {
+		t.Errorf("noted event text: got %v, want %q", detail, contents)
 	}
 }
 

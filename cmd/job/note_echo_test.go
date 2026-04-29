@@ -154,8 +154,11 @@ func TestNote_StoresFullBody_NotPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunInfo: %v", err)
 	}
-	if !strings.Contains(info.Task.Description, strings.TrimSpace(body)) {
-		t.Errorf("description missing full body — preview must not affect storage:\n%s", info.Task.Description)
+	if len(info.Notes) != 1 {
+		t.Fatalf("expected 1 note, got %d", len(info.Notes))
+	}
+	if info.Notes[0].Text != body {
+		t.Errorf("note body missing full text — preview must not affect storage:\n got: %q\nwant: %q", info.Notes[0].Text, body)
 	}
 }
 

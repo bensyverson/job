@@ -99,6 +99,32 @@ func TestRenderInfoMarkdown_RendersNotesSection(t *testing.T) {
 	}
 }
 
+// Regression: prior to BPWMY, RunNote appended note text to tasks.description,
+// so `job show` printed the note twice — once inside Description, once in
+// Notes. Now that notes live only in the event log, the body must appear in
+// exactly one place: the Notes: section.
+func TestRenderInfoMarkdown_DoesNotDuplicateNoteInDescription(t *testing.T) {
+	db := SetupTestDB(t)
+	id := MustAddDesc(t, db, "", "Task", "Original description")
+	if err := RunNote(db, id, "uniqueNoteBody42", nil, TestActor); err != nil {
+		t.Fatalf("note: %v", err)
+	}
+
+	info, err := RunInfo(db, id)
+	if err != nil {
+		t.Fatalf("RunInfo: %v", err)
+	}
+	var buf bytes.Buffer
+	RenderInfoMarkdown(&buf, info)
+	got := buf.String()
+	if occurrences := strings.Count(got, "uniqueNoteBody42"); occurrences != 1 {
+		t.Errorf("note body should render exactly once, got %d:\n%s", occurrences, got)
+	}
+	if !strings.Contains(got, "Original description") {
+		t.Errorf("original description missing:\n%s", got)
+	}
+}
+
 func TestRenderInfoMarkdown_OmitsNotesSection_WhenNone(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Task")

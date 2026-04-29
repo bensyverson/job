@@ -15,8 +15,8 @@ func newNoteCmd() *cobra.Command {
 	var resultStr string
 	cmd := &cobra.Command{
 		Use:   "note <id> [text]",
-		Short: "Append a note to a task's description",
-		Long:  "Append text to a task's description, prefixed with a timestamp. Pass the body positionally, via -m, or read from stdin with `-`. Use --result to attach a structured JSON blob to the event without touching the description.",
+		Short: "Record a timestamped note on a task",
+		Long:  "Record a timestamped note on a task. Notes are stored as `noted` events with actor + body, surfaced in the Notes: section of `job show`, and remain searchable. The task's description is not modified. Pass the body positionally, via -m, or read from stdin with `-`. Use --result to attach a structured JSON blob to the event.",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDBFromCmd()

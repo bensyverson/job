@@ -749,7 +749,7 @@ func TestRunEdit_NotFound(t *testing.T) {
 
 // --- Note ---
 
-func TestRunNote_AppendsToEmptyDescription(t *testing.T) {
+func TestRunNote_LeavesEmptyDescriptionUnchanged(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAdd(t, db, "", "Task")
 
@@ -758,12 +758,12 @@ func TestRunNote_AppendsToEmptyDescription(t *testing.T) {
 	}
 
 	task := MustGet(t, db, id)
-	if task.Description != "First note" {
-		t.Errorf("description: got %q, want %q", task.Description, "First note")
+	if task.Description != "" {
+		t.Errorf("description should remain empty, got %q", task.Description)
 	}
 }
 
-func TestRunNote_AppendsToExistingDescription(t *testing.T) {
+func TestRunNote_DoesNotMutateExistingDescription(t *testing.T) {
 	db := SetupTestDB(t)
 	id := MustAddDesc(t, db, "", "Task", "Original desc")
 
@@ -772,14 +772,11 @@ func TestRunNote_AppendsToExistingDescription(t *testing.T) {
 	}
 
 	task := MustGet(t, db, id)
-	if !strings.Contains(task.Description, "Original desc") {
-		t.Errorf("description should contain original: %q", task.Description)
+	if task.Description != "Original desc" {
+		t.Errorf("description should equal %q, got %q", "Original desc", task.Description)
 	}
-	if !strings.Contains(task.Description, "Added note") {
-		t.Errorf("description should contain note: %q", task.Description)
-	}
-	if !strings.Contains(task.Description, "[20") {
-		t.Errorf("description should contain timestamp: %q", task.Description)
+	if strings.Contains(task.Description, "Added note") {
+		t.Errorf("description should not contain note body: %q", task.Description)
 	}
 }
 
@@ -801,6 +798,9 @@ func TestRunNote_RecordsEvent(t *testing.T) {
 	}
 	if detail["text"] != "A note" {
 		t.Errorf("text: got %v, want %q", detail["text"], "A note")
+	}
+	if _, present := detail["description_after"]; present {
+		t.Errorf("description_after should no longer be recorded; detail=%v", detail)
 	}
 }
 

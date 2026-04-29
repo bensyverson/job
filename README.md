@@ -172,7 +172,7 @@ After a successful `done`, the ack ends with a `Next:` hint naming the suggested
 | Command | Description |
 |---------|-------------|
 | `job edit <id> [-t <title>] [-d <desc>]` | Replace title and/or description. `-d ""` clears the description. |
-| `job note <id> -m "<text>"` | Append a timestamped note to a task's description. The message argument also accepts `-m @path/to/file.txt` to read the note from a file (handy for multi-line evidence payloads where shell quoting is painful) and `-m -` to read from stdin. The positional `job note <id> -` form for stdin is still supported. `--result '<json>'` attaches structured JSON to the event without touching the description. On success the ack echoes the stored body: `Noted: <id> · <N chars> · "<preview>"` (preview snaps to a word boundary; long bodies elide with `…`). |
+| `job note <id> -m "<text>"` | Record a timestamped note on a task. Notes are stored as `noted` events on the event log with actor + body + timestamp; the task's `description` is never modified. Notes appear in the `Notes:` section of `job show` (chronological, with actor and relative timestamp) and remain searchable via `job search` (surface as `MatchSource="note"`). `-m` also accepts `-m @path/to/file.txt` to read from a file (handy for multi-line evidence payloads where shell quoting is painful) and `-m -` to read from stdin. The positional `job note <id> -` form for stdin is still supported. `--result '<json>'` attaches structured JSON to the event. On success the ack echoes the stored body: `Noted: <id> · <N chars> · "<preview>"` (preview snaps to a word boundary; long bodies elide with `…`). |
 | `job move <id> before\|after <sibling>` | Reorder a task among its siblings. |
 
 ### Cancellation

@@ -826,26 +826,15 @@ func RunNote(db *sql.DB, shortID, text string, result json.RawMessage, actor str
 		return fmt.Errorf("task %q not found", shortID)
 	}
 
-	var newDesc string
-	timestamp := CurrentNowFunc().Format("2006-01-02 15:04")
-	if task.Description == "" {
-		newDesc = text
-	} else {
-		newDesc = task.Description + "\n\n[" + timestamp + "] " + text
-	}
-
 	now := CurrentNowFunc().Unix()
 	if _, err := tx.Exec(
-		"UPDATE tasks SET description = ?, updated_at = ? WHERE id = ?",
-		newDesc, now, task.ID,
+		"UPDATE tasks SET updated_at = ? WHERE id = ?",
+		now, task.ID,
 	); err != nil {
 		return err
 	}
 
-	detail := map[string]any{
-		"text":              text,
-		"description_after": newDesc,
-	}
+	detail := map[string]any{"text": text}
 	if resultVal != nil {
 		detail["result"] = resultVal
 	}
